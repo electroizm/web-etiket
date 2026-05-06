@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Otomatik Kombinasyon · {{ koleksiyon.ad }}{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:home' %}" class="brand-link" aria-label="Ana sayfa">
+        <div class="brand-mark brand-mark--sm" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="kograd" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7c5cff"/><stop offset="100%" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+            <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#kograd)" opacity="0.18"/>
+            <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#kograd)" stroke-width="2"/>
+            <g stroke="url(#kograd)" stroke-width="2" stroke-linecap="round">
+              <line x1="16" y1="22" x2="16" y2="42"/><line x1="20" y1="22" x2="20" y2="42"/>
+              <line x1="24" y1="22" x2="24" y2="42"/><line x1="28" y1="22" x2="28" y2="42"/>
+              <line x1="32" y1="22" x2="32" y2="42"/><line x1="36" y1="22" x2="36" y2="42"/>
+              <line x1="40" y1="22" x2="40" y2="42"/>
+            </g>
+          </svg>
+        </div>
+        <span class="topbar__title">Etiket Studio</span>
+      </a>
+    </div>
+    <div class="topbar__user">
+      <span class="user-email" title="{{ request.supabase_user.email }}">{{ request.supabase_user.email }}</span>
+      <button type="button" class="btn-ghost" id="logout-btn">Çıkış</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <nav class="breadcrumb" aria-label="Yol">
+      <a href="{% url 'dashboard:kategoriler_list' %}">Kategoriler</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <a href="{% url 'dashboard:kategori_detail' kategori_id=koleksiyon.kategori_id %}">{{ koleksiyon.kategori_ad|default:"Kategori" }}</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <a href="{% url 'dashboard:urunler_list' %}?koleksiyon={{ koleksiyon.id }}">{{ koleksiyon.ad }}</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span>Otomatik Kombinasyon</span>
+    </nav>
+
+    <section class="page-header">
+      <div>
+        <h1 class="page-title">⚡ Otomatik Kombinasyon</h1>
+        <p class="page-subtitle">{{ koleksiyon.ad }} · regex kuralları ile eşleştirildi</p>
+      </div>
+    </section>
+
+    {% if hata %}
+      <div class="status" data-type="error" style="margin-bottom: 12px;">{{ hata }}</div>
+      <div class="modal__actions" style="justify-content: flex-start;">
+        <a href="{% url 'dashboard:urunler_list' %}?koleksiyon={{ koleksiyon.id }}" class="btn-ghost">← Geri dön</a>
+      </div>
+    {% else %}
+      <p class="page-subtitle" style="padding: 0 4px 12px;">
+        <strong>{{ preview.kategori_ad }}</strong> için tanımlı kuralları çalıştırdık.
+        Aşağıdaki bulduğum kombinasyonları DB'ye kaydetmek istersen "Oluştur"a bas.
+        Tüm parçaları eşleşmeyen kombinasyonlar atlanır.
+      </p>
+
+      <section class="oto-kombi-list">
+        {% for k in preview.kombinasyonlar %}
+          <article class="oto-kombi-card glass{% if not k.tum_eslesti %} is-incomplete{% endif %}">
+            <header class="oto-kombi-card__head">
+              <h3>{{ k.ad }}</h3>
+              {% if k.tum_eslesti %}
+                <span class="badge-ok">Tüm parçalar bulundu</span>
+              {% else %}
+                <span class="badge-warn">Eksik parça var → atlanacak</span>
+              {% endif %}
+            </header>
+            <ul class="oto-kombi-slots">
+              {% for slot in k.slots %}
+                <li class="oto-kombi-slot{% if not slot.matched %} is-missing{% endif %}">
+                  {% if slot.matched %}
+                    <div class="oto-kombi-slot__main">
+                      <div class="oto-kombi-slot__ad">{{ slot.urun.ad }}</div>
+                      <div class="oto-kombi-slot__sku">SKU {{ slot.urun.sku }}</div>
+                    </div>
+                    <div class="oto-kombi-slot__miktar">×{{ slot.miktar }}</div>
+                  {% else %}
+                    <div class="oto-kombi-slot__main">
+                      <div class="oto-kombi-slot__missing">— eşleşen ürün yok —</div>
+                      <code class="oto-kombi-slot__pattern">{{ slot.pattern|truncatechars:80 }}</code>
+                    </div>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </article>
+        {% endfor %}
+      </section>
+
+      <form method="post" action="{% url 'dashboard:kombinasyon_otomatik' koleksiyon_id=koleksiyon.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        <div class="modal__actions" style="justify-content: space-between;">
+          <a href="{% url 'dashboard:urunler_list' %}?koleksiyon={{ koleksiyon.id }}" class="btn-ghost">İptal</a>
+          <button type="submit" class="btn-primary btn-primary--compact">
+            ✓ Kombinasyonları Oluştur
+          </button>
+        </div>
+      </form>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('logout-btn')?.addEventListener('click', () => window.EtiketAuth.logout());
+    });
+  </script>
+{% endblock %}

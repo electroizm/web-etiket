@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Giriş Yap · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/login.css' %}">
+{% endblock %}
+
+{% block content %}
+<main class="auth-shell">
+  <!-- Dekoratif arka plan blob'ları -->
+  <div class="bg-orb bg-orb--a" aria-hidden="true"></div>
+  <div class="bg-orb bg-orb--b" aria-hidden="true"></div>
+  <div class="bg-orb bg-orb--c" aria-hidden="true"></div>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <section class="auth-card glass" aria-labelledby="auth-title">
+    <header class="auth-header">
+      <div class="brand-mark" aria-hidden="true">
+        <!-- Barkod + Doküman ikonu (SVG) -->
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#7c5cff"/>
+              <stop offset="100%" stop-color="#22d3ee"/>
+            </linearGradient>
+          </defs>
+          <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#g1)" opacity="0.18"/>
+          <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#g1)" stroke-width="2"/>
+          <g stroke="url(#g1)" stroke-width="2" stroke-linecap="round">
+            <line x1="16" y1="22" x2="16" y2="42"/>
+            <line x1="20" y1="22" x2="20" y2="42"/>
+            <line x1="24" y1="22" x2="24" y2="42"/>
+            <line x1="28" y1="22" x2="28" y2="42"/>
+            <line x1="32" y1="22" x2="32" y2="42"/>
+            <line x1="36" y1="22" x2="36" y2="42"/>
+            <line x1="40" y1="22" x2="40" y2="42"/>
+          </g>
+          <circle cx="50" cy="50" r="10" fill="#0b1020" stroke="url(#g1)" stroke-width="2"/>
+          <path d="M46 50l3 3 6-6" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+
+      <h1 id="auth-title" class="auth-title">Hoş Geldiniz</h1>
+      <p class="auth-subtitle">Etiketlerinizi oluşturmaya başlayın.</p>
+    </header>
+
+    <!-- Status alanı (error / success mesajları) -->
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+    <form id="login-form" class="auth-form" novalidate data-next="{{ next|default:'' }}">
+      {% csrf_token %}
+
+      <div class="field">
+        <label for="email" class="field-label">E-posta</label>
+        <div class="input-wrap">
+          <span class="input-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="5" width="18" height="14" rx="3"/>
+              <path d="M3 7l9 6 9-6"/>
+            </svg>
+          </span>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            placeholder="ornek@firma.com"
+            required
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="password" class="field-label">
+          <span>Şifre</span>
+          <a href="{% url 'accounts:forgot_password' %}" class="link-muted">Şifremi unuttum</a>
+        </label>
+        <div class="input-wrap">
+          <span class="input-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="11" width="16" height="9" rx="2"/>
+              <path d="M8 11V8a4 4 0 1 1 8 0v3"/>
+            </svg>
+          </span>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="••••••••"
+            minlength="6"
+            required
+          />
+          <button type="button" class="toggle-eye" id="toggle-password" aria-label="Şifreyi göster">
+            <svg class="eye-on" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg class="eye-off" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden>
+              <path d="M3 3l18 18"/>
+              <path d="M10.6 6.1A10.4 10.4 0 0 1 12 6c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1"/>
+              <path d="M6.1 6.1C3.4 7.9 2 12 2 12s3.5 7 10 7c1.7 0 3.2-.4 4.5-1"/>
+              <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <label class="remember">
+        <input type="checkbox" id="remember" name="remember" />
+        <span>Beni hatırla</span>
+      </label>
+
+      <button type="submit" class="btn-primary" id="submit-btn">
+        <span class="btn-label">Giriş Yap</span>
+        <span class="btn-spinner" aria-hidden="true"></span>
+        <svg class="btn-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"/>
+          <path d="M13 6l6 6-6 6"/>
+        </svg>
+      </button>
+
+      <p class="signup-hint">
+        Hesabınız yok mu? <a href="{% url 'accounts:signup' %}" class="link-strong">Yeni hesap oluştur</a>
+      </p>
+    </form>
+
+    <footer class="auth-footer">
+      <span>© {{ now|default:"" }}Etiket Studio</span>
+      <span class="dot">•</span>
+      <span>v0.1</span>
+    </footer>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script src="{% static 'js/login.js' %}" defer></script>
+{% endblock %}

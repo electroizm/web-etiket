@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Ayarlar · Yerli Üretim · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:home' %}" class="brand-link" aria-label="Ana sayfa">
+        <div class="brand-mark brand-mark--sm" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="ayugrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7c5cff"/><stop offset="100%" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+            <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#ayugrad)" opacity="0.18"/>
+            <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#ayugrad)" stroke-width="2"/>
+            <g stroke="url(#ayugrad)" stroke-width="2" stroke-linecap="round">
+              <line x1="16" y1="22" x2="16" y2="42"/><line x1="20" y1="22" x2="20" y2="42"/>
+              <line x1="24" y1="22" x2="24" y2="42"/><line x1="28" y1="22" x2="28" y2="42"/>
+              <line x1="32" y1="22" x2="32" y2="42"/><line x1="36" y1="22" x2="36" y2="42"/>
+              <line x1="40" y1="22" x2="40" y2="42"/>
+            </g>
+          </svg>
+        </div>
+        <span class="topbar__title">Etiket Studio</span>
+      </a>
+    </div>
+    <div class="topbar__user">
+      <span class="user-email" title="{{ request.supabase_user.email }}">{{ request.supabase_user.email }}</span>
+      <button type="button" class="btn-ghost" id="logout-btn">Çıkış</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <nav class="breadcrumb" aria-label="Yol">
+      <a href="{% url 'dashboard:home' %}">Ana sayfa</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span>Ayarlar</span>
+    </nav>
+
+    <section class="page-header">
+      <div>
+        <h1 class="page-title">Ayarlar</h1>
+        <p class="page-subtitle">Etiket görselleri ve uygulama tercihleri</p>
+      </div>
+    </section>
+
+    {% if messages %}
+      <div class="messages" role="status" aria-live="polite">
+        {% for message in messages %}
+          <div class="message message--{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="ayarlar-layout">
+      {% include "dashboard/_ayarlar_sidebar.html" %}
+
+      <section class="ayarlar-panel glass">
+        <header class="ayarlar-panel__head">
+          <div>
+            <h2>Yerli Üretim Logosu</h2>
+            <p class="cell-meta">PDF etiketinin sağ alt köşesinde yer alan küçük logo. Genelde sabit kalır.</p>
+          </div>
+        </header>
+
+        <div class="slogan-preview">
+          <div class="slogan-preview__label">Mevcut görsel</div>
+          {% if yerli_uretim_url %}
+            <img src="{{ yerli_uretim_url }}" alt="Aktif Yerli Üretim logosu" class="slogan-preview__img slogan-preview__img--small">
+          {% else %}
+            <div class="slogan-preview__empty">
+              <p>Henüz bir Yerli Üretim logosu yüklenmedi.</p>
+              <p class="cell-meta">PDF üretiminde varsayılan placeholder ("YERLİ ÜRETİM" metin etiketi) görünür.</p>
+            </div>
+          {% endif %}
+        </div>
+
+        <form method="post" enctype="multipart/form-data" class="slogan-form">
+          {% csrf_token %}
+          <label class="slogan-form__field">
+            <span class="slogan-form__label">Yeni görsel yükle</span>
+            <input type="file" name="yerli_uretim" accept="image/png,image/jpeg,image/webp" required>
+            <span class="cell-meta">PNG, JPEG veya WEBP · max {{ max_mb }} MB · önerilen boyut 200×60 px</span>
+          </label>
+          <div class="slogan-form__actions">
+            <button type="submit" class="btn-primary btn-primary--compact">Yükle ve Aktif Et</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('logout-btn')?.addEventListener('click', () => window.EtiketAuth.logout());
+    });
+  </script>
+{% endblock %}

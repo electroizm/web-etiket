@@ -1,0 +1,13 @@
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+  const SUPABASE_URL = "{{ SUPABASE_URL|default:'' }}";
+  const SUPABASE_ANON_KEY = "{{ SUPABASE_ANON_KEY|default:'' }}";
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
+    window.dispatchEvent(new Event('supabase:ready'));
+  } else {
+    console.warn('[Etiket] SUPABASE_URL / SUPABASE_ANON_KEY .env içinde tanımlı değil. Auth client başlatılmadı.');
+  }
+</script>

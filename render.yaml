@@ -1,0 +1,61 @@
+# Render.com — Infrastructure as Code
+# https://render.com/docs/infrastructure-as-code
+#
+# Bu dosya repo'da olduğu sürece, Render Dashboard'da "New Blueprint"
+# seçip GitHub repo'yu bağladığında ayarları otomatik okur.
+#
+# Manuel deploy de mümkün — bu dosyayı yok sayıp Dashboard'dan tek tek
+# ayar girilebilir. Ama IaC tutmak değişiklik takibi için iyi.
+
+services:
+  - type: web
+    name: web-etiket
+    env: python
+    plan: free
+    region: frankfurt           # Türkiye'ye en yakın Render bölgesi
+    branch: main
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn etiket_project.wsgi:application"
+    healthCheckPath: /accounts/login/   # 200 dönmesi beklenen URL
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.0"
+
+      # Django
+      - key: DJANGO_SECRET_KEY
+        generateValue: true     # Render rastgele üretir, .env'e bakmaz
+      - key: DJANGO_DEBUG
+        value: "False"
+      # Render her servise <name>.onrender.com hostname'i atar.
+      # ALLOWED_HOSTS için RENDER_EXTERNAL_HOSTNAME otomatik enjecte ediliyor;
+      # aşağıda CSRF için de sync ediyoruz.
+      - key: DJANGO_ALLOWED_HOSTS
+        fromService:
+          name: web-etiket
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        sync: false             # Dashboard'dan elle gir: https://web-etiket.onrender.com
+
+      # Supabase — ZORUNLU (Dashboard'dan elle gir)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_JWK
+        sync: false             # JWK string (ES256 modern projeler için)
+
+      # Scraper / SQLAlchemy direct connection
+      - key: DATABASE_URL
+        sync: false             # postgresql+psycopg2://... pooler URL
+      - key: SCRAPER_CONCURRENCY
+        value: "2"
+      - key: SCRAPER_RATE_DELAY_MIN
+        value: "1.0"
+      - key: SCRAPER_RATE_DELAY_MAX
+        value: "3.0"
+      - key: SCRAPER_SKIP_KATEGORILER
+        value: "Doğtaş Home"

@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Etiketlerim · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <div class="brand-mark brand-mark--sm" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none">
+          <defs>
+            <linearGradient id="dgrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#7c5cff"/>
+              <stop offset="100%" stop-color="#22d3ee"/>
+            </linearGradient>
+          </defs>
+          <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#dgrad)" opacity="0.18"/>
+          <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#dgrad)" stroke-width="2"/>
+          <g stroke="url(#dgrad)" stroke-width="2" stroke-linecap="round">
+            <line x1="16" y1="22" x2="16" y2="42"/><line x1="20" y1="22" x2="20" y2="42"/>
+            <line x1="24" y1="22" x2="24" y2="42"/><line x1="28" y1="22" x2="28" y2="42"/>
+            <line x1="32" y1="22" x2="32" y2="42"/><line x1="36" y1="22" x2="36" y2="42"/>
+            <line x1="40" y1="22" x2="40" y2="42"/>
+          </g>
+        </svg>
+      </div>
+      <span class="topbar__title">Etiket Studio</span>
+    </div>
+
+    <div class="topbar__user">
+      <span class="user-email" title="{{ user_email }}">{{ user_email }}</span>
+      <a href="{% url 'dashboard:ayarlar' %}" class="btn-ghost" title="Ayarlar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>Ayarlar</span>
+      </a>
+      <button type="button" class="btn-ghost" id="logout-btn" aria-label="Çıkış yap">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 17l5-5-5-5"/><path d="M20 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        </svg>
+        <span>Çıkış</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="content">
+    <section class="hero glass">
+      <div class="hero__text">
+        <h1>Hoş geldin 👋</h1>
+        <p>Doğtaş kataloğun Supabase'de — aşağıdan ürünleri keşfet veya etiket hazırla.</p>
+      </div>
+    </section>
+
+    <section class="stat-grid">
+      <a href="{% url 'dashboard:urunler_list' %}" class="stat-card glass">
+        <div class="stat-card__label">Ürünler</div>
+        <div class="stat-card__value">{{ stats.urun }}</div>
+        <div class="stat-card__hint">listele · ara · filtrele →</div>
+      </a>
+      <a href="{% url 'dashboard:kategoriler_list' %}" class="stat-card glass">
+        <div class="stat-card__label">Kategoriler</div>
+        <div class="stat-card__value">{{ stats.kategori }}</div>
+        <div class="stat-card__hint">listele · ürünlere göz at →</div>
+      </a>
+      <div class="stat-card glass">
+        <div class="stat-card__label">Koleksiyonlar</div>
+        <div class="stat-card__value">{{ stats.koleksiyon }}</div>
+        <div class="stat-card__hint">kategori altında</div>
+      </div>
+    </section>
+
+    {% if stats.urun == 0 %}
+      <section class="empty-state glass">
+        <div class="empty-state__icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="url(#dgrad2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <defs>
+              <linearGradient id="dgrad2" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7c5cff"/>
+                <stop offset="100%" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+            <rect x="10" y="10" width="44" height="44" rx="10"/>
+            <path d="M20 22h24M20 32h24M20 42h16"/>
+          </svg>
+        </div>
+        <h2>Henüz ürün yok</h2>
+        <p>Scraper'ı çalıştırarak Doğtaş kataloğunu yükle:</p>
+        <code class="code-inline">python manage.py scrape_dogtas --max-pages 1</code>
+      </section>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('logout-btn');
+      btn?.addEventListener('click', () => window.EtiketAuth.logout());
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if is_edit %}Kombinasyon Düzenle{% else %}Yeni Kombinasyon{% endif %} · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:home' %}" class="brand-link" aria-label="Ana sayfa">
+        <div class="brand-mark brand-mark--sm" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="kfgrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7c5cff"/><stop offset="100%" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+            <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#kfgrad)" opacity="0.18"/>
+            <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#kfgrad)" stroke-width="2"/>
+            <g stroke="url(#kfgrad)" stroke-width="2" stroke-linecap="round">
+              <line x1="16" y1="22" x2="16" y2="42"/><line x1="20" y1="22" x2="20" y2="42"/>
+              <line x1="24" y1="22" x2="24" y2="42"/><line x1="28" y1="22" x2="28" y2="42"/>
+              <line x1="32" y1="22" x2="32" y2="42"/><line x1="36" y1="22" x2="36" y2="42"/>
+              <line x1="40" y1="22" x2="40" y2="42"/>
+            </g>
+          </svg>
+        </div>
+        <span class="topbar__title">Etiket Studio</span>
+      </a>
+    </div>
+    <div class="topbar__user">
+      <span class="user-email" title="{{ request.supabase_user.email }}">{{ request.supabase_user.email }}</span>
+      <button type="button" class="btn-ghost" id="logout-btn">Çıkış</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <nav class="breadcrumb" aria-label="Yol">
+      <a href="{% url 'dashboard:kategoriler_list' %}">Kategoriler</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <a href="{% url 'dashboard:kategori_detail' kategori_id=koleksiyon.kategori_id %}">{{ koleksiyon.kategori_ad|default:"Kategori" }}</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <a href="{% url 'dashboard:urunler_list' %}?koleksiyon={{ koleksiyon.id }}">{{ koleksiyon.ad }}</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span>{% if is_edit %}Düzenle{% else %}Yeni Kombinasyon{% endif %}</span>
+    </nav>
+
+    <section class="page-header">
+      <div>
+        <h1 class="page-title">{% if is_edit %}Kombinasyonu Düzenle{% else %}Yeni Kombinasyon{% endif %}</h1>
+        <p class="page-subtitle">{{ koleksiyon.ad }} · {{ urunler|length }} ürün</p>
+      </div>
+    </section>
+
+    {% if hata %}
+      <div class="status" data-type="error" style="margin-bottom: 12px;">{{ hata }}</div>
+    {% endif %}
+
+    <form method="post"
+          action="{% if is_edit %}{% url 'dashboard:kombinasyon_duzenle' kombinasyon_id=kombi_id %}{% else %}{% url 'dashboard:kombinasyon_yeni' koleksiyon_id=koleksiyon.id %}{% endif %}"
+          class="kombinasyon-form">
+      {% csrf_token %}
+
+      <div class="kombinasyon-form__name glass">
+        <label for="ad" class="field-label">Kombinasyon Adı</label>
+        <input type="text" id="ad" name="ad" value="{{ ad_value }}"
+               required autofocus maxlength="200"
+               placeholder="Örn: 6 Kapaklı, Karyola">
+      </div>
+
+      <section class="kombi-urun-list glass">
+        <div class="kombi-urun-list__head">
+          <strong>Ürünler</strong>
+          <span class="cell-meta" id="kombi-summary">0 ürün · 0 adet · — TL</span>
+        </div>
+
+        {% if urunler %}
+          <div class="kombi-urun-list__body">
+            {% for u in urunler %}
+              <label class="kombi-urun-row{% if u.secili %} is-selected{% endif %}">
+                <input type="checkbox" class="kombi-urun-check"
+                       name="urun_{{ u.id }}_secili"
+                       data-list="{{ u.son_liste_fiyat|default:0 }}"
+                       data-perakende="{{ u.son_perakende_fiyat|default:0 }}"
+                       {% if u.secili %}checked{% endif %}>
+                <span class="kombi-urun-row__check-mark" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                </span>
+                <div class="kombi-urun-row__main">
+                  <div class="kombi-urun-row__sku">{{ u.sku }}</div>
+                  <div class="kombi-urun-row__ad">{{ u.urun_adi_tam }}</div>
+                </div>
+                <div class="kombi-urun-row__fiyat">
+                  {% if u.son_perakende_fiyat %}
+                    <span>{{ u.son_perakende_fiyat|floatformat:0 }} TL</span>
+                  {% else %}
+                    <span class="cell-empty">—</span>
+                  {% endif %}
+                </div>
+                <div class="kombi-urun-row__miktar">
+                  <input type="number" name="urun_{{ u.id }}_miktar"
+                         value="{{ u.miktar|default:1 }}"
+                         min="1" max="99" step="1"
+                         {% if not u.secili %}disabled{% endif %}>
+                </div>
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="cell-empty" style="padding: 16px;">
+            {% if no_secili %}
+              Etiket için işaretli ürün yok. Önce koleksiyon sayfasında ürünleri işaretleyin.
+            {% else %}
+              Bu koleksiyonda ürün yok.
+            {% endif %}
+          </p>
+        {% endif %}
+      </section>
+
+      <div class="kombinasyon-form__actions">
+        <a href="{% url 'dashboard:urunler_list' %}?koleksiyon={{ koleksiyon.id }}" class="btn-ghost">
+          {% if urunler %}İptal{% else %}← Geri dön{% endif %}
+        </a>
+        {% if urunler %}
+          <button type="submit" class="btn-primary btn-primary--compact">
+            {% if is_edit %}Kaydet{% else %}Kombinasyonu Oluştur{% endif %}
+          </button>
+        {% endif %}
+      </div>
+    </form>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('logout-btn')?.addEventListener('click', () => window.EtiketAuth.logout());
+
+      // Checkbox değişince row'u highlight et + miktar input enable/disable + toplam güncelle
+      function recalcSummary() {
+        let urunSayisi = 0, toplamAdet = 0, toplamPerakende = 0;
+        document.querySelectorAll('.kombi-urun-row').forEach((row) => {
+          const cb = row.querySelector('.kombi-urun-check');
+          const miktarInput = row.querySelector('input[type="number"]');
+          if (cb.checked) {
+            urunSayisi++;
+            const miktar = Math.max(1, parseInt(miktarInput.value || '1', 10) || 1);
+            const fiyat = parseInt(cb.dataset.perakende || '0', 10) || 0;
+            toplamAdet += miktar;
+            toplamPerakende += fiyat * miktar;
+          }
+        });
+        const sum = document.getElementById('kombi-summary');
+        if (sum) {
+          const fiyatStr = toplamPerakende > 0 ? toplamPerakende.toLocaleString('tr-TR') + ' TL' : '— TL';
+          sum.textContent = `${urunSayisi} ürün · ${toplamAdet} adet · ${fiyatStr}`;
+        }
+      }
+
+      document.querySelectorAll('.kombi-urun-row').forEach((row) => {
+        const cb = row.querySelector('.kombi-urun-check');
+        const miktar = row.querySelector('input[type="number"]');
+        cb.addEventListener('change', () => {
+          row.classList.toggle('is-selected', cb.checked);
+          miktar.disabled = !cb.checked;
+          recalcSummary();
+        });
+        miktar.addEventListener('input', recalcSummary);
+      });
+      recalcSummary();
+    });
+  </script>
+{% endblock %}
