@@ -37,16 +37,16 @@ window.EtiketAuth = (function () {
     btn.disabled = loading;
   }
 
-  /** Şifre alanı için göz simgesi toggle */
+  /** Şifre alanı için göz simgesi toggle — tek SVG, .is-revealed class'ı ile
+      slash çizgisi gösterilir/gizlenir. */
   function bindPasswordToggle(toggleBtn, input) {
     if (!toggleBtn || !input) return;
-    const eyeOn  = toggleBtn.querySelector('.eye-on');
-    const eyeOff = toggleBtn.querySelector('.eye-off');
     toggleBtn.addEventListener('click', () => {
       const isHidden = input.type === 'password';
       input.type = isHidden ? 'text' : 'password';
+      toggleBtn.classList.toggle('is-revealed', isHidden);
+      toggleBtn.setAttribute('aria-pressed', isHidden ? 'true' : 'false');
       toggleBtn.setAttribute('aria-label', isHidden ? 'Şifreyi gizle' : 'Şifreyi göster');
-      if (eyeOn && eyeOff) { eyeOn.hidden = isHidden; eyeOff.hidden = !isHidden; }
       input.focus({ preventScroll: true });
     });
   }
@@ -98,22 +98,15 @@ window.EtiketAuth = (function () {
     return payload;
   }
 
-  /** Logout: hem Supabase JS hem Django session temizlenir. */
+  /** Logout: hem Supabase JS (localStorage) hem Django session temizlenir.
+      /accounts/logout/ endpoint'i GET ile çalışır (CSRF gerektirmez), session
+      flush edip login'e yönlendirir. Önceki fetch tabanlı yaklaşım CSRF
+      eksikse Django session'ı temizleyemiyordu. */
   async function logout() {
     try {
       if (window.supabase) await window.supabase.auth.signOut();
-    } catch (e) { /* ignore */ }
-    try {
-      const res = await fetch('/accounts/api/session/clear/', {
-        method: 'POST',
-        headers: { 'X-CSRFToken': getCsrfToken(), 'Accept': 'application/json' },
-        credentials: 'same-origin',
-      });
-      const payload = await res.json().catch(() => ({}));
-      window.location.href = payload.redirect || '/accounts/login/';
-    } catch (e) {
-      window.location.href = '/accounts/login/';
-    }
+    } catch (e) { /* yoksay */ }
+    window.location.href = '/accounts/logout/';
   }
 
   return {

@@ -19,7 +19,7 @@ from django.conf import settings
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.csrf import csrf_protect, csrf_exempt
 
 
 @lru_cache(maxsize=1)
@@ -117,6 +117,19 @@ def logout_view(request):
     return redirect('accounts:login')
 
 
+def profile_view(request):
+    """GET /accounts/profile/ — Kullanıcı profili sayfası.
+
+    İsim güncelleme + şifre değiştirme. Tüm Supabase Auth çağrıları
+    client-side (supabase JS) yapılır; başarı sonrası syncSessionWithDjango
+    ile Django session'ı yenilenir (yeni full_name JWT'den okunur).
+    """
+    user = getattr(request, 'supabase_user', None)
+    if user is None or not user.is_authenticated:
+        return redirect(f"/accounts/login/?next=/accounts/profile/")
+    return render(request, 'accounts/profile.html')
+
+
 # ---------------------------------------------------------------------------
 # JSON API endpoints (Supabase JS ile köprü)
 # ---------------------------------------------------------------------------
@@ -159,22 +172,153 @@ def api_session_sync(request):
     if not user_id:
         return JsonResponse({'ok': False, 'error': 'Token içinde kullanıcı yok.'}, status=400)
 
+    # Supabase JWT user_metadata içindeki 'full_name' (varsa) — profil
+    # sayfasında ve topbar'da gösterilir. updateUser sonrası yeni token
+    # ile bu endpoint tekrar çağrılırsa session güncellenir.
+    user_meta = payload.get('user_metadata') or {}
+    full_name = (user_meta.get('full_name') or '').strip()
+
     request.session['supabase_user_id'] = user_id
     request.session['supabase_email'] = email
     request.session['supabase_token'] = access_token
+    request.session['supabase_full_name'] = full_name
 
     return JsonResponse({
         'ok': True,
-        'user': {'id': user_id, 'email': email},
+        'user': {'id': user_id, 'email': email, 'full_name': full_name},
         'redirect': '/app/',
     })
 
 
-@csrf_protect
+@csrf_exempt
 @require_http_methods(["POST"])
 def api_session_clear(request):
+    """Idempotent logout endpoint — CSRF'siz çalışır.
+
+    Logout güvenliği açısından CSRF beklenmez (kötü niyetli site bir kullanıcıyı
+    zorla logout edebilir; sonuç sadece "tekrar login ol", veri kaybı yok).
+    Bu sayede eski cached client'lar veya CSRF token'ı eksik olan sayfalar
+    da düzgün logout olur.
+    """
     request.session.flush()
     return JsonResponse({'ok': True, 'redirect': '/accounts/login/'})
+
+
+# ---------------------------------------------------------------------------
+# Profile API — Supabase Admin API ile güncelleme
+# ---------------------------------------------------------------------------
+
+@csrf_protect
+@require_http_methods(["POST"])
+def api_profile_update_name(request):
+    """POST /accounts/api/profile/update-name/  body: {"full_name": "..."}
+
+    Admin API ile auth.users.user_metadata.full_name'i günceller. Mevcut
+    metadata'nın diğer alanları korunur. Başarıdan sonra Django session'daki
+    supabase_full_name de yenilenir → topbar anında doğru gözükür.
+    """
+    user = getattr(request, 'supabase_user', None)
+    if user is None or not user.is_authenticated:
+        return JsonResponse({'ok': False, 'error': 'Oturum gerekli.'}, status=401)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Geçersiz istek.'}, status=400)
+
+    full_name = (data.get('full_name') or '').strip()
+    if not full_name:
+        return JsonResponse({'ok': False, 'error': 'Ad Soyad boş olamaz.'}, status=400)
+    if len(full_name) > 120:
+        return JsonResponse({'ok': False, 'error': 'En fazla 120 karakter olabilir.'}, status=400)
+
+    try:
+        from accounts.supabase_client import get_supabase_admin
+        admin = get_supabase_admin()
+
+        # Mevcut metadata'yı koruyarak full_name'i güncelle
+        existing_meta: dict = {}
+        try:
+            existing_resp = admin.auth.admin.get_user_by_id(user.id)
+            if existing_resp and getattr(existing_resp, 'user', None):
+                existing_meta = dict(existing_resp.user.user_metadata or {})
+        except Exception:
+            # Mevcut metadata okunamazsa sıfırdan yaz
+            existing_meta = {}
+
+        new_meta = {**existing_meta, 'full_name': full_name}
+        admin.auth.admin.update_user_by_id(
+            user.id,
+            {'user_metadata': new_meta},
+        )
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': f'Güncelleme başarısız: {e}'}, status=500)
+
+    request.session['supabase_full_name'] = full_name
+    return JsonResponse({'ok': True, 'full_name': full_name})
+
+
+@csrf_protect
+@require_http_methods(["POST"])
+def api_profile_change_password(request):
+    """POST /accounts/api/profile/change-password/
+    body: {"current_password": "...", "new_password": "..."}
+
+    1) Mevcut şifre Supabase /auth/v1/token endpoint'ine istek atılarak doğrulanır.
+       Yanıt 200 değilse "mevcut şifre hatalı" döner.
+    2) Doğruysa Admin API ile yeni şifre yazılır.
+    """
+    user = getattr(request, 'supabase_user', None)
+    if user is None or not user.is_authenticated:
+        return JsonResponse({'ok': False, 'error': 'Oturum gerekli.'}, status=401)
+
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Geçersiz istek.'}, status=400)
+
+    current = data.get('current_password') or ''
+    new = data.get('new_password') or ''
+
+    if not current:
+        return JsonResponse({'ok': False, 'error': 'Mevcut şifre zorunlu.'}, status=400)
+    if not new:
+        return JsonResponse({'ok': False, 'error': 'Yeni şifre zorunlu.'}, status=400)
+    if len(new) < 8:
+        return JsonResponse({'ok': False, 'error': 'Yeni şifre en az 8 karakter olmalı.'}, status=400)
+    if current == new:
+        return JsonResponse({'ok': False, 'error': 'Yeni şifre eskisi ile aynı olamaz.'}, status=400)
+    if not user.email:
+        return JsonResponse({'ok': False, 'error': 'Kullanıcı e-postası bulunamadı.'}, status=400)
+
+    # 1) Mevcut şifreyi doğrula — direct REST ile (anon client'ın singleton state'ini bozmaz)
+    import requests as _req
+    try:
+        verify = _req.post(
+            f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password",
+            headers={
+                'apikey': settings.SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json',
+            },
+            json={'email': user.email, 'password': current},
+            timeout=10,
+        )
+    except _req.RequestException as e:
+        return JsonResponse({'ok': False, 'error': f'Bağlantı hatası: {e}'}, status=500)
+
+    if verify.status_code != 200:
+        # 400 invalid_grant veya 401 → mevcut şifre yanlış
+        return JsonResponse({'ok': False, 'error': 'Mevcut şifre hatalı.'}, status=400)
+
+    # 2) Admin API ile yeni şifreyi yaz
+    try:
+        from accounts.supabase_client import get_supabase_admin
+        admin = get_supabase_admin()
+        admin.auth.admin.update_user_by_id(user.id, {'password': new})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': f'Güncelleme başarısız: {e}'}, status=500)
+
+    return JsonResponse({'ok': True})
 
 
 def api_auth_diagnose(request):

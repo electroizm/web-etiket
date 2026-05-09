@@ -8,6 +8,16 @@
   <meta name="description" content="Etiketlerinizi ve PDF'lerinizi hızlıca oluşturun." />
   <title>{% block title %}Etiket Studio{% endblock %}</title>
 
+  {# Tema'yı CSS yüklenmeden önce uygula → FOUC olmaz. #}
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      } catch (_) {}
+    })();
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,6 +26,7 @@
 </head>
 <body>
   {% block content %}{% endblock %}
+  <script src="{% static 'js/theme.js' %}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

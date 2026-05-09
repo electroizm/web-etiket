@@ -17,10 +17,16 @@ class SupabaseUser:
     id: str
     email: str
     token: str
+    full_name: str = ''
 
     @property
     def is_authenticated(self) -> bool:
         return bool(self.id)
+
+    @property
+    def display_name(self) -> str:
+        """Topbar'da gösterilecek ad: full_name varsa o, yoksa e-posta."""
+        return self.full_name or self.email
 
 
 class SupabaseAuthMiddleware:
@@ -43,4 +49,5 @@ class SupabaseAuthMiddleware:
             id=uid,
             email=sess.get('supabase_email', ''),
             token=sess.get('supabase_token', ''),
+            full_name=sess.get('supabase_full_name', ''),
         )

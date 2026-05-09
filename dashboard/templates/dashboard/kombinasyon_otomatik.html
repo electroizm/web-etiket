@@ -29,11 +29,11 @@
             </g>
           </svg>
         </div>
-        <span class="topbar__title">Etiket Studio</span>
+        <span class="topbar__title">Güneşler Elektronik</span>
       </a>
     </div>
     <div class="topbar__user">
-      <span class="user-email" title="{{ request.supabase_user.email }}">{{ request.supabase_user.email }}</span>
+      <a href="{% url 'accounts:profile' %}" class="user-link" title="{{ request.supabase_user.email }}">{{ request.supabase_user.display_name }}</a>
       <button type="button" class="btn-ghost" id="logout-btn">Çıkış</button>
     </div>
   </header>

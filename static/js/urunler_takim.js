@@ -193,22 +193,9 @@
   });
   clearBtn?.addEventListener('click', clearTakim);
 
-  // ── Sıralama: işaretliler üstte, içinde A→Z (kart adına göre) ─
-  const grid = document.querySelector('.urun-grid');
-
-  function sortGrid() {
-    if (!grid) return;
-    const cards = Array.from(grid.querySelectorAll('.urun-card'));
-    cards.sort((a, b) => {
-      const sa = a.dataset.secili === '1' ? 0 : 1;
-      const sb = b.dataset.secili === '1' ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-      const na = (a.dataset.urunAd || '').toLocaleLowerCase('tr');
-      const nb = (b.dataset.urunAd || '').toLocaleLowerCase('tr');
-      return na.localeCompare(nb, 'tr');
-    });
-    cards.forEach((c) => grid.appendChild(c));
-  }
+  // ── Ürün ızgarası — manuel sıra DB'de tutuluyor (urun_koleksiyon.siralama).
+  // Drag-and-drop kullanıcı kontrollü; checkbox değişimi sırayı bozmuyor.
+  const grid = document.getElementById('urun-grid');
 
   // ── Etiket seçim checkbox'ları (her ürün kartı) ───────────────
   document.querySelectorAll('.urun-secim-input').forEach((cb) => {
@@ -244,9 +231,6 @@
           card?.classList.toggle('is-deselected', value);
           if (card) card.dataset.secili = value ? '0' : '1';
           alert(payload.error || 'Seçim kaydedilemedi');
-        } else {
-          // Başarılı → DOM'da yeniden sırala
-          sortGrid();
         }
       } catch (err) {
         cb.checked = !value;
@@ -624,6 +608,102 @@
         if (!res.ok || payload.ok === false) {
           alert(payload.error || 'Sıralama kaydedilemedi');
           // Sayfayı yenile — DB ile UI uyumsuzluğunu yansıt
+          window.location.reload();
+        }
+      } catch (err) {
+        alert('Bağlantı hatası');
+        window.location.reload();
+      }
+    });
+  }
+
+  // ── Ürün ızgarası: drag-and-drop sıralama (handle: ≡) ────────────────────
+  // Pattern: .kombi-list ile aynı (mousedown handle takibi → dragstart koşullu).
+  // Fark: grid 2D olduğu için before/after kararı X+Y'ye göre verilir.
+  if (grid) {
+    let urunDragAllowed = false;
+    let urunDragged = null;
+
+    grid.addEventListener('mousedown', (e) => {
+      urunDragAllowed = !!e.target.closest('.urun-drag-handle');
+    });
+    grid.addEventListener('touchstart', (e) => {
+      urunDragAllowed = !!e.target.closest('.urun-drag-handle');
+    }, { passive: true });
+
+    grid.querySelectorAll('.urun-card').forEach((card) => {
+      card.setAttribute('draggable', 'true');
+    });
+
+    grid.addEventListener('dragstart', (e) => {
+      const card = e.target.closest('.urun-card');
+      if (!card || !urunDragAllowed) {
+        e.preventDefault();
+        return;
+      }
+      urunDragged = card;
+      card.classList.add('is-dragging');
+      try {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', card.dataset.urunId);
+      } catch (_) {}
+    });
+
+    grid.addEventListener('dragend', () => {
+      if (urunDragged) urunDragged.classList.remove('is-dragging');
+      grid.querySelectorAll('.is-drag-over').forEach(el => el.classList.remove('is-drag-over'));
+      urunDragged = null;
+      urunDragAllowed = false;
+    });
+
+    grid.addEventListener('dragover', (e) => {
+      if (!urunDragged) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const over = e.target.closest('.urun-card');
+      if (!over || over === urunDragged) return;
+
+      grid.querySelectorAll('.is-drag-over').forEach(el => el.classList.remove('is-drag-over'));
+      over.classList.add('is-drag-over');
+
+      // 2D grid: aynı satırdaysa X karar verir, değilse Y.
+      // Aynı satır = imleç Y'si over kartının dikey aralığında.
+      const rect = over.getBoundingClientRect();
+      const sameRow = e.clientY >= rect.top && e.clientY <= rect.bottom;
+      const before = sameRow
+        ? e.clientX < rect.left + rect.width / 2
+        : e.clientY < rect.top  + rect.height / 2;
+      if (before) over.parentNode.insertBefore(urunDragged, over);
+      else        over.parentNode.insertBefore(urunDragged, over.nextSibling);
+    });
+
+    grid.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      if (!urunDragged) return;
+
+      grid.querySelectorAll('.is-drag-over').forEach(el => el.classList.remove('is-drag-over'));
+      urunDragged.classList.remove('is-dragging');
+      urunDragged = null;
+      urunDragAllowed = false;
+
+      const koleksiyonId = grid.dataset.koleksiyonId;
+      const ids = Array.from(grid.querySelectorAll('.urun-card'))
+        .map(c => parseInt(c.dataset.urunId, 10));
+
+      try {
+        const res = await fetch(`/app/koleksiyon/${koleksiyonId}/urun-sira/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+            'Accept': 'application/json',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ ids }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || payload.ok === false) {
+          alert(payload.error || 'Sıralama kaydedilemedi');
           window.location.reload();
         }
       } catch (err) {

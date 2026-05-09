@@ -29,11 +29,11 @@
           </g>
         </svg>
       </div>
-      <span class="topbar__title">Etiket Studio</span>
+      <span class="topbar__title">Güneşler Elektronik</span>
     </div>
 
     <div class="topbar__user">
-      <span class="user-email" title="{{ user_email }}">{{ user_email }}</span>
+      <a href="{% url 'accounts:profile' %}" class="user-link" title="{{ user_email }}">{{ request.supabase_user.display_name }}</a>
       <a href="{% url 'dashboard:ayarlar' %}" class="btn-ghost" title="Ayarlar">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
@@ -51,29 +51,38 @@
   </header>
 
   <main class="content">
-    <section class="hero glass">
-      <div class="hero__text">
-        <h1>Hoş geldin 👋</h1>
-        <p>Doğtaş kataloğun Supabase'de — aşağıdan ürünleri keşfet veya etiket hazırla.</p>
-      </div>
-    </section>
-
     <section class="stat-grid">
       <a href="{% url 'dashboard:urunler_list' %}" class="stat-card glass">
         <div class="stat-card__label">Ürünler</div>
         <div class="stat-card__value">{{ stats.urun }}</div>
-        <div class="stat-card__hint">listele · ara · filtrele →</div>
+        <div class="stat-card__hint">Ara · Ekle · Filtrele →</div>
       </a>
-      <a href="{% url 'dashboard:kategoriler_list' %}" class="stat-card glass">
+      <a href="{% url 'dashboard:etiket_yazdir' %}" class="stat-card glass">
+        <div class="stat-card__label">Yazdır</div>
+        <div class="stat-card__value">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M7 8V3h10v5"/>
+            <path d="M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/>
+            <rect x="7" y="14" width="10" height="7" rx="1"/>
+            <line x1="9" y1="17" x2="15" y2="17"/>
+            <line x1="9" y1="19" x2="13" y2="19"/>
+            <circle cx="17.5" cy="12.5" r="0.6" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="stat-card__hint">Toplu Etiket → Yazdır</div>
+      </a>
+      <a href="{% url 'dashboard:kategoriler_list' %}" class="stat-card stat-card--list glass">
         <div class="stat-card__label">Kategoriler</div>
-        <div class="stat-card__value">{{ stats.kategori }}</div>
-        <div class="stat-card__hint">listele · ürünlere göz at →</div>
+        {% if kategori_adlari %}
+          <ul class="stat-card__list">
+            {% for ad in kategori_adlari %}
+              <li>{{ ad }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="stat-card__value">0</div>
+        {% endif %}
       </a>
-      <div class="stat-card glass">
-        <div class="stat-card__label">Koleksiyonlar</div>
-        <div class="stat-card__value">{{ stats.koleksiyon }}</div>
-        <div class="stat-card__hint">kategori altında</div>
-      </div>
     </section>
 
     {% if stats.urun == 0 %}

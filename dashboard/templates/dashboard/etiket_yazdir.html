@@ -1,0 +1,278 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Etiket Yazdır · Güneşler Elektronik{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:home' %}" class="brand-link" aria-label="Ana sayfa">
+        <div class="brand-mark brand-mark--sm" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="eygrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7c5cff"/><stop offset="100%" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+            <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#eygrad)" opacity="0.18"/>
+            <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#eygrad)" stroke-width="2"/>
+            <g stroke="url(#eygrad)" stroke-width="2" stroke-linecap="round">
+              <line x1="16" y1="22" x2="16" y2="42"/><line x1="20" y1="22" x2="20" y2="42"/>
+              <line x1="24" y1="22" x2="24" y2="42"/><line x1="28" y1="22" x2="28" y2="42"/>
+              <line x1="32" y1="22" x2="32" y2="42"/><line x1="36" y1="22" x2="36" y2="42"/>
+              <line x1="40" y1="22" x2="40" y2="42"/>
+            </g>
+          </svg>
+        </div>
+        <span class="topbar__title">Güneşler Elektronik</span>
+      </a>
+    </div>
+    <div class="topbar__user">
+      <a href="{% url 'accounts:profile' %}" class="user-link" title="{{ request.supabase_user.email }}">{{ request.supabase_user.display_name }}</a>
+      <button type="button" class="btn-ghost" id="logout-btn">Çıkış</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <nav class="breadcrumb" aria-label="Yol">
+      <a href="{% url 'dashboard:home' %}">Ana sayfa</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span>Etiket Yazdır</span>
+    </nav>
+
+    <section class="page-header">
+      <div>
+        <h1 class="page-title">Etiket Yazdır</h1>
+        <p class="page-subtitle">
+          Mağaza ve güncelleme tarihine göre fiyatı değişen etiketleri toplu yazdır.
+        </p>
+      </div>
+    </section>
+
+    <form class="yazdir-filters glass" method="get" action="{% url 'dashboard:etiket_yazdir' %}">
+      <fieldset class="yazdir-filters__group">
+        <legend>Mağaza</legend>
+        <label class="radio-pill">
+          <input type="radio" name="magaza" value="exc" {% if magaza == 'exc' %}checked{% endif %}>
+          <span>EXC</span>
+        </label>
+        <label class="radio-pill">
+          <input type="radio" name="magaza" value="sube" {% if magaza == 'sube' %}checked{% endif %}>
+          <span>ŞUBE</span>
+        </label>
+      </fieldset>
+
+      <button type="submit" class="btn-primary btn-primary--compact">Filtrele</button>
+
+      <div class="yazdir-filters__dates">
+        <label class="field">
+          <span class="field-label">Güncelleme Tarihi</span>
+          <input type="date" name="tarih_baslangic" value="{{ tarih_baslangic }}">
+        </label>
+      </div>
+    </form>
+
+    {% if filtre_uygulandi %}
+      {% if gruplar %}
+        <form id="yazdir-form" method="post"
+              action="{% url 'dashboard:etiket_yazdir_pdf' %}"
+              target="_blank">
+          {% csrf_token %}
+
+          <div class="yazdir-toolbar glass">
+            <button type="button" id="tumu-btn" class="btn-ghost" data-mode="all">
+              <span id="tumu-btn-label">Tümünü Bırak</span>
+            </button>
+            <span class="cell-meta">
+              <span id="secili-say">{{ toplam_say }}</span> /
+              {{ toplam_say }} seçili
+            </span>
+            <span class="cell-meta">
+              Mağaza: <strong>{% if magaza == 'exc' %}EXC{% else %}ŞUBE{% endif %}</strong>
+              · {{ tarih_baslangic }}'ten itibaren
+            </span>
+            <button type="submit" class="btn-primary btn-primary--compact yazdir-toolbar__print">
+              Yazdır ({{ toplam_say }})
+            </button>
+          </div>
+
+          <div class="yazdir-table-wrap glass">
+            <table class="yazdir-table">
+              <thead>
+                <tr>
+                  <th class="col-check">
+                    <button type="button" class="yazdir-table__expand-all"
+                            id="expand-all-btn" aria-label="Tüm kategorileri aç/kapat"
+                            title="Tüm kategorileri aç/kapat">
+                      <svg class="yazdir-group__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </button>
+                  </th>
+                  <th>Koleksiyon</th>
+                  <th>Takım</th>
+                  <th>Son güncelleme</th>
+                </tr>
+              </thead>
+              {% for grup in gruplar %}
+                <tbody class="yazdir-group is-collapsed" data-kategori="{{ grup.kategori_ad }}">
+                  <tr class="yazdir-group__head">
+                    <td colspan="4">
+                      <div class="yazdir-group__head-row">
+                        <button type="button" class="yazdir-group__toggle" aria-expanded="false" aria-label="{{ grup.kategori_ad }} kategorisini genişlet">
+                          <svg class="yazdir-group__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="6 9 12 15 18 9"/>
+                          </svg>
+                        </button>
+                        <span class="yazdir-group__count">{{ grup.koleksiyonlar|length }}</span>
+                        <strong class="yazdir-group__ad">{{ grup.kategori_ad }}</strong>
+                      </div>
+                    </td>
+                  </tr>
+                  {% for k in grup.koleksiyonlar %}
+                    <tr class="yazdir-group__row">
+                      <td class="col-check">
+                        <label class="row-check">
+                          <input type="checkbox" class="yazdir-row-cb"
+                                 name="koleksiyon_ids" value="{{ k.id }}" checked>
+                          <span class="row-check__mark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                          </span>
+                        </label>
+                      </td>
+                      <td>
+                        <a href="{% url 'dashboard:urunler_list' %}?koleksiyon={{ k.id }}"
+                           title="Koleksiyonu aç" class="yazdir-table__link">{{ k.ad }}</a>
+                      </td>
+                      <td>{{ k.takim_adi|default:"—" }}</td>
+                      <td>{% if k.son_guncelleme %}{{ k.son_guncelleme|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              {% endfor %}
+            </table>
+          </div>
+        </form>
+      {% else %}
+        <section class="empty-state glass">
+          <div class="empty-state__icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="10" y="10" width="44" height="44" rx="10"/>
+              <path d="M20 22h24M20 32h24M20 42h16"/>
+            </svg>
+          </div>
+          <h2>Bu kriterlere uyan koleksiyon yok</h2>
+          <p>
+            {% if magaza == 'exc' %}EXC{% else %}ŞUBE{% endif %} bayrağı işaretli + takım atanmış
+            + {{ tarih_baslangic }} tarihinden sonra fiyat güncellemesi olan etiket bulunamadı.
+          </p>
+        </section>
+      {% endif %}
+    {% endif %}
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('logout-btn')?.addEventListener('click', () => window.EtiketAuth.logout());
+
+      // ── Kategori grup accordion: chevron toggle ────────────────────────
+      const tableEl   = document.querySelector('.yazdir-table');
+      const allBtn    = document.getElementById('expand-all-btn');
+
+      function syncAllState() {
+        const groups = document.querySelectorAll('.yazdir-group');
+        if (!groups.length) return;
+        const allExpanded = Array.from(groups).every(
+          (g) => !g.classList.contains('is-collapsed')
+        );
+        if (tableEl) tableEl.classList.toggle('is-all-expanded', allExpanded);
+        if (allBtn) allBtn.setAttribute('aria-expanded', allExpanded ? 'true' : 'false');
+      }
+
+      function toggleGroup(tbody) {
+        if (!tbody) return;
+        tbody.classList.toggle('is-collapsed');
+        const expanded = !tbody.classList.contains('is-collapsed');
+        const btn = tbody.querySelector('.yazdir-group__toggle');
+        if (btn) btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        syncAllState();
+      }
+
+      // Butona doğrudan handler — propagation'ı durdurur ki tr handler'ı çift
+      // toggle yapmasın.
+      document.querySelectorAll('.yazdir-group__toggle').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleGroup(btn.closest('.yazdir-group'));
+        });
+      });
+      // Grup başlığı satırının her yeri tıklanabilir (button hariç).
+      document.querySelectorAll('.yazdir-group__head').forEach((tr) => {
+        tr.addEventListener('click', () => {
+          toggleGroup(tr.closest('.yazdir-group'));
+        });
+      });
+
+      // Toplu aç/kapa: en az bir kapalı varsa hepsini aç, hepsi açıksa hepsini kapat
+      allBtn?.addEventListener('click', () => {
+        const groups = document.querySelectorAll('.yazdir-group');
+        const hasCollapsed = Array.from(groups).some(
+          (g) => g.classList.contains('is-collapsed')
+        );
+        groups.forEach((g) => {
+          g.classList.toggle('is-collapsed', !hasCollapsed);
+          const btn = g.querySelector('.yazdir-group__toggle');
+          if (btn) btn.setAttribute('aria-expanded', hasCollapsed ? 'true' : 'false');
+        });
+        syncAllState();
+      });
+
+      syncAllState();  // ilk render'da senkronize et (hepsi kapalı → false)
+
+      // ── Checkbox sayacı + Tümü toggle + Yazdır buton durumu ─────────────
+      const checkboxes = Array.from(document.querySelectorAll('.yazdir-row-cb'));
+      const sayEl      = document.getElementById('secili-say');
+      const tumuBtn    = document.getElementById('tumu-btn');
+      const tumuLabel  = document.getElementById('tumu-btn-label');
+      const printBtn   = document.querySelector('.yazdir-toolbar__print');
+
+      function refreshState() {
+        const seciliCount = checkboxes.filter((c) => c.checked).length;
+        const total = checkboxes.length;
+        if (sayEl) sayEl.textContent = seciliCount;
+        if (printBtn) {
+          printBtn.textContent = `Yazdır (${seciliCount})`;
+          printBtn.disabled = seciliCount === 0;
+        }
+        if (tumuLabel) {
+          if (seciliCount === total) {
+            tumuLabel.textContent = 'Tümünü Bırak';
+            tumuBtn.dataset.mode = 'all';
+          } else {
+            tumuLabel.textContent = 'Tümünü Seç';
+            tumuBtn.dataset.mode = 'none';
+          }
+        }
+      }
+
+      tumuBtn?.addEventListener('click', () => {
+        const yeniDeger = tumuBtn.dataset.mode !== 'all';
+        checkboxes.forEach((cb) => { cb.checked = yeniDeger; });
+        refreshState();
+      });
+
+      checkboxes.forEach((cb) => cb.addEventListener('change', refreshState));
+      refreshState();
+    });
+  </script>
+{% endblock %}

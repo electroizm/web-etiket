@@ -5,7 +5,7 @@ Auth gate: @login_required_supabase (Supabase JWT → Django session).
 """
 import json
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods
 from accounts.decorators import login_required_supabase, login_required_supabase_api
 from catalog.database import SessionLocal
 from catalog.sa_models import (
+    Fiyat,
     Kategori,
     Kombinasyon,
     KombinasyonUrun,
@@ -61,12 +62,14 @@ def home(request):
     session = SessionLocal()
     try:
         stats = {
-            "urun":       session.scalar(select(func.count()).select_from(Urun)) or 0,
-            "kategori":   session.scalar(select(func.count()).select_from(Kategori)) or 0,
-            "koleksiyon": session.scalar(select(func.count()).select_from(Koleksiyon)) or 0,
+            "urun": session.scalar(select(func.count()).select_from(Urun)) or 0,
         }
+        kategori_adlari = list(session.scalars(
+            select(Kategori.ad).order_by(Kategori.ad)
+        ).all())
     except Exception:
-        stats = {"urun": 0, "kategori": 0, "koleksiyon": 0, "_err": True}
+        stats = {"urun": 0, "_err": True}
+        kategori_adlari = []
     finally:
         session.close()
 
@@ -74,6 +77,7 @@ def home(request):
         "user_email": request.supabase_user.email,
         "user_id": request.supabase_user.id,
         "stats": stats,
+        "kategori_adlari": kategori_adlari,
     })
 
 
@@ -153,6 +157,13 @@ def kategori_detail(request, kategori_id: int):
             .scalar_subquery()
         )
 
+        # Sıralama: takımı atanmış koleksiyonlar üstte (case=0), takımı
+        # olmayanlar altta (case=1). Her grup içinde ad'a göre alfabetik.
+        takim_yok_order = case(
+            (Koleksiyon.takim_adi.is_(None), 1),
+            else_=0,
+        )
+
         stmt = (
             select(
                 Koleksiyon.id.label("id"),
@@ -164,7 +175,7 @@ def kategori_detail(request, kategori_id: int):
                 kombi_say_subq.label("kombinasyon_sayisi"),
             )
             .where(Koleksiyon.kategori_id == kategori_id)
-            .order_by(Koleksiyon.ad)
+            .order_by(takim_yok_order, Koleksiyon.ad)
         )
         rows = session.execute(stmt).all()
 
@@ -204,16 +215,40 @@ def urunler_list(request):
     except ValueError:
         page = 1
 
+    # q için TR-normalize + trigram fuzzy (urun-ekle araması ile aynı mantık).
+    # norm_name ve ilike_full hem WHERE'de hem de sıralamada kullanılacağı için
+    # session açılmadan önce hazırlanır.
+    q_norm = tr_norm(q) if q else ""
+    norm_name_expr = func.tr_norm(Urun.urun_adi_tam)
+    ilike_full_expr = norm_name_expr.ilike(f"%{q_norm}%") if q_norm else None
+
     session = SessionLocal()
     try:
         # ── filtre koşullarını ortak hazırla ──
         where_clauses = []
         if q:
-            term = f"%{q}%"
-            where_clauses.append(or_(
-                Urun.sku.ilike(term),
-                Urun.urun_adi_tam.ilike(term),
-            ))
+            # Sorguyu kelimelere böl. Her kelime AYRI AYRI eşleşmek zorunda
+            # (AND): TR-normalize edilmiş ad'da ya substring ya da trigram
+            # benzerliği eşik üstü olmalı.  "ber iera" → "KIERA Berjer".
+            tokens = [t for t in q_norm.split() if t]
+            name_match = None
+            if tokens:
+                word_clauses = [
+                    or_(
+                        norm_name_expr.ilike(f"%{tok}%"),
+                        func.similarity(norm_name_expr, tok) > SEARCH_SIMILARITY_THRESHOLD,
+                    )
+                    for tok in tokens
+                ]
+                name_match = and_(*word_clauses)
+
+            sku_or_clauses = [
+                Urun.sku == q,                # tam SKU eşleşmesi
+                Urun.sku.ilike(f"%{q}%"),     # kısmi SKU
+            ]
+            if name_match is not None:
+                sku_or_clauses.append(name_match)
+            where_clauses.append(or_(*sku_or_clauses))
 
         if kategori_id.isdigit():
             kid = int(kategori_id)
@@ -242,33 +277,35 @@ def urunler_list(request):
         for c in where_clauses:
             stmt = stmt.where(c)
 
-        # Koleksiyon filtresi varsa: işaretli ürünler önce gelsin (etiket_secili
-        # DESC) — scalar subquery ile order_by, mevcut where_clauses bozulmuyor.
-        secili_order = None
+        # Koleksiyon filtresi varsa: kullanıcının drag-and-drop ile verdiği
+        # manuel sıra (urun_koleksiyon.siralama) bağlayıcıdır. sort param'ı
+        # bu modda yok sayılır (template'te dropdown da gizli).
         if koleksiyon_id.isdigit():
             kolid_int = int(koleksiyon_id)
-            secili_order = (
-                select(urun_koleksiyon.c.etiket_secili)
+            siralama_order = (
+                select(urun_koleksiyon.c.siralama)
                 .where(
                     urun_koleksiyon.c.koleksiyon_id == kolid_int,
                     urun_koleksiyon.c.urun_id == Urun.id,
                 )
                 .scalar_subquery()
             )
-
-        # sıralama
-        if sort == "fiyat_artan":
-            base_order = [Urun.son_perakende_fiyat.asc().nulls_last(), Urun.urun_adi_tam.asc()]
-        elif sort == "fiyat_azalan":
-            base_order = [Urun.son_perakende_fiyat.desc().nulls_last(), Urun.urun_adi_tam.asc()]
-        elif sort == "yeni":
-            base_order = [Urun.son_guncelleme.desc()]
-        else:  # 'ad'
-            base_order = [Urun.urun_adi_tam.asc()]
-            sort = "ad"
-        if secili_order is not None:
-            stmt = stmt.order_by(secili_order.desc(), *base_order)
+            stmt = stmt.order_by(siralama_order.asc(), Urun.id.asc())
         else:
+            # Genel ürün listesi — sort param'a göre.
+            if sort == "fiyat_artan":
+                base_order = [Urun.son_perakende_fiyat.asc().nulls_last(), Urun.urun_adi_tam.asc()]
+            elif sort == "fiyat_azalan":
+                base_order = [Urun.son_perakende_fiyat.desc().nulls_last(), Urun.urun_adi_tam.asc()]
+            elif sort == "yeni":
+                base_order = [Urun.son_guncelleme.desc()]
+            else:  # 'ad'
+                # q varsa: tam-sorgu substring eşleşenler en üstte, sonra ad ASC.
+                if ilike_full_expr is not None:
+                    base_order = [ilike_full_expr.desc(), Urun.urun_adi_tam.asc()]
+                else:
+                    base_order = [Urun.urun_adi_tam.asc()]
+                sort = "ad"
             stmt = stmt.order_by(*base_order)
 
         stmt = stmt.limit(PER_PAGE).offset((page - 1) * PER_PAGE)
@@ -370,7 +407,7 @@ def urunler_list(request):
             out = out + ([0] if b < total - 1 else []) + [total]
         return out
 
-    return render(request, "dashboard/urunler_list.html", {
+    context = {
         "urunler": urunler_data,
         "kategoriler": kategoriler_data,
         "q": q,
@@ -384,7 +421,372 @@ def urunler_list(request):
         "page_window": page_window(page, total_pages),
         "koleksiyon_info": koleksiyon_info,
         "kombinasyonlar": kombinasyonlar_data,
+    }
+
+    # AJAX: arama input'u canlı filtre yaparken sayfa yenilenmeden sadece
+    # sonuç alanını ve subtitle'ı günceller. Sadece koleksiyon-modu olmayan
+    # genel listede çağrılır (form bu modda yok zaten).
+    if request.headers.get("X-Partial") == "1":
+        from django.template.loader import render_to_string
+        partial_html = render_to_string(
+            "dashboard/_urunler_results.html", context, request=request
+        )
+        return JsonResponse({
+            "subtitle": f"{total} ürün · sayfa {page}/{total_pages}",
+            "html": partial_html,
+        })
+
+    return render(request, "dashboard/urunler_list.html", context)
+
+
+# ─── Yeni ürün ekleme (manuel) ───────────────────────────────────────────────
+
+@login_required_supabase
+def urun_yeni(request):
+    """GET: form sayfası. POST: yeni ürünü oluştur ve listeye yönlendir.
+
+    Scraper'ın yeni SKU pipeline'ını birebir takip eder:
+      - urunler tablosu : yeni satır (id otomatik artar; son_guncelleme NOW())
+      - kategoriler     : yoksa oluştur (sira=999 — sona düşsün)
+      - koleksiyonlar   : kategoride yoksa oluştur
+      - urun_koleksiyon : M2M satırı (etiket_secili default false)
+      - fiyatlar        : history satırı (kaynak='manual')
+
+    İstenen alanlar (kullanıcıdan):
+      sku · urun_adi_tam · son_liste_fiyat · son_perakende_fiyat · url
+      + kategorize için: kategori_ad · koleksiyon_ad
+    """
+    from django.shortcuts import redirect as _redirect
+    from django.contrib import messages
+
+    session = SessionLocal()
+    try:
+        # Datalist için mevcut kategori/koleksiyon adları
+        kategori_adlari = [
+            row[0] for row in session.execute(
+                select(Kategori.ad).order_by(Kategori.ad)
+            ).all()
+        ]
+        koleksiyon_adlari = sorted({
+            row[0] for row in session.execute(select(Koleksiyon.ad)).all()
+        })
+
+        if request.method == "POST":
+            sku           = (request.POST.get("sku") or "").strip()
+            urun_adi      = (request.POST.get("urun_adi_tam") or "").strip()
+            kategori_ad   = (request.POST.get("kategori_ad") or "").strip()
+            koleksiyon_ad = (request.POST.get("koleksiyon_ad") or "").strip()
+            url_in        = (request.POST.get("url") or "").strip() or None
+            liste_raw     = (request.POST.get("son_liste_fiyat") or "").strip()
+            perakende_raw = (request.POST.get("son_perakende_fiyat") or "").strip()
+
+            errors: list[str] = []
+            if not sku:
+                errors.append("SKU zorunlu.")
+            elif len(sku) > 50:
+                errors.append("SKU en fazla 50 karakter olabilir.")
+            if not urun_adi:
+                errors.append("Ürün adı zorunlu.")
+            elif len(urun_adi) > 300:
+                errors.append("Ürün adı en fazla 300 karakter olabilir.")
+            if not kategori_ad:
+                errors.append("Kategori zorunlu.")
+            elif kategori_ad not in kategori_adlari:
+                errors.append(
+                    f"Kategori '{kategori_ad}' mevcut değil. Listeden seçin."
+                )
+            if not koleksiyon_ad:
+                errors.append("Koleksiyon zorunlu.")
+            elif len(koleksiyon_ad) > 200:
+                errors.append("Koleksiyon adı en fazla 200 karakter olabilir.")
+            if url_in and len(url_in) > 500:
+                errors.append("URL en fazla 500 karakter olabilir.")
+
+            def _to_int_or_none(s: str) -> tuple[int | None, bool]:
+                """(deger, ok). Boş input → (None, True). Geçersiz → (None, False)."""
+                if not s:
+                    return None, True
+                try:
+                    return int(s), True
+                except ValueError:
+                    return None, False
+
+            son_liste, ok_liste = _to_int_or_none(liste_raw)
+            son_perakende, ok_perakende = _to_int_or_none(perakende_raw)
+            if not ok_liste:
+                errors.append("Liste fiyat geçerli bir tam sayı olmalı (TL).")
+            if not ok_perakende:
+                errors.append("Perakende fiyat geçerli bir tam sayı olmalı (TL).")
+
+            # SKU çakışması
+            if not errors:
+                mevcut = session.scalar(select(Urun).where(Urun.sku == sku))
+                if mevcut is not None:
+                    errors.append(
+                        f"SKU '{sku}' zaten kullanılıyor (mevcut: {mevcut.urun_adi_tam})."
+                    )
+
+            if errors:
+                return render(request, "dashboard/urun_yeni.html", {
+                    "errors": errors,
+                    "form": {
+                        "sku": sku,
+                        "urun_adi_tam": urun_adi,
+                        "kategori_ad": kategori_ad,
+                        "koleksiyon_ad": koleksiyon_ad,
+                        "url": url_in or "",
+                        "son_liste_fiyat": liste_raw,
+                        "son_perakende_fiyat": perakende_raw,
+                    },
+                    "kategori_adlari": kategori_adlari,
+                    "koleksiyon_adlari": koleksiyon_adlari,
+                }, status=400)
+
+            # ── Pipeline: Kategori → Koleksiyon → Urun → M2M → Fiyat ────────
+            # Kategori UI'da dropdown'dan seçildiği ve validasyondan geçtiği
+            # için burada None olmamalı; yine de sayfa yüklendikten sonra
+            # silinme ihtimaline karşı defansif kontrol.
+            kategori = session.scalar(
+                select(Kategori).where(Kategori.ad == kategori_ad)
+            )
+            if kategori is None:
+                raise ValueError(
+                    f"Kategori '{kategori_ad}' artık mevcut değil. Sayfayı yenileyin."
+                )
+
+            koleksiyon = session.scalar(
+                select(Koleksiyon).where(
+                    Koleksiyon.kategori_id == kategori.id,
+                    Koleksiyon.ad == koleksiyon_ad,
+                )
+            )
+            if koleksiyon is None:
+                koleksiyon = Koleksiyon(kategori_id=kategori.id, ad=koleksiyon_ad)
+                session.add(koleksiyon)
+                session.flush()
+
+            urun = Urun(
+                sku=sku,
+                urun_adi_tam=urun_adi,
+                url=url_in,
+                son_liste_fiyat=son_liste,
+                son_perakende_fiyat=son_perakende,
+                # son_guncelleme: server_default=now() — INSERT'te DB tarafında set
+            )
+            session.add(urun)
+            session.flush()
+
+            # M2M bağ (etiket_secili default FALSE — kullanıcı sonra işaretler)
+            urun.koleksiyonlar.append(koleksiyon)
+
+            # Fiyat history (manual kaynak)
+            session.add(Fiyat(
+                urun_id=urun.id,
+                liste_fiyat=son_liste,
+                perakende_fiyat=son_perakende,
+                kaynak="manual",
+            ))
+
+            session.commit()
+            messages.success(request, f"Ürün eklendi: {sku} — {urun_adi}")
+            return _redirect("dashboard:urunler_list")
+
+        # ── GET: boş form ────────────────────────────────────────────────
+        return render(request, "dashboard/urun_yeni.html", {
+            "form": {},
+            "kategori_adlari": kategori_adlari,
+            "koleksiyon_adlari": koleksiyon_adlari,
+        })
+    except Exception as e:
+        session.rollback()
+        return render(request, "dashboard/urun_yeni.html", {
+            "errors": [f"Sunucu hatası: {e}"],
+            "form": {
+                "sku": (request.POST.get("sku") or "").strip(),
+                "urun_adi_tam": (request.POST.get("urun_adi_tam") or "").strip(),
+                "kategori_ad": (request.POST.get("kategori_ad") or "").strip(),
+                "koleksiyon_ad": (request.POST.get("koleksiyon_ad") or "").strip(),
+                "url": (request.POST.get("url") or "").strip(),
+                "son_liste_fiyat": (request.POST.get("son_liste_fiyat") or "").strip(),
+                "son_perakende_fiyat": (request.POST.get("son_perakende_fiyat") or "").strip(),
+            },
+            "kategori_adlari": [],
+            "koleksiyon_adlari": [],
+        }, status=500)
+    finally:
+        session.close()
+
+
+# ─── Etiket Yazdır (mağaza + tarih filtreli toplu PDF) ──────────────────────
+
+@login_required_supabase
+def etiket_yazdir(request):
+    """GET /app/etiket-yazdir/ — Mağaza + güncelleme tarihi filtresine göre
+    etiket basılacak koleksiyonları kategoriye göre gruplayarak listeler.
+
+    Query params:
+      magaza:           'exc' | 'sube'  (boşsa: filtre uygulanmamış sayılır;
+                                          tablo gösterilmez, sadece form çıkar)
+      tarih_baslangic:  YYYY-MM-DD     (default 7 gün öncesi)
+
+    'Filtrele' tuşuna basıldığında URL'de magaza geldiği için tablo render
+    edilir. İlk girişte (boş URL) filtre uygulanmamış, tablo yok.
+    """
+    from datetime import date, datetime as dt, time as t, timedelta
+
+    magaza = (request.GET.get("magaza") or "").strip().lower()
+    if magaza not in ("exc", "sube"):
+        magaza = ""  # seçilmedi → tablo gösterilmeyecek
+
+    bugun = date.today()
+    default_baslangic = bugun
+
+    def _parse_date(raw, fallback):
+        if not raw:
+            return fallback
+        try:
+            return dt.strptime(raw.strip(), "%Y-%m-%d").date()
+        except (ValueError, AttributeError):
+            return fallback
+
+    tarih_baslangic = _parse_date(
+        request.GET.get("tarih_baslangic"), default_baslangic
+    )
+    range_start = dt.combine(tarih_baslangic, t.min)
+
+    # Henüz mağaza seçilmedi → tablo yok, sadece form
+    if not magaza:
+        return render(request, "dashboard/etiket_yazdir.html", {
+            "magaza":           "",
+            "tarih_baslangic":  tarih_baslangic.strftime("%Y-%m-%d"),
+            "filtre_uygulandi": False,
+            "gruplar":          [],
+            "toplam_say":       0,
+        })
+
+    flag_col = Koleksiyon.bayrak_exc if magaza == "exc" else Koleksiyon.bayrak_sube
+
+    session = SessionLocal()
+    try:
+        # Bu koleksiyonun etiket_secili ürünleri arasında aralıkta güncellenen var mı?
+        urun_eslesen = (
+            select(1)
+            .select_from(urun_koleksiyon)
+            .join(Urun, Urun.id == urun_koleksiyon.c.urun_id)
+            .where(
+                urun_koleksiyon.c.koleksiyon_id == Koleksiyon.id,
+                urun_koleksiyon.c.etiket_secili.is_(True),
+                Urun.son_guncelleme >= range_start,
+            )
+            .exists()
+        )
+        # Etiket_secili kombinasyonun ürünleri arasında aralıkta güncellenen var mı?
+        kombi_eslesen = (
+            select(1)
+            .select_from(Kombinasyon)
+            .join(KombinasyonUrun, KombinasyonUrun.kombinasyon_id == Kombinasyon.id)
+            .join(Urun, Urun.id == KombinasyonUrun.urun_id)
+            .where(
+                Kombinasyon.koleksiyon_id == Koleksiyon.id,
+                Kombinasyon.etiket_secili.is_(True),
+                Urun.son_guncelleme >= range_start,
+            )
+            .exists()
+        )
+
+        kol_stmt = (
+            select(Koleksiyon, Kategori.ad.label("kategori_ad"))
+            .join(Kategori, Kategori.id == Koleksiyon.kategori_id)
+            .where(
+                flag_col.is_(True),
+                Koleksiyon.takim_adi.isnot(None),
+                or_(urun_eslesen, kombi_eslesen),
+            )
+            .order_by(Kategori.ad, Koleksiyon.ad)
+        )
+        rows = list(session.execute(kol_stmt).all())
+
+        # Kategori bazlı grupla (insertion-order korunur, Kategori.ad zaten asc)
+        gruplar_map: dict[str, list[dict]] = {}
+        toplam_say = 0
+        for row in rows:
+            kol: Koleksiyon = row[0]
+            kategori_ad: str = row.kategori_ad
+
+            son_max = session.scalar(
+                select(func.max(Urun.son_guncelleme))
+                .select_from(urun_koleksiyon)
+                .join(Urun, Urun.id == urun_koleksiyon.c.urun_id)
+                .where(
+                    urun_koleksiyon.c.koleksiyon_id == kol.id,
+                    urun_koleksiyon.c.etiket_secili.is_(True),
+                )
+            )
+
+            gruplar_map.setdefault(kategori_ad, []).append({
+                "id":             kol.id,
+                "ad":             kol.ad,
+                "takim_adi":      kol.takim_adi,
+                "son_guncelleme": son_max,
+            })
+            toplam_say += 1
+
+        gruplar = [
+            {"kategori_ad": k, "koleksiyonlar": v}
+            for k, v in gruplar_map.items()
+        ]
+    finally:
+        session.close()
+
+    return render(request, "dashboard/etiket_yazdir.html", {
+        "magaza":           magaza,
+        "tarih_baslangic":  tarih_baslangic.strftime("%Y-%m-%d"),
+        "filtre_uygulandi": True,
+        "gruplar":          gruplar,
+        "toplam_say":       toplam_say,
     })
+
+
+@login_required_supabase
+@require_http_methods(["POST"])
+def etiket_yazdir_pdf(request):
+    """POST /app/etiket-yazdir/pdf/  body: koleksiyon_ids=<id>&koleksiyon_ids=<id>...
+
+    Seçili koleksiyonların etiket PDF'lerini tek doküman halinde üretir
+    (her koleksiyon ayrı sayfa). Tarayıcıda inline açılır.
+    """
+    from catalog.services.etiket_pdf import pdf_coklu_koleksiyon_etiketi
+
+    raw_ids = request.POST.getlist("koleksiyon_ids")
+    kol_ids: list[int] = []
+    for s in raw_ids:
+        try:
+            kol_ids.append(int(s))
+        except (TypeError, ValueError):
+            continue
+
+    if not kol_ids:
+        return HttpResponse(
+            "<!doctype html><html lang='tr'><head><meta charset='utf-8'>"
+            "<title>Seçim yok</title>"
+            "<style>body{font-family:system-ui,sans-serif;max-width:560px;"
+            "margin:80px auto;padding:24px;line-height:1.6;color:#1f2937}"
+            "h1{color:#b91c1c;font-size:20px}a{color:#6d28d9}</style></head>"
+            "<body><h1>Seçim yok</h1><p>Yazdırmak için en az bir koleksiyon seçin.</p>"
+            "<p><a href='javascript:history.back()'>← Geri dön</a></p>"
+            "</body></html>",
+            status=400,
+        )
+
+    session = SessionLocal()
+    try:
+        pdf_bytes = pdf_coklu_koleksiyon_etiketi(session, kol_ids)
+    finally:
+        session.close()
+
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = 'inline; filename="etiketler.pdf"'
+    return response
 
 
 # ─── JSON API: koleksiyon rename (with merge) ────────────────────────────────
@@ -528,9 +930,96 @@ def urun_rename(request, urun_id: int):
         if urun.urun_adi_tam == yeni_ad:
             return JsonResponse({"ok": True, "ad": urun.urun_adi_tam, "unchanged": True})
 
+        from datetime import datetime as _dt, timezone as _tz
         urun.urun_adi_tam = yeni_ad
+        urun.son_guncelleme = _dt.now(_tz.utc)
         session.commit()
         return JsonResponse({"ok": True, "ad": yeni_ad})
+    except Exception as e:
+        session.rollback()
+        return JsonResponse({"ok": False, "error": f"Sunucu hatası: {e}"}, status=500)
+    finally:
+        session.close()
+
+
+# ─── JSON API: ürünü tamamen DB'den sil ──────────────────────────────────────
+
+@csrf_protect
+@require_http_methods(["POST"])
+@login_required_supabase_api
+def urun_sil(request, urun_id: int):
+    """POST /app/urun/<id>/sil/ — Ürünü tamamen DB'den sil.
+
+    Önce kullanım kontrolleri (her biri ayrı engel):
+      1) Herhangi bir koleksiyonda etiket için işaretli mi (etiket_secili=true)?
+      2) Herhangi bir kombinasyonda kullanılıyor mu?
+      3) Bir koleksiyonun takım ürünü mü?
+
+    Hepsi temizse session.delete(urun) — FK CASCADE'leri urun_koleksiyon
+    ve fiyatlar tablolarındaki bağlı satırları otomatik temizler.
+    Engel varsa 409 + detaylı 'engeller' listesi döner.
+    """
+    session = SessionLocal()
+    try:
+        urun = session.scalar(select(Urun).where(Urun.id == urun_id))
+        if urun is None:
+            return JsonResponse({"ok": False, "error": "Ürün bulunamadı."}, status=404)
+
+        urun_ad = urun.urun_adi_tam
+        urun_sku = urun.sku
+
+        # 1) Etiket için seçili mi (herhangi bir koleksiyonda)?
+        etiketli_say = session.scalar(
+            select(func.count()).select_from(urun_koleksiyon).where(
+                urun_koleksiyon.c.urun_id == urun_id,
+                urun_koleksiyon.c.etiket_secili.is_(True),
+            )
+        ) or 0
+
+        # 2) Kombinasyonda kullanılıyor mu?
+        kombi_rows = session.execute(
+            select(Kombinasyon.id, Kombinasyon.ad)
+            .join(KombinasyonUrun, KombinasyonUrun.kombinasyon_id == Kombinasyon.id)
+            .where(KombinasyonUrun.urun_id == urun_id)
+            .distinct()
+        ).all()
+
+        # 3) Bir koleksiyonun takım ürünü mü?
+        takim_rows = session.execute(
+            select(Koleksiyon.id, Koleksiyon.ad).where(
+                Koleksiyon.takim_urun_id == urun_id
+            )
+        ).all()
+
+        engeller: list[str] = []
+        if etiketli_say > 0:
+            engeller.append(f"{etiketli_say} koleksiyonda etiket için işaretli")
+        if kombi_rows:
+            adlar = ", ".join(r.ad for r in kombi_rows[:3])
+            ek = "" if len(kombi_rows) <= 3 else f" +{len(kombi_rows) - 3}"
+            engeller.append(f"{len(kombi_rows)} kombinasyonda kullanılıyor ({adlar}{ek})")
+        if takim_rows:
+            adlar = ", ".join(r.ad for r in takim_rows[:3])
+            ek = "" if len(takim_rows) <= 3 else f" +{len(takim_rows) - 3}"
+            engeller.append(f"{len(takim_rows)} koleksiyonun takım ürünü ({adlar}{ek})")
+
+        if engeller:
+            return JsonResponse({
+                "ok": False,
+                "error": "Ürün silinemiyor: " + " · ".join(engeller)
+                         + ". Önce bu kullanımları temizleyin.",
+                "engeller": engeller,
+            }, status=409)
+
+        # Tüm engeller temiz → sil. CASCADE: urun_koleksiyon + fiyatlar otomatik
+        # silinir; kombinasyon_urunleri ON DELETE RESTRICT ama yukarıda
+        # kontrolden geçti, eşleşen satır yok.
+        session.delete(urun)
+        session.commit()
+        return JsonResponse({
+            "ok": True,
+            "silindi": {"id": urun_id, "sku": urun_sku, "ad": urun_ad},
+        })
     except Exception as e:
         session.rollback()
         return JsonResponse({"ok": False, "error": f"Sunucu hatası: {e}"}, status=500)
@@ -914,6 +1403,48 @@ def kombinasyon_sira_toplu(request, koleksiyon_id: int):
             if k is not None:
                 k.sira = i
 
+        session.commit()
+        return JsonResponse({"ok": True})
+    except Exception as e:
+        session.rollback()
+        return JsonResponse({"ok": False, "error": f"Sunucu hatası: {e}"}, status=500)
+    finally:
+        session.close()
+
+
+@csrf_protect
+@require_http_methods(["POST"])
+@login_required_supabase_api
+def urun_sira_toplu(request, koleksiyon_id: int):
+    """POST /app/koleksiyon/<id>/urun-sira/  body: {"ids": [12, 7, 9, ...]}
+
+    Drag-and-drop sonrası bu koleksiyondaki ürünlerin yeni sırasını yazar.
+    Sıra urun_koleksiyon.siralama M2M sütununda — yani per-koleksiyon
+    (aynı urun başka koleksiyonda farklı sırada olabilir). Bu koleksiyonda
+    bulunmayan id'ler atlanır.
+    """
+    from sqlalchemy import update
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"ok": False, "error": "Geçersiz istek formatı."}, status=400)
+
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        return JsonResponse({"ok": False, "error": "ids bir int listesi olmalı."}, status=400)
+
+    session = SessionLocal()
+    try:
+        for i, uid in enumerate(ids):
+            session.execute(
+                update(urun_koleksiyon)
+                .where(
+                    urun_koleksiyon.c.koleksiyon_id == koleksiyon_id,
+                    urun_koleksiyon.c.urun_id == uid,
+                )
+                .values(siralama=i)
+            )
         session.commit()
         return JsonResponse({"ok": True})
     except Exception as e:

@@ -45,6 +45,14 @@ urun_koleksiyon = Table(
         server_default=text("false"),
         default=False,
     ),
+    # Drag-and-drop ile kullanıcının verdiği sıra — per-koleksiyon.
+    Column(
+        "siralama",
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+        default=0,
+    ),
 )
 
 

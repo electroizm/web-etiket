@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Yeni Ürün · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:home' %}" class="brand-link" aria-label="Ana sayfa">
+        <div class="brand-mark brand-mark--sm" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="uygrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7c5cff"/><stop offset="100%" stop-color="#22d3ee"/>
+              </linearGradient>
+            </defs>
+            <rect x="8" y="6" width="40" height="52" rx="8" fill="url(#uygrad)" opacity="0.18"/>
+            <rect x="8" y="6" width="40" height="52" rx="8" stroke="url(#uygrad)" stroke-width="2"/>
+            <g stroke="url(#uygrad)" stroke-width="2" stroke-linecap="round">
+              <line x1="16" y1="22" x2="16" y2="42"/><line x1="20" y1="22" x2="20" y2="42"/>
+              <line x1="24" y1="22" x2="24" y2="42"/><line x1="28" y1="22" x2="28" y2="42"/>
+              <line x1="32" y1="22" x2="32" y2="42"/><line x1="36" y1="22" x2="36" y2="42"/>
+              <line x1="40" y1="22" x2="40" y2="42"/>
+            </g>
+          </svg>
+        </div>
+        <span class="topbar__title">Güneşler Elektronik</span>
+      </a>
+    </div>
+    <div class="topbar__user">
+      <a href="{% url 'accounts:profile' %}" class="user-link" title="{{ request.supabase_user.email }}">{{ request.supabase_user.display_name }}</a>
+      <button type="button" class="btn-ghost" id="logout-btn">Çıkış</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <nav class="breadcrumb" aria-label="Yol">
+      <a href="{% url 'dashboard:urunler_list' %}">Ürünler</a>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+      <span>Yeni Ürün</span>
+    </nav>
+
+    <section class="page-header">
+      <div>
+        <h1 class="page-title">Yeni Ürün</h1>
+        <p class="page-subtitle">Manuel olarak ürün ekle — kategorize için kategori ve koleksiyon zorunlu.</p>
+      </div>
+    </section>
+
+    {% if errors %}
+      <div class="urun-yeni-errors glass" role="alert">
+        <strong>Lütfen şunları düzelt:</strong>
+        <ul>
+          {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'dashboard:urun_yeni' %}" class="urun-yeni-form" autocomplete="off">
+      {% csrf_token %}
+
+      <div class="urun-yeni-form__grid glass">
+        <div class="field">
+          <label class="field-label" for="sku">SKU <span class="req">*</span></label>
+          <input type="text" id="sku" name="sku" required maxlength="50"
+                 value="{{ form.sku|default:'' }}"
+                 placeholder="Ör. 3120018127" autofocus>
+        </div>
+
+        <div class="field field--wide">
+          <label class="field-label" for="urun_adi_tam">Ürün Adı <span class="req">*</span></label>
+          <input type="text" id="urun_adi_tam" name="urun_adi_tam" required maxlength="300"
+                 value="{{ form.urun_adi_tam|default:'' }}"
+                 placeholder="Ör. BEND Üçlü Koltuk - Ceviz">
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="kategori_ad">Kategori <span class="req">*</span></label>
+          <select id="kategori_ad" name="kategori_ad" required class="select">
+            <option value="" disabled {% if not form.kategori_ad %}selected{% endif %}>Kategori</option>
+            {% for ad in kategori_adlari %}
+              <option value="{{ ad }}" {% if form.kategori_ad == ad %}selected{% endif %}>{{ ad }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="koleksiyon_ad">Koleksiyon <span class="req">*</span></label>
+          <input type="text" id="koleksiyon_ad" name="koleksiyon_ad" required maxlength="200"
+                 list="koleksiyon-list"
+                 value="{{ form.koleksiyon_ad|default:'' }}"
+                 placeholder="Ör. BEND">
+          <datalist id="koleksiyon-list">
+            {% for ad in koleksiyon_adlari %}<option value="{{ ad }}">{% endfor %}
+          </datalist>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="son_liste_fiyat">Liste Fiyatı (TL)</label>
+          <input type="number" id="son_liste_fiyat" name="son_liste_fiyat"
+                 min="0" step="1" inputmode="numeric"
+                 value="{{ form.son_liste_fiyat|default:'' }}"
+                 placeholder="Ör. 45000">
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="son_perakende_fiyat">Perakende Fiyatı (TL)</label>
+          <input type="number" id="son_perakende_fiyat" name="son_perakende_fiyat"
+                 min="0" step="1" inputmode="numeric"
+                 value="{{ form.son_perakende_fiyat|default:'' }}"
+                 placeholder="Ör. 38250">
+        </div>
+
+        <div class="field field--wide">
+          <label class="field-label" for="url">Doğtaş Ürün URL'i (opsiyonel)</label>
+          <input type="url" id="url" name="url" maxlength="500"
+                 value="{{ form.url|default:'' }}"
+                 placeholder="https://www.dogtas.com/...">
+        </div>
+      </div>
+
+      <div class="urun-yeni-form__actions">
+        <a href="{% url 'dashboard:urunler_list' %}" class="btn-ghost">İptal</a>
+        <button type="submit" class="btn-primary btn-primary--compact">Ürünü Ekle</button>
+      </div>
+    </form>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('logout-btn')?.addEventListener('click', () => window.EtiketAuth.logout());
+    });
+  </script>
+{% endblock %}

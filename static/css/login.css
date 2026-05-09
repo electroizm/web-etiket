@@ -23,6 +23,31 @@
   --radius-md: 14px;
   --radius-sm: 10px;
   --transition: 220ms cubic-bezier(.2, .8, .2, 1);
+  --input-autofill-bg: #161a2c;
+  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  --orb-a: rgba(124, 92, 255, 0.30);
+  --orb-b: rgba(34, 211, 238, 0.22);
+  --orb-c: rgba(167, 139, 250, 0.18);
+}
+
+/* ============ LIGHT TEMA — data-theme="light" override'ları ============ */
+:root[data-theme="light"] {
+  --bg-0: #f5f6fa;
+  --bg-1: #ffffff;
+  --bg-2: #eef0f5;
+  --surface: rgba(11, 16, 32, 0.04);
+  --surface-strong: rgba(11, 16, 32, 0.08);
+  --border: rgba(11, 16, 32, 0.10);
+  --border-strong: rgba(11, 16, 32, 0.18);
+  --text: #1a1f33;
+  --text-muted: #6b7280;
+  --text-soft: #4b5563;
+  --shadow-lg: 0 30px 80px -20px rgba(124, 92, 255, 0.20), 0 10px 30px -10px rgba(34, 211, 238, 0.15);
+  --input-autofill-bg: #ffffff;
+  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(248,249,253,0.90));
+  --orb-a: rgba(124, 92, 255, 0.18);
+  --orb-b: rgba(34, 211, 238, 0.14);
+  --orb-c: rgba(167, 139, 250, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -92,6 +117,23 @@ body {
   -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
   opacity: 0.5;
 }
+:root[data-theme="light"] .bg-grid {
+  background-image:
+    linear-gradient(rgba(11, 16, 32, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 16, 32, 0.06) 1px, transparent 1px);
+}
+:root[data-theme="light"] .bg-orb { opacity: 0.30; }
+:root[data-theme="light"] .auth-title {
+  background: linear-gradient(180deg, #1a1f33, #4b5563);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+:root[data-theme="light"] .input-wrap {
+  background: rgba(11, 16, 32, 0.03);
+}
+:root[data-theme="light"] .input-wrap:focus-within {
+  background: rgba(11, 16, 32, 0.05);
+}
+:root[data-theme="light"] .input-wrap input::placeholder { color: rgba(75, 85, 99, 0.55); }
 
 @keyframes float {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
@@ -109,7 +151,7 @@ body {
 }
 
 .glass {
-  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+  background: var(--glass-bg);
   border: 1px solid var(--border);
   backdrop-filter: blur(22px) saturate(140%);
   -webkit-backdrop-filter: blur(22px) saturate(140%);
@@ -241,10 +283,16 @@ body {
 
 .input-wrap input::placeholder { color: rgba(154, 163, 199, 0.65); }
 
-.input-wrap input:-webkit-autofill {
+/* Chrome autofill — input arka planı lavantaya dönmesin (göz ikonu/metin
+   görünür kalsın). Solid bg + 99999s transition ile autofill efekti pasif. */
+.input-wrap input:-webkit-autofill,
+.input-wrap input:-webkit-autofill:hover,
+.input-wrap input:-webkit-autofill:focus,
+.input-wrap input:-webkit-autofill:active {
   -webkit-text-fill-color: var(--text);
-  -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.04) inset;
+  -webkit-box-shadow: 0 0 0 1000px var(--input-autofill-bg, #161a2c) inset;
   caret-color: var(--text);
+  transition: background-color 99999s ease-in-out 0s;
 }
 
 .toggle-eye {
@@ -254,15 +302,27 @@ body {
   place-items: center;
   background: transparent;
   border: none;
-  color: var(--text-muted);
+  /* Hem koyu input arka planında hem de chrome autofill'in lavanta arka planında
+     görünür olsun diye explicit mid-grey. */
+  color: #6b7280;
   cursor: pointer;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   transition: color var(--transition), background-color var(--transition);
 }
 .toggle-eye:hover, .toggle-eye:focus-visible {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   outline: none;
+}
+/* Tek SVG: göz çizgisi (slash) varsayılanda gizli, .is-revealed sınıfı
+   eklenince yumuşak şekilde belirir. */
+.eye-icon__slash {
+  opacity: 0;
+  transform-origin: center;
+  transition: opacity 0.18s ease;
+}
+.toggle-eye.is-revealed .eye-icon__slash {
+  opacity: 1;
 }
 
 /* ============ Remember + Links ============ */

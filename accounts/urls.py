@@ -8,9 +8,12 @@ urlpatterns = [
     path('signup/', views.signup_view, name='signup'),
     path('forgot/', views.forgot_password_view, name='forgot_password'),
     path('logout/', views.logout_view, name='logout'),
+    path('profile/', views.profile_view, name='profile'),
 
     # JSON API
     path('api/session/sync/', views.api_session_sync, name='api_session_sync'),
     path('api/session/clear/', views.api_session_clear, name='api_session_clear'),
     path('api/auth/diagnose/', views.api_auth_diagnose, name='api_auth_diagnose'),
+    path('api/profile/update-name/', views.api_profile_update_name, name='api_profile_update_name'),
+    path('api/profile/change-password/', views.api_profile_change_password, name='api_profile_change_password'),
 ]

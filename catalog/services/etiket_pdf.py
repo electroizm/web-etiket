@@ -298,41 +298,30 @@ def _draw_table(
     table.drawOn(c, 80, page_height - 180 - table._height)
 
 
-# ─── Public API ──────────────────────────────────────────────────────────────
+# ─── Per-page çizim ───────────────────────────────────────────────────────────
 
 
-def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
-    """Bir koleksiyonun fiyat etiket PDF'ini üret (A4 landscape, tek sayfa).
+def _load_kol_sayfa_verisi(session: Session, koleksiyon_id: int):
+    """(kol, urunler, kombi_data) döner. Yoksa (None, [], []) döner.
 
-    Yalnızca etiket_secili=True olan ürünler ve tüm kombinasyonlar PDF'e gider.
-    Koleksiyona takım atanmamışsa veya etiket_secili ürün yoksa boş PDF döner.
+    Validasyon:
+      - kol bulunamadı → (None, ...) → çağıran "atla" der
+      - takim_adi boş → (None, ...) → çağıran "atla" der
+
+    EtiketBosSecim/EtiketSatirAsim BURADA fırlatılır (single-mode için);
+    multi-mode bunları yakalayıp atlar.
     """
-    font, font_bold = _safe_setup_fonts()
-
-    buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=landscape(A4))
-    page_width, page_height = landscape(A4)
-
     kol = session.scalar(
         select(Koleksiyon)
         .where(Koleksiyon.id == koleksiyon_id)
-        .options(
-            selectinload(Koleksiyon.takim_urun),
-        )
+        .options(selectinload(Koleksiyon.takim_urun))
     )
     if kol is None:
-        c.setFont(font, 14)
-        c.drawString(100, 400, "Koleksiyon bulunamadı.")
-        c.save()
-        return buf.getvalue()
-
+        return None, [], []
     if not (kol.takim_adi or "").strip():
-        c.setFont(font, 14)
-        c.drawString(100, 400, "Bu koleksiyona takım atanmamış. Önce 'Takım Seç'.")
-        c.save()
-        return buf.getvalue()
+        return None, [], []
 
-    # Etikette gösterilecek ürünler: bu koleksiyondaki etiket_secili=True ürünler
+    # Etikette gösterilecek ürünler — drag-and-drop sırasında (siralama).
     urunler_stmt = (
         select(Urun)
         .join(urun_koleksiyon, urun_koleksiyon.c.urun_id == Urun.id)
@@ -340,11 +329,10 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
             urun_koleksiyon.c.koleksiyon_id == kol.id,
             urun_koleksiyon.c.etiket_secili.is_(True),
         )
-        .order_by(Urun.urun_adi_tam.asc())
+        .order_by(urun_koleksiyon.c.siralama.asc(), Urun.id.asc())
     )
     urunler = list(session.scalars(urunler_stmt).all())
 
-    # Kombinasyonlar — sadece etiket_secili=True olanlar, sira'ya göre
     kombi_stmt = (
         select(Kombinasyon)
         .where(
@@ -352,23 +340,43 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
             Kombinasyon.etiket_secili.is_(True),
         )
         .order_by(Kombinasyon.sira, Kombinasyon.id)
-        .options(
-            selectinload(Kombinasyon.urunler).selectinload(KombinasyonUrun.urun),
-        )
+        .options(selectinload(Kombinasyon.urunler).selectinload(KombinasyonUrun.urun))
     )
     kombiler = list(session.scalars(kombi_stmt).all())
     kombi_data = [(k, hesapla_kombinasyon_toplam(k)) for k in kombiler]
 
-    # En az 1 işaretli içerik gerekir; aksi halde anlamsız boş etiket basılır.
     toplam_satir = len(urunler) + len(kombi_data)
     if toplam_satir == 0:
         raise EtiketBosSecim()
     if toplam_satir > ETIKET_MAX_SATIR:
         raise EtiketSatirAsim(toplam_satir, len(urunler), len(kombi_data))
 
-    # Header: önce DB'deki yüklü slogan URL'i (Supabase Storage),
-    # yoksa lokal static/img/etiket_baslik.png, o da yoksa metin placeholder.
-    header_img = _try_load_remote_image(slogan_url_aktif(session))
+    return kol, urunler, kombi_data
+
+
+def _draw_etiket_page(
+    c: canvas.Canvas,
+    session: Session,
+    kol: Koleksiyon,
+    urunler: list[Urun],
+    kombi_data: list[tuple[Kombinasyon, dict]],
+    font: str,
+    font_bold: str,
+    *,
+    slogan_url: str | None = None,
+    yerli_uretim_url: str | None = None,
+) -> None:
+    """Verilen kanvasın o anki sayfasına bir koleksiyonun etiket içeriğini çizer.
+    Verinin önceden validate edilmiş olması beklenir. Slogan/yerli üretim
+    URL'leri çağıran tarafından cache'lenip verilebilir (multi-page'de tekrar
+    DB sorgusu atmamak için).
+    """
+    page_width, page_height = landscape(A4)
+
+    # Header (slogan banner)
+    if slogan_url is None:
+        slogan_url = slogan_url_aktif(session)
+    header_img = _try_load_remote_image(slogan_url)
     if header_img is None:
         header_img = _try_load_local_image("etiket_baslik.png")
     if header_img is not None:
@@ -377,7 +385,6 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
     else:
         _draw_header_placeholder(c, font_bold)
 
-    # Cutting marks
     _draw_cutting_lines(c)
 
     # QR — takim ürününün url'i
@@ -394,9 +401,10 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
     _draw_indirim_etiketi(c, x=510, y=page_height - 140,
                           indirim_yuzde=indirim_yuzde, font_bold=font_bold)
 
-    # Yerli üretim: önce DB'deki yüklü URL (Supabase Storage),
-    # yoksa lokal static/img/yerli_uretim.jpg veya .png, o da yoksa metin placeholder.
-    yerli_img = _try_load_remote_image(yerli_uretim_url_aktif(session))
+    # Yerli üretim logosu
+    if yerli_uretim_url is None:
+        yerli_uretim_url = yerli_uretim_url_aktif(session)
+    yerli_img = _try_load_remote_image(yerli_uretim_url)
     if yerli_img is None:
         yerli_img = (
             _try_load_local_image("yerli_uretim.jpg")
@@ -408,7 +416,6 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
     else:
         _draw_yerli_uretim_placeholder(c, font_bold)
 
-    # Tablo
     _draw_table(
         c,
         baslik=kol.takim_adi,
@@ -419,13 +426,92 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
         font_bold=font_bold,
     )
 
-    # Dipnot
     c.setFont(font, 9)
     dipnot = (
         f"Fiyat Değişiklik Tarihi: {datetime.now().strftime('%d.%m.%Y')} / "
         f"Fiyatlara KDV dahildir / Üretim Yeri: TÜRKİYE"
     )
     c.drawString(100, 80, dipnot)
+
+
+# ─── Public API ──────────────────────────────────────────────────────────────
+
+
+def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
+    """Bir koleksiyonun fiyat etiket PDF'ini üret (A4 landscape, tek sayfa).
+
+    Yalnızca etiket_secili=True olan ürünler ve tüm kombinasyonlar PDF'e gider.
+    Koleksiyona takım atanmamışsa veya etiket_secili ürün yoksa boş PDF döner.
+    """
+    font, font_bold = _safe_setup_fonts()
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=landscape(A4))
+
+    kol, urunler, kombi_data = _load_kol_sayfa_verisi(session, koleksiyon_id)
+    if kol is None:
+        # Kol bulunamadı veya takım yok — bilgilendirme sayfası
+        # (görüntüleme hatasını UI tarafında daha güzel ele alıyoruz, ama
+        # PDF de minimum mesaj göstersin)
+        c.setFont(font, 14)
+        c.drawString(100, 400, "Koleksiyon bulunamadı veya takım atanmamış.")
+        c.save()
+        return buf.getvalue()
+
+    _draw_etiket_page(c, session, kol, urunler, kombi_data, font, font_bold)
+    c.save()
+    return buf.getvalue()
+
+
+def pdf_coklu_koleksiyon_etiketi(
+    session: Session, koleksiyon_ids: list[int]
+) -> bytes:
+    """Birden fazla koleksiyonun etiket PDF'ini tek doküman olarak üret.
+
+    Her koleksiyon ayrı sayfa (A4 landscape). Geçersiz koleksiyonlar
+    (kol bulunamadı, takım atanmamış, ürün yok, satır limiti aşımı)
+    sessizce atlanır — kalanlar yine üretilir.
+    """
+    font, font_bold = _safe_setup_fonts()
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=landscape(A4))
+
+    # Multi-page için ortak görselleri tek sefer cache'le (DB+download)
+    slogan_url = slogan_url_aktif(session)
+    yerli_url = yerli_uretim_url_aktif(session)
+
+    pages_drawn = 0
+    for kid in koleksiyon_ids:
+        try:
+            kol, urunler, kombi_data = _load_kol_sayfa_verisi(session, kid)
+            if kol is None:
+                continue
+        except (EtiketBosSecim, EtiketSatirAsim) as e:
+            log.warning("Çoklu PDF · koleksiyon %s atlandı: %s", kid, e)
+            continue
+        except Exception:
+            log.exception("Çoklu PDF · koleksiyon %s yükleme hatası", kid)
+            continue
+
+        if pages_drawn > 0:
+            c.showPage()  # önceki sayfayı kapat, yeni sayfa aç
+        try:
+            _draw_etiket_page(
+                c, session, kol, urunler, kombi_data, font, font_bold,
+                slogan_url=slogan_url,
+                yerli_uretim_url=yerli_url,
+            )
+            pages_drawn += 1
+        except Exception:
+            log.exception("Çoklu PDF · koleksiyon %s çizim hatası", kid)
+            # showPage zaten yapıldı, boş sayfa kalmasın diye yine de
+            # increment ediyoruz (boş sayfayla devam, kullanıcı görür).
+            pages_drawn += 1
+
+    if pages_drawn == 0:
+        c.setFont(font, 14)
+        c.drawString(100, 400, "Yazdırılacak geçerli koleksiyon bulunamadı.")
 
     c.save()
     return buf.getvalue()
