@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # Render.com build hook — her deploy'da çalışır.
-# render.yaml -> services[*].buildCommand: ./build.sh
 #
 # Yaptıkları:
-#   1. Bağımlılıkları kur
-#   2. Static dosyaları topla (whitenoise için)
-#   3. Django sistem tablolarını migrate et (sessions cookie'de ama
-#      auth/contenttypes hala lazım — sqlite container içinde tutar)
-set -o errexit  # herhangi bir adım başarısız olursa deploy fail olsun
+#   1) Pip + bağımlılıklar
+#   2) Static dosyaları topla (whitenoise üretimde tek başına serve edecek)
+#   3) Django sistem tabloları (auth, contenttypes, vs.) — sqlite container
+#      içinde; signed-cookie session kullandığımız için kalıcılık şart değil
+set -o errexit  # adımlardan biri başarısız olursa deploy fail
 
 pip install --upgrade pip
 pip install -r requirements.txt
