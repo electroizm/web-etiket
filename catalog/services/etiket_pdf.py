@@ -276,7 +276,7 @@ def _draw_table(
         ("ALIGN",      (0, 0), (-1, -1), "LEFT"),
         ("ALIGN",      (1, 0), (-1, -1), "RIGHT"),
         ("FONTNAME",   (0, 0), (-1, 0), font_bold),
-        ("FONTSIZE",   (0, 0), (-1, 0), 16),
+        ("FONTSIZE",   (0, 0), (-1, 0), 13),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
         ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
@@ -447,6 +447,7 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
 
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=landscape(A4))
+    c.setTitle("Etiket")
 
     kol, urunler, kombi_data = _load_kol_sayfa_verisi(session, koleksiyon_id)
     if kol is None:
@@ -476,6 +477,7 @@ def pdf_coklu_koleksiyon_etiketi(
 
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=landscape(A4))
+    c.setTitle("Etiket")
 
     # Multi-page için ortak görselleri tek sefer cache'le (DB+download)
     slogan_url = slogan_url_aktif(session)
