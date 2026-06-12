@@ -108,7 +108,30 @@ class Command(BaseCommand):
         for k, v in rapor.items():
             self.stdout.write(f"  {k:20} : {v}")
 
+        # Özeti hemen GÖNDERME — DB'ye kaydet; 'bildirim_gonder' komutu
+        # (Görev Zamanlayıcı, her gün 10:07) okuyup Telegram'a iletir.
+        # Kullanıcı kararı (2026-06-12): fiyat güncellemesi YOKSA
+        # (guncellenen == 0) hiç mesaj gitmesin → özet kaydedilmez.
         if not opts["dry_run"]:
-            telegram_gonder(scrape_raporu_mesaji(
-                rapor, sure_sn=sure, basarili=basarili, toplam=len(sonuclar),
-            ))
+            import json as _json
+            from datetime import date
+
+            from catalog.database import SessionLocal
+            from catalog.services.ayarlar import set_ayar
+
+            db = SessionLocal()
+            try:
+                if rapor.get("guncellenen", 0) > 0:
+                    mesaj = scrape_raporu_mesaji(
+                        rapor, sure_sn=sure, basarili=basarili, toplam=len(sonuclar),
+                    )
+                    set_ayar(db, "son_tarama_ozeti", _json.dumps(
+                        {"tarih": date.today().isoformat(), "mesaj": mesaj},
+                        ensure_ascii=False,
+                    ))
+                else:
+                    # Eski güne ait bekleyen özet kalmasın
+                    set_ayar(db, "son_tarama_ozeti", None)
+                db.commit()
+            finally:
+                db.close()
