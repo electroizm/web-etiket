@@ -1,9 +1,9 @@
 @echo off
 REM ═══════════════════════════════════════════════════════════════════════
-REM  Telegram bildirimi — Görev Zamanlayıcısı tarafından çalıştırılır
+REM  E-posta bildirimi — Görev Zamanlayıcısı tarafından çalıştırılır
 REM  Proje: web-etiket
 REM  Zamanlama: Her gün saat 10:07
-REM  İş: Sabah taramasının özetini Telegram'a gönderir
+REM  İş: Sabah taramasının özetini e-posta ile gönderir (güncelleme varsa)
 REM  Log: D:\GoogleDrive\~ DogtasCom.txt (scraper ile aynı dosya)
 REM ═══════════════════════════════════════════════════════════════════════
 

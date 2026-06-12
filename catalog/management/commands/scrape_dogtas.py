@@ -70,7 +70,7 @@ class Command(BaseCommand):
             sys.exit(1)
 
         # Geç import — Django settings yüklenmeden SQLAlchemy modelleri açılmasın
-        from catalog.services.bildirim import scrape_raporu_mesaji, telegram_gonder
+        from catalog.services.bildirim import eposta_gonder, scrape_raporu_mesaji
         from catalog.services.scraper import DogtasScraper, db_upsert
 
         scraper = DogtasScraper(
@@ -100,7 +100,11 @@ class Command(BaseCommand):
             rapor = db_upsert(sonuclar, dry_run=opts["dry_run"])
         except Exception as e:
             # Hata bildirimi — sonra yine de yükselt ki exit code ≠ 0 olsun
-            telegram_gonder(f"❌ Doğtaş taraması HATA ile durdu:\n{type(e).__name__}: {e}")
+            eposta_gonder(
+                "Doğtaş taraması HATA ile durdu",
+                f"Tarama tamamlanamadı.\n\n{type(e).__name__}: {e}\n\n"
+                r"Log: D:\GoogleDrive\~ DogtasCom.txt",
+            )
             raise
 
         self.stdout.write("")

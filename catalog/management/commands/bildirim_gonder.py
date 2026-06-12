@@ -1,9 +1,9 @@
-"""Günlük Telegram bildirimi — Görev Zamanlayıcı her gün 10:07'de çalıştırır.
+"""Günlük e-posta bildirimi — Görev Zamanlayıcı her gün 10:07'de çalıştırır.
 
 Sabah 07:00 taraması, FİYAT GÜNCELLEMESİ VARSA (guncellenen > 0) özeti DB'ye
-yazar ('son_tarama_ozeti' ayarı); bu komut o özeti okuyup Telegram'a iletir.
+yazar ('son_tarama_ozeti' ayarı); bu komut o özeti okuyup e-posta ile iletir.
 Bugüne ait özet yoksa (güncelleme yok / tarama çalışmamış) SESSİZ kalır —
-kullanıcı kararı (2026-06-12): güncelleme yoksa hiç mesaj gitmesin.
+kullanıcı kararı (2026-06-12): güncelleme yoksa hiç bildirim gitmesin.
 
 Kullanım: python manage.py bildirim_gonder
 """
@@ -15,7 +15,7 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "Bekleyen tarama özetini Telegram'a gönderir (günlük 10:07 görevi)."
+    help = "Bekleyen tarama özetini e-posta ile gönderir (günlük 10:07 görevi)."
 
     def handle(self, *args, **opts):
         if hasattr(sys.stdout, "reconfigure"):
@@ -24,15 +24,12 @@ class Command(BaseCommand):
 
         from catalog.database import SessionLocal
         from catalog.services.ayarlar import get_ayar, set_ayar
-        from catalog.services.bildirim import (
-            telegram_aktif,
-            telegram_gonder,
-            whatsapp_aktif,
-            whatsapp_gonder,
-        )
+        from catalog.services.bildirim import eposta_aktif, eposta_gonder
 
-        if not telegram_aktif() and not whatsapp_aktif():
-            self.stdout.write("Bildirim yapılandırılmamış (Telegram/WhatsApp env boş).")
+        if not eposta_aktif():
+            self.stdout.write(
+                "E-posta yapılandırılmamış (EMAIL_HOST_USER/PASSWORD/ALICILAR boş)."
+            )
             return
 
         bugun = date.today().isoformat()
@@ -47,22 +44,20 @@ class Command(BaseCommand):
                     data = None
 
             if data and data.get("tarih") == bugun:
-                mesaj = data.get("mesaj") or ""
-                tg_ok = telegram_gonder(mesaj)
-                wa_say = whatsapp_gonder(mesaj) if whatsapp_aktif() else 0
-                if tg_ok or wa_say:
-                    # En az bir kanala ulaştı → tekrar gönderilmesin diye temizle
+                konu = f"Doğtaş fiyat güncellemesi — {date.today().strftime('%d.%m.%Y')}"
+                ok = eposta_gonder(konu, data.get("mesaj") or "")
+                if ok:
+                    # Tekrar gönderilmesin diye temizle
                     set_ayar(session, "son_tarama_ozeti", None)
                     session.commit()
-                    self.stdout.write(self.style.SUCCESS(
-                        f"Özet gönderildi (Telegram: {'✓' if tg_ok else '✗'}, "
-                        f"WhatsApp: {wa_say} alıcı)."
-                    ))
+                    self.stdout.write(self.style.SUCCESS("Özet e-posta ile gönderildi."))
                 else:
-                    self.stderr.write("Gönderim başarısız — özet korunuyor, sonra tekrar denenebilir.")
+                    self.stderr.write(
+                        "Gönderim başarısız — özet korunuyor, sonra tekrar denenebilir."
+                    )
             else:
                 # Bugüne ait özet yok = güncelleme yok (veya tarama çalışmadı).
-                # Kullanıcı kararı: bu durumda HİÇ mesaj atma.
+                # Kullanıcı kararı: bu durumda HİÇ bildirim gitmesin.
                 self.stdout.write("Bugüne ait gönderilecek özet yok — sessiz.")
         finally:
             session.close()

@@ -34,18 +34,18 @@ SCRAPER_SKIP_KATEGORILER = [
     k.strip() for k in os.getenv('SCRAPER_SKIP_KATEGORILER', 'Doğtaş Home').split(',') if k.strip()
 ]
 
-# Telegram bildirimi (scraper özeti) — ikisi de doluysa aktif
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-
-# WhatsApp bildirimi (CallMeBot) — "telefon:apikey" çiftleri, virgülle ayrık.
-# Örn: WHATSAPP_ALICILAR=+905551112233:123456,+905554445566:654321
-WHATSAPP_ALICILAR = []
-for _parca in os.getenv('WHATSAPP_ALICILAR', '').split(','):
-    if ':' in _parca:
-        _tel, _anahtar = _parca.strip().split(':', 1)
-        if _tel.strip() and _anahtar.strip():
-            WHATSAPP_ALICILAR.append((_tel.strip(), _anahtar.strip()))
+# E-posta bildirimi (scraper özeti) — Gmail SMTP + uygulama şifresi.
+# Üçü de doluysa aktif: EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, BILDIRIM_EPOSTA_ALICILAR
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+BILDIRIM_EPOSTA_ALICILAR = [
+    a.strip() for a in os.getenv('BILDIRIM_EPOSTA_ALICILAR', '').split(',') if a.strip()
+]
 
 # Sentry — hata izleme (DSN doluysa aktif; prod'da Render env var'ı)
 SENTRY_DSN = os.getenv('SENTRY_DSN', '')
