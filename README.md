@@ -1,151 +1,84 @@
-# Etiket Studio
+# web-etiket
 
-Mobil-öncelikli, Django tabanlı Etiket / PDF üretim uygulaması.
+Doğtaş mobilya ürünlerinin fiyatlarını her gün otomatik tarayan ve fiyatı
+değişen ürünler için mağaza içi **etiket PDF'leri** üreten Django uygulaması.
 
-**Stack:** Django 5 · Supabase (Auth & DB) · PyJWT · WeasyPrint · Render.com
+**Stack:** Django 5 (web katmanı) · SQLAlchemy 2 (DB erişimi) · Supabase
+(Auth + Postgres) · ReportLab (PDF) · aiohttp + BeautifulSoup (scraper) ·
+Render.com (hosting)
+
+> Not: Django ORM kullanılmaz — tüm veritabanı erişimi SQLAlchemy iledir,
+> şema `catalog/migrations/*.sql` dosyalarındaki ham SQL ile yönetilir
+> (Supabase SQL Editor'den elle uygulanır).
 
 ---
+
+## Ne yapar?
+
+1. **Fiyat takibi:** `scrape_dogtas` komutu dogtas.com'un tüm kataloğunu tarar.
+   Yeni ürünleri kategori/koleksiyon hiyerarşisiyle birlikte ekler; mevcut
+   ürünlerde perakende fiyat ≥70 TL değiştiyse günceller ve tarihçeye yazar.
+   Lokal Windows makinesinde Görev Zamanlayıcı ile her gün 07:00'de çalışır
+   (`run_scraper.bat`, log: `D:\GoogleDrive\~ DogtasCom.txt`).
+2. **Etiket üretimi:** Web arayüzünden koleksiyonlara takım atanır, etikete
+   girecek ürünler/kombinasyonlar işaretlenir (max 15 satır); "Etiket Yazdır"
+   ekranı mağaza (EXC/ŞUBE) + tarih filtresiyle fiyatı değişen koleksiyonları
+   listeler ve tek PDF'te (koleksiyon başına bir A4 landscape sayfa) basar.
 
 ## Hızlı Başlangıç
 
 ```powershell
 cd C:\Users\GUNES\git\web-etiket
-
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-
 pip install -r requirements.txt
-
-copy .env.example .env
-# .env'i doldur (aşağıdaki "Supabase Setup" bölümüne bak)
-
-python manage.py migrate
+copy .env.example .env   # değerleri doldur (Supabase + DATABASE_URL)
 python manage.py runserver
 ```
 
 → <http://127.0.0.1:8000/>
 
----
+Scraper testi: `python manage.py scrape_dogtas --max-pages 1 --dry-run`
 
-## Supabase Setup
+## Auth Mimarisi
 
-### 1) Proje oluştur
-
-[supabase.com](https://supabase.com) → "New project" → bölge ve şifreyi seç.
-
-### 2) Credentials'ı al
-
-**Project Settings → API** sayfasından:
-
-| .env değişkeni | Nereden | Public? |
-|---|---|---|
-| `SUPABASE_URL` | Project URL | ✓ |
-| `SUPABASE_ANON_KEY` | `anon public` key | ✓ |
-| `SUPABASE_SERVICE_ROLE_KEY` | `service_role` key | ✗ asla commitleme |
-| `SUPABASE_JWT_SECRET` | JWT Settings → JWT Secret | ✗ asla commitleme |
-
-### 3) Auth ayarları
-
-**Authentication → Providers → Email** açık olsun.
-**Authentication → URL Configuration → Site URL** = `http://127.0.0.1:8000` (prod'da Render URL'in).
-**Redirect URLs** listesine `http://127.0.0.1:8000/accounts/login/` ve prod login URL'in ekle.
-
-> **Geliştirme için:** "Confirm email" özelliğini kapatırsan kayıt sonrası anında giriş yapılır. Açıksa, kullanıcının e-posta onaylaması gerekir.
-
----
-
-## Auth Mimarisi (uçtan uca)
-
-```
-┌─────────────┐  signInWithPassword   ┌───────────┐
-│ login.html  │ ────────────────────▶ │ Supabase  │
-│ (Supabase JS│ ◀──── access_token ── │   Auth    │
-└─────┬───────┘                        └───────────┘
-      │ POST /accounts/api/session/sync/  { access_token }
-      ▼
-┌─────────────────────────┐
-│ Django api_session_sync │  PyJWT ile HS256 doğrula
-│  → request.session      │  (SUPABASE_JWT_SECRET kullanır)
-└─────────┬───────────────┘
-          │
-          ▼
-┌──────────────────────────────┐
-│ SupabaseAuthMiddleware       │  her istekte session → request.supabase_user
-│ @login_required_supabase     │  korumalı view'ları gateler
-└──────────────────────────────┘
-```
-
-**URL haritası:**
-- `/`                       → `/app/` redirect (giriş yoksa `/accounts/login/`)
-- `/accounts/login/`        → Giriş
-- `/accounts/signup/`       → Kayıt
-- `/accounts/forgot/`       → Şifre sıfırlama maili
-- `/accounts/logout/`       → Çıkış (GET ile direkt link)
-- `/accounts/api/session/sync/`  → Supabase JWT'yi Django session'a çevirir
-- `/accounts/api/session/clear/` → Session'ı boşaltır
-- `/app/`                   → Korumalı dashboard (ileride etiket listesi)
-
----
+Giriş/kayıt tarayıcıda Supabase JS SDK ile yapılır; Django şifre görmez.
+Supabase'in verdiği JWT, `/accounts/api/session/sync/` endpoint'inde PyJWT ile
+doğrulanıp Django session'a çevrilir. `SupabaseAuthMiddleware` her istekte
+session'dan `request.supabase_user`'ı kurar; korumalı view'lar
+`@login_required_supabase` (sayfa) / `@login_required_supabase_api` (JSON) ile
+gate'lenir.
 
 ## Klasör Yapısı
 
 ```
 web-etiket/
-├── manage.py
-├── requirements.txt        # Django, supabase-py, PyJWT, weasyprint, ...
-├── .env.example
-├── etiket_project/
-│   ├── settings.py
-│   └── urls.py
-├── accounts/
-│   ├── views.py            # login_view, signup_view, api_session_sync, ...
-│   ├── urls.py
-│   ├── middleware.py       # SupabaseAuthMiddleware
-│   ├── decorators.py       # @login_required_supabase
-│   ├── supabase_client.py  # backend Supabase singleton (admin & anon)
-│   ├── context_processors.py
-│   └── templates/accounts/
-│       ├── _supabase_init.html
-│       ├── login.html
-│       ├── signup.html
-│       └── forgot_password.html
-├── dashboard/
-│   ├── views.py            # @login_required_supabase home
-│   ├── urls.py
-│   └── templates/dashboard/home.html
-├── templates/base.html
-└── static/
-    ├── css/login.css       # Auth sayfaları (paylaşılır)
-    ├── css/dashboard.css
-    └── js/
-        ├── auth-common.js  # showStatus, syncSession, logout, ...
-        ├── login.js
-        ├── signup.js
-        └── forgot_password.js
+├── etiket_project/        # settings, urls, wsgi
+├── accounts/              # Supabase auth köprüsü + profil
+├── dashboard/             # tüm ekranlar (views.py) + template'ler
+├── catalog/
+│   ├── sa_models/         # SQLAlchemy modelleri (kategori, urun, kombinasyon, ayar)
+│   ├── services/          # scraper, etiket_pdf, kombinasyon, oto_kombinasyon, ayarlar
+│   ├── migrations/        # ham SQL migration'lar (Supabase'e elle uygulanır)
+│   └── management/commands/  # scrape_dogtas, db_check
+├── static/  templates/    # CSS/JS, base template
+├── run_scraper.bat        # Görev Zamanlayıcı giriş noktası (her gün 07:00)
+├── render.yaml  build.sh  # Render.com deploy (IaC)
+└── requirements.txt
 ```
 
----
+## Deployment (Render.com)
 
-## Render.com Deployment
+- `main`'e push → otomatik deploy (Blueprint, `render.yaml`).
+- Canlı: <https://etiket.gunesler.info> (free plan; deploy sırasında kısa
+  kesinti normaldir).
+- Start: `gunicorn etiket_project.wsgi:application --timeout 120`
+  (uzun toplu PDF üretimleri için yüksek timeout).
+- Secrets Dashboard'dan girilir: `SUPABASE_*`, `DATABASE_URL`,
+  `DJANGO_CSRF_TRUSTED_ORIGINS`.
 
-- Build:
-  ```
-  pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
-  ```
-- Start:
-  ```
-  gunicorn etiket_project.wsgi
-  ```
-- Env vars: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=<render-url>`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`.
+## Bilgi Tabanı
 
----
-
-## Roadmap
-
-- [x] Login + Signup + Forgot password ekranları
-- [x] Supabase JWT ↔ Django session köprüsü (middleware + decorator)
-- [x] Logout + dashboard scaffold
-- [ ] **Adım 3:** Etiket veri modeli + Supabase tabloları (`labels`, `templates`) + RLS policy'leri
-- [ ] **Adım 4:** Etiket tasarım editörü (mobil-öncelikli WYSIWYG)
-- [ ] **Adım 5:** WeasyPrint ile PDF üretim endpoint'i
-- [ ] **Adım 6:** Şablon kütüphanesi (barkod, QR, ürün etiketi tipleri)
+Projenin ayrıntılı dokümantasyonu (mimari, veri modeli, bileşen makaleleri,
+kullanım kılavuzu) Obsidian bilgi tabanındadır:
+`D:\GoogleDrive\PRG\Obsidian\Etiket\wiki\00-Index.md`
