@@ -13,7 +13,9 @@ services:
     region: frankfurt          # TR'ye en yakın
     branch: main               # main'e push → otomatik deploy
     buildCommand: "./build.sh"
-    startCommand: "gunicorn etiket_project.wsgi:application"
+    # --timeout 120: toplu etiket PDF üretimi (60+ sayfa) gunicorn'un
+    # varsayılan 30 sn'lik worker timeout'unu aşabiliyor.
+    startCommand: "gunicorn etiket_project.wsgi:application --timeout 120"
     healthCheckPath: /accounts/login/   # 200 dönmesi gerekli, login zaten public
 
     envVars:

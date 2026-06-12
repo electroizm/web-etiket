@@ -157,6 +157,27 @@ def _try_load_remote_image(url: str | None) -> ImageReader | None:
     return None
 
 
+def _load_etiket_gorselleri(
+    session: Session,
+) -> tuple[ImageReader | None, ImageReader | None]:
+    """(header_img, yerli_img) — slogan ve yerli üretim görsellerini yükler.
+
+    Remote URL → lokal dosya fallback. Çoklu yazdırmada her sayfa için
+    yeniden indirilmemesi için çağıran TEK SEFER yükleyip _draw_etiket_page'e
+    geçirir (63 sayfa × 2 görsel = 126 HTTP isteği yerine 2 istek).
+    """
+    header_img = (
+        _try_load_remote_image(slogan_url_aktif(session))
+        or _try_load_local_image("etiket_baslik.png")
+    )
+    yerli_img = (
+        _try_load_remote_image(yerli_uretim_url_aktif(session))
+        or _try_load_local_image("yerli_uretim.jpg")
+        or _try_load_local_image("yerli_uretim.png")
+    )
+    return header_img, yerli_img
+
+
 # ─── Çizim fonksiyonları ─────────────────────────────────────────────────────
 
 
@@ -354,31 +375,102 @@ def _load_kol_sayfa_verisi(session: Session, koleksiyon_id: int):
     return kol, urunler, kombi_data
 
 
+def _load_coklu_kol_verisi(
+    session: Session, koleksiyon_ids: list[int]
+) -> list[tuple[Koleksiyon, list[Urun], list[tuple[Kombinasyon, dict]]]]:
+    """Çoklu yazdırma için tüm koleksiyonların verisini TOPLU sorgularla yükler
+    (koleksiyon başına 3-4 sorgu yerine toplam ~6 sorgu — 60+ koleksiyonda
+    Render↔Supabase gecikmesi belirleyici olduğu için kritik).
+
+    Geçersiz koleksiyonlar (bulunamadı, takım atanmamış, işaretli satır yok,
+    satır limiti aşımı) log'lanıp atlanır. Girişteki id sırası korunur.
+    """
+    ids = list(dict.fromkeys(koleksiyon_ids))  # dedupe, sıra koru
+    if not ids:
+        return []
+
+    kollar = {
+        kol.id: kol
+        for kol in session.scalars(
+            select(Koleksiyon)
+            .where(Koleksiyon.id.in_(ids))
+            .options(selectinload(Koleksiyon.takim_urun))
+        )
+    }
+
+    urun_rows = session.execute(
+        select(urun_koleksiyon.c.koleksiyon_id, Urun)
+        .join(Urun, Urun.id == urun_koleksiyon.c.urun_id)
+        .where(
+            urun_koleksiyon.c.koleksiyon_id.in_(ids),
+            urun_koleksiyon.c.etiket_secili.is_(True),
+        )
+        .order_by(urun_koleksiyon.c.siralama.asc(), Urun.id.asc())
+    ).all()
+    urunler_map: dict[int, list[Urun]] = {}
+    for kol_id, urun in urun_rows:
+        urunler_map.setdefault(kol_id, []).append(urun)
+
+    kombiler = session.scalars(
+        select(Kombinasyon)
+        .where(
+            Kombinasyon.koleksiyon_id.in_(ids),
+            Kombinasyon.etiket_secili.is_(True),
+        )
+        .order_by(Kombinasyon.sira, Kombinasyon.id)
+        .options(selectinload(Kombinasyon.urunler).selectinload(KombinasyonUrun.urun))
+    ).all()
+    kombi_map: dict[int, list[tuple[Kombinasyon, dict]]] = {}
+    for k in kombiler:
+        kombi_map.setdefault(k.koleksiyon_id, []).append(
+            (k, hesapla_kombinasyon_toplam(k))
+        )
+
+    sayfalar = []
+    for kid in ids:
+        kol = kollar.get(kid)
+        if kol is None or not (kol.takim_adi or "").strip():
+            log.warning(
+                "Çoklu PDF · koleksiyon %s atlandı: bulunamadı veya takım atanmamış",
+                kid,
+            )
+            continue
+        urunler = urunler_map.get(kid, [])
+        kombi_data = kombi_map.get(kid, [])
+        toplam = len(urunler) + len(kombi_data)
+        if toplam == 0:
+            log.warning(
+                "Çoklu PDF · koleksiyon %s atlandı: işaretli ürün/kombinasyon yok", kid
+            )
+            continue
+        if toplam > ETIKET_MAX_SATIR:
+            log.warning(
+                "Çoklu PDF · koleksiyon %s atlandı: %s satır (limit %s)",
+                kid, toplam, ETIKET_MAX_SATIR,
+            )
+            continue
+        sayfalar.append((kol, urunler, kombi_data))
+    return sayfalar
+
+
 def _draw_etiket_page(
     c: canvas.Canvas,
-    session: Session,
     kol: Koleksiyon,
     urunler: list[Urun],
     kombi_data: list[tuple[Kombinasyon, dict]],
     font: str,
     font_bold: str,
     *,
-    slogan_url: str | None = None,
-    yerli_uretim_url: str | None = None,
+    header_img: ImageReader | None,
+    yerli_img: ImageReader | None,
 ) -> None:
     """Verilen kanvasın o anki sayfasına bir koleksiyonun etiket içeriğini çizer.
-    Verinin önceden validate edilmiş olması beklenir. Slogan/yerli üretim
-    URL'leri çağıran tarafından cache'lenip verilebilir (multi-page'de tekrar
-    DB sorgusu atmamak için).
+    Verinin önceden validate edilmiş, görsellerin _load_etiket_gorselleri ile
+    yüklenmiş olması beklenir (multi-page'de sayfa başına indirme olmasın diye).
     """
     page_width, page_height = landscape(A4)
 
     # Header (slogan banner)
-    if slogan_url is None:
-        slogan_url = slogan_url_aktif(session)
-    header_img = _try_load_remote_image(slogan_url)
-    if header_img is None:
-        header_img = _try_load_local_image("etiket_baslik.png")
     if header_img is not None:
         c.drawImage(header_img, -10, page_height - 175, width=590, height=90,
                     preserveAspectRatio=True, mask='auto')
@@ -402,14 +494,6 @@ def _draw_etiket_page(
                           indirim_yuzde=indirim_yuzde, font_bold=font_bold)
 
     # Yerli üretim logosu
-    if yerli_uretim_url is None:
-        yerli_uretim_url = yerli_uretim_url_aktif(session)
-    yerli_img = _try_load_remote_image(yerli_uretim_url)
-    if yerli_img is None:
-        yerli_img = (
-            _try_load_local_image("yerli_uretim.jpg")
-            or _try_load_local_image("yerli_uretim.png")
-        )
     if yerli_img is not None:
         c.drawImage(yerli_img, page_width - 180, 80, width=100, height=30,
                     preserveAspectRatio=True, mask='auto')
@@ -459,7 +543,9 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
         c.save()
         return buf.getvalue()
 
-    _draw_etiket_page(c, session, kol, urunler, kombi_data, font, font_bold)
+    header_img, yerli_img = _load_etiket_gorselleri(session)
+    _draw_etiket_page(c, kol, urunler, kombi_data, font, font_bold,
+                      header_img=header_img, yerli_img=yerli_img)
     c.save()
     return buf.getvalue()
 
@@ -479,34 +565,23 @@ def pdf_coklu_koleksiyon_etiketi(
     c = canvas.Canvas(buf, pagesize=landscape(A4))
     c.setTitle("Etiket")
 
-    # Multi-page için ortak görselleri tek sefer cache'le (DB+download)
-    slogan_url = slogan_url_aktif(session)
-    yerli_url = yerli_uretim_url_aktif(session)
+    # Tüm koleksiyon verisi toplu sorgularla, görseller tek indirme ile
+    sayfalar = _load_coklu_kol_verisi(session, koleksiyon_ids)
+    header_img, yerli_img = _load_etiket_gorselleri(session)
 
     pages_drawn = 0
-    for kid in koleksiyon_ids:
-        try:
-            kol, urunler, kombi_data = _load_kol_sayfa_verisi(session, kid)
-            if kol is None:
-                continue
-        except (EtiketBosSecim, EtiketSatirAsim) as e:
-            log.warning("Çoklu PDF · koleksiyon %s atlandı: %s", kid, e)
-            continue
-        except Exception:
-            log.exception("Çoklu PDF · koleksiyon %s yükleme hatası", kid)
-            continue
-
+    for kol, urunler, kombi_data in sayfalar:
         if pages_drawn > 0:
             c.showPage()  # önceki sayfayı kapat, yeni sayfa aç
         try:
             _draw_etiket_page(
-                c, session, kol, urunler, kombi_data, font, font_bold,
-                slogan_url=slogan_url,
-                yerli_uretim_url=yerli_url,
+                c, kol, urunler, kombi_data, font, font_bold,
+                header_img=header_img,
+                yerli_img=yerli_img,
             )
             pages_drawn += 1
         except Exception:
-            log.exception("Çoklu PDF · koleksiyon %s çizim hatası", kid)
+            log.exception("Çoklu PDF · koleksiyon %s çizim hatası", kol.id)
             # showPage zaten yapıldı, boş sayfa kalmasın diye yine de
             # increment ediyoruz (boş sayfayla devam, kullanıcı görür).
             pages_drawn += 1

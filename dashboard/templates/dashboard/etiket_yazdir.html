@@ -246,13 +246,17 @@
       const tumuLabel  = document.getElementById('tumu-btn-label');
       const printBtn   = document.querySelector('.yazdir-toolbar__print');
 
+      let pdfUretiliyor = false;
+
       function refreshState() {
         const seciliCount = checkboxes.filter((c) => c.checked).length;
         const total = checkboxes.length;
         if (sayEl) sayEl.textContent = seciliCount;
         if (printBtn) {
-          printBtn.textContent = `Yazdır (${seciliCount})`;
-          printBtn.disabled = seciliCount === 0;
+          printBtn.textContent = pdfUretiliyor
+            ? 'PDF hazırlanıyor…'
+            : `Yazdır (${seciliCount})`;
+          printBtn.disabled = pdfUretiliyor || seciliCount === 0;
         }
         if (tumuLabel) {
           if (seciliCount === total) {
@@ -273,6 +277,71 @@
 
       checkboxes.forEach((cb) => cb.addEventListener('change', refreshState));
       refreshState();
+
+      // ── Yazdır: fetch ile üret, hazır olunca yeni sekmede aç ────────────
+      // form target=_blank ile direkt POST edilirse buton durumu yönetilemez
+      // ve uzun üretimde kullanıcı boş sekmeye bakar; fetch akışı hem spinner
+      // hem çift tıklama koruması sağlar.
+      const form = document.getElementById('yazdir-form');
+      form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (pdfUretiliyor) return;
+
+        // Sekmeyi tıklama anında (user gesture içinde) aç ki popup
+        // engelleyiciye takılmasın; PDF hazır olunca adresi değişir.
+        const tab = window.open('', '_blank');
+        if (tab) {
+          tab.document.write(
+            '<!doctype html><html lang="tr"><head><meta charset="utf-8">' +
+            '<title>PDF hazırlanıyor…</title><style>' +
+            'body{margin:0;min-height:100vh;display:flex;flex-direction:column;' +
+            'align-items:center;justify-content:center;gap:18px;' +
+            'background:#12121a;color:#e5e7eb;font-family:system-ui,sans-serif}' +
+            '.spin{width:42px;height:42px;border-radius:50%;' +
+            'border:4px solid #2d2d3d;border-top-color:#7c5cff;' +
+            'animation:r 0.9s linear infinite}' +
+            '@keyframes r{to{transform:rotate(360deg)}}' +
+            'p{color:#9ca3af;font-size:14px}' +
+            '</style></head><body><div class="spin"></div>' +
+            '<strong>Etiket PDF hazırlanıyor…</strong>' +
+            '<p>Sayfa sayısına göre bu işlem biraz sürebilir; sekmeyi kapatmayın.</p>' +
+            '</body></html>'
+          );
+          tab.document.close();
+        }
+
+        pdfUretiliyor = true;
+        refreshState();
+        try {
+          const resp = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+          });
+          const ct = resp.headers.get('Content-Type') || '';
+          if (resp.ok && ct.includes('application/pdf')) {
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            if (tab) tab.location = url;
+            else window.open(url, '_blank');
+          } else {
+            // Sunucunun hata sayfasını (ör. "Seçim yok") sekmede göster
+            const text = await resp.text();
+            if (tab) {
+              tab.document.open();
+              tab.document.write(text);
+              tab.document.close();
+            } else {
+              alert('PDF üretilemedi (HTTP ' + resp.status + ').');
+            }
+          }
+        } catch (err) {
+          if (tab) tab.close();
+          alert('PDF üretilemedi: ' + err);
+        } finally {
+          pdfUretiliyor = false;
+          refreshState();
+        }
+      });
     });
   </script>
 {% endblock %}
