@@ -46,6 +46,10 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 BILDIRIM_EPOSTA_ALICILAR = [
     a.strip() for a in os.getenv('BILDIRIM_EPOSTA_ALICILAR', '').split(',') if a.strip()
 ]
+# Tarama HATA bildirimi alıcıları (boşsa normal alıcılara gider)
+HATA_EPOSTA_ALICILAR = [
+    a.strip() for a in os.getenv('HATA_EPOSTA_ALICILAR', '').split(',') if a.strip()
+] or BILDIRIM_EPOSTA_ALICILAR
 
 # Sentry — hata izleme (DSN doluysa aktif; prod'da Render env var'ı)
 SENTRY_DSN = os.getenv('SENTRY_DSN', '')

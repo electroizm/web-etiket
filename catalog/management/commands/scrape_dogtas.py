@@ -99,12 +99,36 @@ class Command(BaseCommand):
 
             rapor = db_upsert(sonuclar, dry_run=opts["dry_run"])
         except Exception as e:
-            # Hata bildirimi — sonra yine de yükselt ki exit code ≠ 0 olsun
-            eposta_gonder(
-                "Doğtaş taraması HATA ile durdu",
+            # Hata bildirimi: 10:07 görevi göndersin diye DB'ye kaydet.
+            # DB'ye yazılamıyorsa (örn. bağlantı hatası) son çare anında gönder.
+            # Sonra yine de yükselt ki exit code ≠ 0 olsun.
+            hata_mesaji = (
                 f"Tarama tamamlanamadı.\n\n{type(e).__name__}: {e}\n\n"
-                r"Log: D:\GoogleDrive\~ DogtasCom.txt",
+                r"Log: D:\GoogleDrive\~ DogtasCom.txt"
             )
+            try:
+                import json as _json
+                from datetime import date
+
+                from catalog.database import SessionLocal
+                from catalog.services.ayarlar import set_ayar
+
+                db = SessionLocal()
+                try:
+                    set_ayar(db, "son_tarama_ozeti", _json.dumps(
+                        {"tarih": date.today().isoformat(), "tur": "hata",
+                         "mesaj": hata_mesaji},
+                        ensure_ascii=False,
+                    ))
+                    db.commit()
+                finally:
+                    db.close()
+            except Exception:
+                eposta_gonder(
+                    "Doğtaş taraması HATA ile durdu",
+                    hata_mesaji,
+                    alicilar=settings.HATA_EPOSTA_ALICILAR,
+                )
             raise
 
         self.stdout.write("")
@@ -130,7 +154,8 @@ class Command(BaseCommand):
                         rapor, sure_sn=sure, basarili=basarili, toplam=len(sonuclar),
                     )
                     set_ayar(db, "son_tarama_ozeti", _json.dumps(
-                        {"tarih": date.today().isoformat(), "mesaj": mesaj},
+                        {"tarih": date.today().isoformat(), "tur": "ozet",
+                         "mesaj": mesaj},
                         ensure_ascii=False,
                     ))
                 else:

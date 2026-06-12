@@ -30,9 +30,9 @@ def eposta_aktif() -> bool:
     )
 
 
-def eposta_gonder(konu: str, mesaj: str) -> bool:
-    """Bildirim e-postasını tüm alıcılara gönder. Başarı durumunu döner;
-    asla exception atmaz."""
+def eposta_gonder(konu: str, mesaj: str, alicilar: list[str] | None = None) -> bool:
+    """Bildirim e-postasını alıcılara gönder. Başarı durumunu döner;
+    asla exception atmaz. alicilar verilmezse BILDIRIM_EPOSTA_ALICILAR kullanılır."""
     if not eposta_aktif():
         log.debug("E-posta yapılandırılmamış, bildirim atlandı.")
         return False
@@ -43,7 +43,7 @@ def eposta_gonder(konu: str, mesaj: str) -> bool:
             subject=konu,
             message=mesaj,
             from_email=settings.EMAIL_HOST_USER,
-            recipient_list=settings.BILDIRIM_EPOSTA_ALICILAR,
+            recipient_list=alicilar or settings.BILDIRIM_EPOSTA_ALICILAR,
             fail_silently=False,
         )
         return gonderilen > 0

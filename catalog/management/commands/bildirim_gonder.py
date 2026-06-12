@@ -1,8 +1,10 @@
 """Günlük e-posta bildirimi — Görev Zamanlayıcı her gün 10:07'de çalıştırır.
 
-Sabah 07:00 taraması, FİYAT GÜNCELLEMESİ VARSA (guncellenen > 0) özeti DB'ye
-yazar ('son_tarama_ozeti' ayarı); bu komut o özeti okuyup e-posta ile iletir.
-Bugüne ait özet yoksa (güncelleme yok / tarama çalışmamış) SESSİZ kalır —
+Sabah 07:00 taraması 'son_tarama_ozeti' ayarına şunları yazabilir:
+  tur="ozet" → fiyat güncellemesi var (guncellenen > 0); özet
+               BILDIRIM_EPOSTA_ALICILAR'a gider
+  tur="hata" → tarama hata ile durdu; hata mesajı HATA_EPOSTA_ALICILAR'a gider
+Bugüne ait kayıt yoksa (güncelleme yok / tarama hiç çalışmamış) SESSİZ kalır —
 kullanıcı kararı (2026-06-12): güncelleme yoksa hiç bildirim gitmesin.
 
 Kullanım: python manage.py bildirim_gonder
@@ -44,16 +46,26 @@ class Command(BaseCommand):
                     data = None
 
             if data and data.get("tarih") == bugun:
-                konu = f"Doğtaş fiyat güncellemesi — {date.today().strftime('%d.%m.%Y')}"
-                ok = eposta_gonder(konu, data.get("mesaj") or "")
+                from django.conf import settings as dj_settings
+
+                bugun_tr = date.today().strftime("%d.%m.%Y")
+                if data.get("tur") == "hata":
+                    konu = f"Doğtaş taraması HATA ile durdu — {bugun_tr}"
+                    alicilar = dj_settings.HATA_EPOSTA_ALICILAR
+                else:
+                    konu = f"Doğtaş fiyat güncellemesi — {bugun_tr}"
+                    alicilar = dj_settings.BILDIRIM_EPOSTA_ALICILAR
+                ok = eposta_gonder(konu, data.get("mesaj") or "", alicilar=alicilar)
                 if ok:
                     # Tekrar gönderilmesin diye temizle
                     set_ayar(session, "son_tarama_ozeti", None)
                     session.commit()
-                    self.stdout.write(self.style.SUCCESS("Özet e-posta ile gönderildi."))
+                    self.stdout.write(self.style.SUCCESS(
+                        f"E-posta gönderildi → {', '.join(alicilar)}"
+                    ))
                 else:
                     self.stderr.write(
-                        "Gönderim başarısız — özet korunuyor, sonra tekrar denenebilir."
+                        "Gönderim başarısız — kayıt korunuyor, sonra tekrar denenebilir."
                     )
             else:
                 # Bugüne ait özet yok = güncelleme yok (veya tarama çalışmadı).
