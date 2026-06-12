@@ -53,7 +53,7 @@ class Command(BaseCommand):
                     konu = f"Doğtaş taraması HATA ile durdu — {bugun_tr}"
                     alicilar = dj_settings.HATA_EPOSTA_ALICILAR
                 else:
-                    konu = f"Doğtaş fiyat güncellemesi — {bugun_tr}"
+                    konu = "Etiket Fiyat Güncellemesi"
                     alicilar = dj_settings.BILDIRIM_EPOSTA_ALICILAR
                 ok = eposta_gonder(konu, data.get("mesaj") or "", alicilar=alicilar)
                 if ok:

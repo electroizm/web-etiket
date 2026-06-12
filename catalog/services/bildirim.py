@@ -55,10 +55,10 @@ def eposta_gonder(konu: str, mesaj: str, alicilar: list[str] | None = None) -> b
 def scrape_raporu_mesaji(rapor: dict, *, sure_sn: float, basarili: int, toplam: int) -> str:
     """db_upsert raporundan insan-okur e-posta gövdesi üret."""
     satirlar = [
-        "Doğtaş taraması tamamlandı.",
+        "dogtas.com taraması tamamlandı.",
         "",
         f"Süre: {sure_sn / 60:.0f} dk · {basarili}/{toplam} ürün okundu",
-        f"Fiyat güncellenen: {rapor.get('guncellenen', 0)}",
+        f"Güncellenen: {rapor.get('guncellenen', 0)}",
         f"Yeni ürün: {rapor.get('yeni_urun', 0)}",
     ]
     if rapor.get("yeni_koleksiyon"):
@@ -68,8 +68,8 @@ def scrape_raporu_mesaji(rapor: dict, *, sure_sn: float, basarili: int, toplam: 
     if rapor.get("hata"):
         satirlar.append(f"Okunamayan ürün: {rapor['hata']}")
     satirlar.append(
-        f"(fark<70TL atlanan: {rapor.get('atlanan_fark_az', 0)}, "
-        f"filtrelenen: {rapor.get('filtrelenen', 0)})"
+        f"Atlanan: {rapor.get('atlanan_fark_az', 0)}, "
+        f"filtrelenen: {rapor.get('filtrelenen', 0)}"
     )
     satirlar += [
         "",
