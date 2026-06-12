@@ -38,6 +38,15 @@ SCRAPER_SKIP_KATEGORILER = [
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 
+# WhatsApp bildirimi (CallMeBot) — "telefon:apikey" çiftleri, virgülle ayrık.
+# Örn: WHATSAPP_ALICILAR=+905551112233:123456,+905554445566:654321
+WHATSAPP_ALICILAR = []
+for _parca in os.getenv('WHATSAPP_ALICILAR', '').split(','):
+    if ':' in _parca:
+        _tel, _anahtar = _parca.strip().split(':', 1)
+        if _tel.strip() and _anahtar.strip():
+            WHATSAPP_ALICILAR.append((_tel.strip(), _anahtar.strip()))
+
 # Sentry — hata izleme (DSN doluysa aktif; prod'da Render env var'ı)
 SENTRY_DSN = os.getenv('SENTRY_DSN', '')
 if SENTRY_DSN:

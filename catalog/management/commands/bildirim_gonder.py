@@ -24,10 +24,15 @@ class Command(BaseCommand):
 
         from catalog.database import SessionLocal
         from catalog.services.ayarlar import get_ayar, set_ayar
-        from catalog.services.bildirim import telegram_aktif, telegram_gonder
+        from catalog.services.bildirim import (
+            telegram_aktif,
+            telegram_gonder,
+            whatsapp_aktif,
+            whatsapp_gonder,
+        )
 
-        if not telegram_aktif():
-            self.stdout.write("Telegram yapılandırılmamış (TELEGRAM_BOT_TOKEN/CHAT_ID boş).")
+        if not telegram_aktif() and not whatsapp_aktif():
+            self.stdout.write("Bildirim yapılandırılmamış (Telegram/WhatsApp env boş).")
             return
 
         bugun = date.today().isoformat()
@@ -42,12 +47,17 @@ class Command(BaseCommand):
                     data = None
 
             if data and data.get("tarih") == bugun:
-                ok = telegram_gonder(data.get("mesaj") or "")
-                if ok:
-                    # Tekrar gönderilmesin diye temizle
+                mesaj = data.get("mesaj") or ""
+                tg_ok = telegram_gonder(mesaj)
+                wa_say = whatsapp_gonder(mesaj) if whatsapp_aktif() else 0
+                if tg_ok or wa_say:
+                    # En az bir kanala ulaştı → tekrar gönderilmesin diye temizle
                     set_ayar(session, "son_tarama_ozeti", None)
                     session.commit()
-                    self.stdout.write(self.style.SUCCESS("Özet gönderildi."))
+                    self.stdout.write(self.style.SUCCESS(
+                        f"Özet gönderildi (Telegram: {'✓' if tg_ok else '✗'}, "
+                        f"WhatsApp: {wa_say} alıcı)."
+                    ))
                 else:
                     self.stderr.write("Gönderim başarısız — özet korunuyor, sonra tekrar denenebilir.")
             else:

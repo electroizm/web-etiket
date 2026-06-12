@@ -1,11 +1,19 @@
-"""Telegram bildirimi.
+"""Telegram + WhatsApp (CallMeBot) bildirimi.
 
-Scraper tarama sonuçlarını (ve hataları) Telegram'a iletir. TELEGRAM_BOT_TOKEN
-veya TELEGRAM_CHAT_ID tanımlı değilse sessizce devre dışıdır — bildirim
-hiçbir zaman asıl işi (tarama/DB yazımı) engellememelidir.
+Scraper tarama sonuçlarını (ve hataları) Telegram'a ve isteğe bağlı olarak
+WhatsApp alıcılarına iletir. İlgili env değişkenleri boşsa kanal sessizce
+devre dışıdır — bildirim hiçbir zaman asıl işi (tarama/DB yazımı) engellememelidir.
 
-Kurulum: @BotFather'dan bot oluştur → token'ı .env'ye TELEGRAM_BOT_TOKEN olarak
-yaz; botla bir kez konuşma başlat; chat id'yi .env'ye TELEGRAM_CHAT_ID yaz.
+Telegram kurulumu: @BotFather'dan bot oluştur → token'ı .env'ye
+TELEGRAM_BOT_TOKEN olarak yaz; botla bir kez konuşma başlat; chat id'yi
+.env'ye TELEGRAM_CHAT_ID yaz.
+
+WhatsApp kurulumu (CallMeBot, kişi başına bir kez):
+  1. Alıcı, +34 644 81 58 78 numarasını rehberine ekler
+  2. O numaraya WhatsApp'tan "I allow callmebot to send me messages" yazar
+  3. Gelen cevaptaki apikey'i alır
+  4. .env → WHATSAPP_ALICILAR=+90555...:apikey1,+90555...:apikey2
+Not: CallMeBot üçüncü taraf ücretsiz bir servistir; teslimat garantisi yoktur.
 """
 from __future__ import annotations
 
@@ -47,6 +55,35 @@ def telegram_gonder(mesaj: str) -> bool:
     except Exception as e:
         log.warning("Telegram bildirimi gönderilemedi: %s", e)
     return False
+
+
+_CALLMEBOT_URL = "https://api.callmebot.com/whatsapp.php"
+
+
+def whatsapp_aktif() -> bool:
+    return bool(getattr(settings, "WHATSAPP_ALICILAR", []))
+
+
+def whatsapp_gonder(mesaj: str) -> int:
+    """Mesajı tüm CallMeBot alıcılarına gönder. Başarılı alıcı sayısını döner;
+    asla exception atmaz. Alıcılar: settings.WHATSAPP_ALICILAR = [(telefon, apikey), ...]
+    """
+    basarili = 0
+    for telefon, apikey in getattr(settings, "WHATSAPP_ALICILAR", []):
+        try:
+            r = requests.get(
+                _CALLMEBOT_URL,
+                params={"phone": telefon, "text": mesaj[:1500], "apikey": apikey},
+                timeout=30,
+            )
+            if r.status_code == 200:
+                basarili += 1
+            else:
+                log.warning("WhatsApp (CallMeBot) reddetti: %s HTTP %s — %s",
+                            telefon, r.status_code, r.text[:200])
+        except Exception as e:
+            log.warning("WhatsApp (CallMeBot) gönderilemedi: %s — %s", telefon, e)
+    return basarili
 
 
 def scrape_raporu_mesaji(rapor: dict, *, sure_sn: float, basarili: int, toplam: int) -> str:
