@@ -34,6 +34,20 @@ SCRAPER_SKIP_KATEGORILER = [
     k.strip() for k in os.getenv('SCRAPER_SKIP_KATEGORILER', 'Doğtaş Home').split(',') if k.strip()
 ]
 
+# Telegram bildirimi (scraper özeti) — ikisi de doluysa aktif
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+# Sentry — hata izleme (DSN doluysa aktif; prod'da Render env var'ı)
+SENTRY_DSN = os.getenv('SENTRY_DSN', '')
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        send_default_pii=False,
+        traces_sample_rate=0.0,   # sadece hatalar, performans izleme yok
+    )
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',

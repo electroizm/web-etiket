@@ -63,3 +63,7 @@ services:
         value: "3.0"
       - key: SCRAPER_SKIP_KATEGORILER
         value: "Doğtaş Home"
+
+      # ─── Sentry hata izleme (Dashboard'dan elle gir; boş = devre dışı) ─
+      - key: SENTRY_DSN
+        sync: false

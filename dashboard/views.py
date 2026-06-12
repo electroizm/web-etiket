@@ -4,8 +4,9 @@ Veri kaynağı: Supabase Postgres (SQLAlchemy ile direct connection).
 Auth gate: @login_required_supabase (Supabase JWT → Django session).
 """
 import json
+import logging
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, update
 
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -621,54 +622,64 @@ def urun_yeni(request):
 
 @login_required_supabase
 def etiket_yazdir(request):
-    """GET /app/etiket-yazdir/ — Mağaza + güncelleme tarihi filtresine göre
-    etiket basılacak koleksiyonları kategoriye göre gruplayarak listeler.
+    """GET /app/etiket-yazdir/ — Mağaza + güncelleme filtresine göre etiket
+    basılacak koleksiyonları kategoriye göre gruplayarak listeler.
 
     Query params:
       magaza:           'exc' | 'sube'  (boşsa: filtre uygulanmamış sayılır;
                                           tablo gösterilmez, sadece form çıkar)
-      tarih_baslangic:  YYYY-MM-DD     (default 7 gün öncesi)
+      tarih_baslangic:  YYYY-MM-DD     (opsiyonel)
 
-    'Filtrele' tuşuna basıldığında URL'de magaza geldiği için tablo render
-    edilir. İlk girişte (boş URL) filtre uygulanmamış, tablo yok.
+    İki mod:
+      - tarih BOŞ (varsayılan): koleksiyon başına "son yazdırma" damgasıyla
+        karşılaştırır → "fiyatı son basımdan SONRA değişenler". Hiç
+        yazdırılmamış koleksiyon (damga NULL) her güncellemede listelenir.
+      - tarih DOLU: eski davranış — o tarihten beri güncellenenler.
     """
-    from datetime import date, datetime as dt, time as t, timedelta
+    from datetime import datetime as dt, time as t, timezone as tz
 
     magaza = (request.GET.get("magaza") or "").strip().lower()
     if magaza not in ("exc", "sube"):
         magaza = ""  # seçilmedi → tablo gösterilmeyecek
 
-    bugun = date.today()
-    default_baslangic = bugun
-
-    def _parse_date(raw, fallback):
-        if not raw:
-            return fallback
+    tarih_raw = (request.GET.get("tarih_baslangic") or "").strip()
+    tarih_baslangic = None
+    if tarih_raw:
         try:
-            return dt.strptime(raw.strip(), "%Y-%m-%d").date()
-        except (ValueError, AttributeError):
-            return fallback
+            tarih_baslangic = dt.strptime(tarih_raw, "%Y-%m-%d").date()
+        except ValueError:
+            tarih_baslangic = None
 
-    tarih_baslangic = _parse_date(
-        request.GET.get("tarih_baslangic"), default_baslangic
-    )
-    range_start = dt.combine(tarih_baslangic, t.min)
+    filtre_modu = "tarih" if tarih_baslangic else "son_yazdirma"
 
     # Henüz mağaza seçilmedi → tablo yok, sadece form
     if not magaza:
         return render(request, "dashboard/etiket_yazdir.html", {
             "magaza":           "",
-            "tarih_baslangic":  tarih_baslangic.strftime("%Y-%m-%d"),
+            "tarih_baslangic":  tarih_baslangic.strftime("%Y-%m-%d") if tarih_baslangic else "",
+            "filtre_modu":      filtre_modu,
             "filtre_uygulandi": False,
             "gruplar":          [],
             "toplam_say":       0,
         })
 
-    flag_col = Koleksiyon.bayrak_exc if magaza == "exc" else Koleksiyon.bayrak_sube
+    if magaza == "exc":
+        flag_col = Koleksiyon.bayrak_exc
+        son_yazd_col = Koleksiyon.son_yazdirma_exc
+    else:
+        flag_col = Koleksiyon.bayrak_sube
+        son_yazd_col = Koleksiyon.son_yazdirma_sube
+
+    # Karşılaştırma eşiği: tarih modu sabit bir andır; son_yazdirma modunda
+    # koleksiyonun kendi damgası (NULL → 1970, yani "her güncelleme sayılır").
+    if filtre_modu == "tarih":
+        esik = dt.combine(tarih_baslangic, t.min)
+    else:
+        esik = func.coalesce(son_yazd_col, dt(1970, 1, 1, tzinfo=tz.utc))
 
     session = SessionLocal()
     try:
-        # Bu koleksiyonun etiket_secili ürünleri arasında aralıkta güncellenen var mı?
+        # Bu koleksiyonun etiket_secili ürünleri arasında eşikten sonra güncellenen var mı?
         urun_eslesen = (
             select(1)
             .select_from(urun_koleksiyon)
@@ -676,11 +687,11 @@ def etiket_yazdir(request):
             .where(
                 urun_koleksiyon.c.koleksiyon_id == Koleksiyon.id,
                 urun_koleksiyon.c.etiket_secili.is_(True),
-                Urun.son_guncelleme >= range_start,
+                Urun.son_guncelleme > esik,
             )
             .exists()
         )
-        # Etiket_secili kombinasyonun ürünleri arasında aralıkta güncellenen var mı?
+        # Etiket_secili kombinasyonun ürünleri arasında eşikten sonra güncellenen var mı?
         kombi_eslesen = (
             select(1)
             .select_from(Kombinasyon)
@@ -689,7 +700,7 @@ def etiket_yazdir(request):
             .where(
                 Kombinasyon.koleksiyon_id == Koleksiyon.id,
                 Kombinasyon.etiket_secili.is_(True),
-                Urun.son_guncelleme >= range_start,
+                Urun.son_guncelleme > esik,
             )
             .exists()
         )
@@ -728,6 +739,8 @@ def etiket_yazdir(request):
                 "ad":             kol.ad,
                 "takim_adi":      kol.takim_adi,
                 "son_guncelleme": son_max,
+                "son_yazdirma":   (kol.son_yazdirma_exc if magaza == "exc"
+                                   else kol.son_yazdirma_sube),
             })
             toplam_say += 1
 
@@ -740,7 +753,8 @@ def etiket_yazdir(request):
 
     return render(request, "dashboard/etiket_yazdir.html", {
         "magaza":           magaza,
-        "tarih_baslangic":  tarih_baslangic.strftime("%Y-%m-%d"),
+        "tarih_baslangic":  tarih_baslangic.strftime("%Y-%m-%d") if tarih_baslangic else "",
+        "filtre_modu":      filtre_modu,
         "filtre_uygulandi": True,
         "gruplar":          gruplar,
         "toplam_say":       toplam_say,
@@ -750,13 +764,19 @@ def etiket_yazdir(request):
 @login_required_supabase
 @require_http_methods(["POST"])
 def etiket_yazdir_pdf(request):
-    """POST /app/etiket-yazdir/pdf/  body: koleksiyon_ids=<id>&koleksiyon_ids=<id>...
+    """POST /app/etiket-yazdir/pdf/
+    body: koleksiyon_ids=<id>&koleksiyon_ids=<id>...&magaza=exc|sube
 
     Seçili koleksiyonların etiket PDF'lerini tek doküman halinde üretir
-    (her koleksiyon ayrı sayfa). Tarayıcıda inline açılır.
+    (her koleksiyon ayrı sayfa). Tarayıcıda inline açılır. Üretim başarılıysa
+    PDF'e giren koleksiyonlara mağazanın son_yazdirma damgası vurulur —
+    listeleme ekranının "son basımdan beri değişenler" modu buna dayanır.
     """
+    from datetime import datetime as dt, timezone as tz
+
     from catalog.services.etiket_pdf import pdf_coklu_koleksiyon_etiketi
 
+    magaza = (request.POST.get("magaza") or "").strip().lower()
     raw_ids = request.POST.getlist("koleksiyon_ids")
     kol_ids: list[int] = []
     for s in raw_ids:
@@ -780,7 +800,26 @@ def etiket_yazdir_pdf(request):
 
     session = SessionLocal()
     try:
-        pdf_bytes = pdf_coklu_koleksiyon_etiketi(session, kol_ids)
+        pdf_bytes, basilan_ids = pdf_coklu_koleksiyon_etiketi(session, kol_ids)
+
+        # Son yazdırma damgası — yalnızca PDF'e gerçekten giren koleksiyonlara.
+        # Damga hatası PDF'i engellememeli (kullanıcı çıktısını alır, damga
+        # bir sonraki basımda telafi olur).
+        if magaza in ("exc", "sube") and basilan_ids:
+            try:
+                col = (Koleksiyon.son_yazdirma_exc if magaza == "exc"
+                       else Koleksiyon.son_yazdirma_sube)
+                session.execute(
+                    update(Koleksiyon)
+                    .where(Koleksiyon.id.in_(basilan_ids))
+                    .values({col: dt.now(tz.utc)})
+                )
+                session.commit()
+            except Exception:
+                session.rollback()
+                logging.getLogger(__name__).exception(
+                    "son_yazdirma damgası yazılamadı (magaza=%s)", magaza
+                )
     finally:
         session.close()
 

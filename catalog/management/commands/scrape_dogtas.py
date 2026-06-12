@@ -70,6 +70,7 @@ class Command(BaseCommand):
             sys.exit(1)
 
         # Geç import — Django settings yüklenmeden SQLAlchemy modelleri açılmasın
+        from catalog.services.bildirim import scrape_raporu_mesaji, telegram_gonder
         from catalog.services.scraper import DogtasScraper, db_upsert
 
         scraper = DogtasScraper(
@@ -84,20 +85,30 @@ class Command(BaseCommand):
             f"(max_pages={opts['max_pages']}, start_page={opts['start_page']}, dry_run={opts['dry_run']})"
         ))
 
-        sonuclar = asyncio.run(scraper.tarama_yap(
-            max_pages=opts["max_pages"],
-            start_page=opts["start_page"],
-        ))
+        try:
+            sonuclar = asyncio.run(scraper.tarama_yap(
+                max_pages=opts["max_pages"],
+                start_page=opts["start_page"],
+            ))
 
-        sure = (datetime.now() - baslangic).total_seconds()
-        basarili = sum(1 for s in sonuclar if s.basarili)
-        self.stdout.write(self.style.SUCCESS(
-            f"Scrape tamam ({sure:.0f}s) — {basarili}/{len(sonuclar)} başarılı"
-        ))
+            sure = (datetime.now() - baslangic).total_seconds()
+            basarili = sum(1 for s in sonuclar if s.basarili)
+            self.stdout.write(self.style.SUCCESS(
+                f"Scrape tamam ({sure:.0f}s) — {basarili}/{len(sonuclar)} başarılı"
+            ))
 
-        rapor = db_upsert(sonuclar, dry_run=opts["dry_run"])
+            rapor = db_upsert(sonuclar, dry_run=opts["dry_run"])
+        except Exception as e:
+            # Hata bildirimi — sonra yine de yükselt ki exit code ≠ 0 olsun
+            telegram_gonder(f"❌ Doğtaş taraması HATA ile durdu:\n{type(e).__name__}: {e}")
+            raise
 
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("=== DB RAPORU ==="))
         for k, v in rapor.items():
             self.stdout.write(f"  {k:20} : {v}")
+
+        if not opts["dry_run"]:
+            telegram_gonder(scrape_raporu_mesaji(
+                rapor, sure_sn=sure, basarili=basarili, toplam=len(sonuclar),
+            ))

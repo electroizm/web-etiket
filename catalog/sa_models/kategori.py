@@ -51,6 +51,12 @@ class Koleksiyon(Base):
     bayrak_exc: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     bayrak_sube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Mağaza bazlı son etiket yazdırma zamanı (0013 migration).
+    # NULL = bu mağaza için hiç yazdırılmadı. Etiket Yazdır ekranının
+    # "son basımdan beri değişenler" varsayılan filtresi bunlara dayanır.
+    son_yazdirma_exc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    son_yazdirma_sube: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     kategori: Mapped["Kategori"] = relationship(back_populates="koleksiyonlar")
     urunler: Mapped[list["Urun"]] = relationship(  # noqa: F821
         secondary="urun_koleksiyon",

@@ -73,6 +73,7 @@
         <label class="field">
           <span class="field-label">Güncelleme Tarihi</span>
           <input type="date" name="tarih_baslangic" value="{{ tarih_baslangic }}">
+          <span class="cell-meta">Boş bırak → son yazdırmadan beri değişenler</span>
         </label>
       </div>
     </form>
@@ -83,6 +84,7 @@
               action="{% url 'dashboard:etiket_yazdir_pdf' %}"
               target="_blank">
           {% csrf_token %}
+          <input type="hidden" name="magaza" value="{{ magaza }}">
 
           <div class="yazdir-toolbar glass">
             <button type="button" id="tumu-btn" class="btn-ghost" data-mode="all">
@@ -94,7 +96,8 @@
             </span>
             <span class="cell-meta">
               Mağaza: <strong>{% if magaza == 'exc' %}EXC{% else %}ŞUBE{% endif %}</strong>
-              · {{ tarih_baslangic }}'ten itibaren
+              {% if filtre_modu == 'tarih' %}· {{ tarih_baslangic }}'ten itibaren
+              {% else %}· son yazdırmadan beri değişenler{% endif %}
             </span>
             <button type="submit" class="btn-primary btn-primary--compact yazdir-toolbar__print">
               Yazdır ({{ toplam_say }})
@@ -117,12 +120,13 @@
                   <th>Koleksiyon</th>
                   <th>Takım</th>
                   <th>Son güncelleme</th>
+                  <th>Son yazdırma</th>
                 </tr>
               </thead>
               {% for grup in gruplar %}
                 <tbody class="yazdir-group is-collapsed" data-kategori="{{ grup.kategori_ad }}">
                   <tr class="yazdir-group__head">
-                    <td colspan="4">
+                    <td colspan="5">
                       <div class="yazdir-group__head-row">
                         <button type="button" class="yazdir-group__toggle" aria-expanded="false" aria-label="{{ grup.kategori_ad }} kategorisini genişlet">
                           <svg class="yazdir-group__chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -151,6 +155,7 @@
                       </td>
                       <td>{{ k.takim_adi|default:"—" }}</td>
                       <td>{% if k.son_guncelleme %}{{ k.son_guncelleme|date:"d.m.Y" }}{% else %}—{% endif %}</td>
+                      <td>{% if k.son_yazdirma %}{{ k.son_yazdirma|date:"d.m.Y H:i" }}{% else %}<span class="cell-meta">hiç</span>{% endif %}</td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -169,7 +174,8 @@
           <h2>Bu kriterlere uyan koleksiyon yok</h2>
           <p>
             {% if magaza == 'exc' %}EXC{% else %}ŞUBE{% endif %} bayrağı işaretli + takım atanmış
-            + {{ tarih_baslangic }} tarihinden sonra fiyat güncellemesi olan etiket bulunamadı.
+            {% if filtre_modu == 'tarih' %}+ {{ tarih_baslangic }} tarihinden sonra fiyat güncellemesi olan{% else %}+ son yazdırmadan sonra fiyatı değişen{% endif %}
+            etiket bulunamadı.
           </p>
         </section>
       {% endif %}

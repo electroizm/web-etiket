@@ -18,3 +18,6 @@ reportlab>=4.2.0
 qrcode>=7.4.2
 pillow>=10.0.0
 requests>=2.31.0
+
+# Hata izleme (settings.py — SENTRY_DSN doluysa aktif)
+sentry-sdk[django]>=2.0

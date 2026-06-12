@@ -552,12 +552,16 @@ def pdf_koleksiyon_etiketi(session: Session, koleksiyon_id: int) -> bytes:
 
 def pdf_coklu_koleksiyon_etiketi(
     session: Session, koleksiyon_ids: list[int]
-) -> bytes:
+) -> tuple[bytes, list[int]]:
     """Birden fazla koleksiyonun etiket PDF'ini tek doküman olarak üret.
 
     Her koleksiyon ayrı sayfa (A4 landscape). Geçersiz koleksiyonlar
     (kol bulunamadı, takım atanmamış, ürün yok, satır limiti aşımı)
     sessizce atlanır — kalanlar yine üretilir.
+
+    Returns:
+        (pdf_bytes, basilan_ids) — basilan_ids: PDF'e gerçekten sayfa olarak
+        giren koleksiyon id'leri (son_yazdirma damgası bunlara vurulur).
     """
     font, font_bold = _safe_setup_fonts()
 
@@ -570,6 +574,7 @@ def pdf_coklu_koleksiyon_etiketi(
     header_img, yerli_img = _load_etiket_gorselleri(session)
 
     pages_drawn = 0
+    basilan_ids: list[int] = []
     for kol, urunler, kombi_data in sayfalar:
         if pages_drawn > 0:
             c.showPage()  # önceki sayfayı kapat, yeni sayfa aç
@@ -580,6 +585,7 @@ def pdf_coklu_koleksiyon_etiketi(
                 yerli_img=yerli_img,
             )
             pages_drawn += 1
+            basilan_ids.append(kol.id)
         except Exception:
             log.exception("Çoklu PDF · koleksiyon %s çizim hatası", kol.id)
             # showPage zaten yapıldı, boş sayfa kalmasın diye yine de
@@ -591,4 +597,4 @@ def pdf_coklu_koleksiyon_etiketi(
         c.drawString(100, 400, "Yazdırılacak geçerli koleksiyon bulunamadı.")
 
     c.save()
-    return buf.getvalue()
+    return buf.getvalue(), basilan_ids
