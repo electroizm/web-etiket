@@ -137,9 +137,9 @@ class Command(BaseCommand):
             self.stdout.write(f"  {k:20} : {v}")
 
         # Özeti hemen GÖNDERME — DB'ye kaydet; 'bildirim_gonder' komutu
-        # (Görev Zamanlayıcı, her gün 10:07) okuyup Telegram'a iletir.
+        # (Görev Zamanlayıcı, her gün 10:07) okuyup e-posta ile iletir.
         # Kullanıcı kararı (2026-06-12): fiyat güncellemesi YOKSA
-        # (guncellenen == 0) hiç mesaj gitmesin → özet kaydedilmez.
+        # (guncellenen == 0) hiç bildirim gitmesin → özet kaydedilmez.
         if not opts["dry_run"]:
             import json as _json
             from datetime import date
