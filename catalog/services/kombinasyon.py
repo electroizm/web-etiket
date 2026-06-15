@@ -8,7 +8,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from catalog.sa_models import Kombinasyon, KombinasyonUrun, Urun
+from catalog.sa_models import Kombinasyon, KombinasyonUrun
 
 
 class KombinasyonAdiCakismasiError(ValueError):

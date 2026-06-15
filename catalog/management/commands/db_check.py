@@ -107,7 +107,6 @@ class Command(BaseCommand):
 
             session = SessionLocal()
             try:
-                k_cnt = session.scalar(select(Kategori).with_only_columns(Kategori.id).order_by(None))
                 # Sayım
                 from sqlalchemy import func
                 stats = {
