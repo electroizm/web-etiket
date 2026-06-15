@@ -134,9 +134,9 @@ def kategoriler_list(request):
 @login_required_supabase
 def kategori_detail(request, kategori_id: int):
     """Tek bir kategori → koleksiyon tablosu.
-    Tablo görseldeki gibi: Koleksiyon | Takım | Bayraklar | Kombinasyon | İşlemler
-    Takım/Bayraklar/Kombinasyon kolonları henüz veri yok — yer tutucu olarak gösterilir,
-    ileride Takım/TakimKombinasyonu modelleri portlanınca dolacak.
+    Tablo: Koleksiyon | Takım | Bayraklar | Kombinasyon | İşlemler.
+    Takım adı, EXC/ŞUBE bayrakları ve kombinasyon sayısı koleksiyon başına
+    doldurulur; takımı atanmış koleksiyonlar üstte sıralanır.
     """
     session = SessionLocal()
     try:
@@ -433,8 +433,11 @@ def urunler_list(request):
             "dashboard/_urunler_results.html", context, request=request
         )
         return JsonResponse({
-            "subtitle": f"{total} ürün · sayfa {page}/{total_pages}",
+            "subtitle": f"{total} ürün",
             "html": partial_html,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
         })
 
     return render(request, "dashboard/urunler_list.html", context)
@@ -896,7 +899,7 @@ def koleksiyon_rename(request, koleksiyon_id: int):
 
         # --- confirm_merge=True → birleştir ---
         # 1) Kaynaktaki ürünleri hedef koleksiyona ekle (mevcutları atla)
-        from sqlalchemy import insert, delete
+        from sqlalchemy import delete
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         kaynak_urun_ids = [
@@ -1906,7 +1909,7 @@ def kombinasyon_otomatik(request, koleksiyon_id: int):
 
         if request.method == "POST":
             try:
-                sonuc = otomatik_kombinasyon_olustur(session, koleksiyon_id)
+                otomatik_kombinasyon_olustur(session, koleksiyon_id)
                 from django.shortcuts import redirect as _redirect
                 return _redirect(f"/app/urunler/?koleksiyon={koleksiyon_id}")
             except (OtoKombinasyonError, EslesmeYok) as e:

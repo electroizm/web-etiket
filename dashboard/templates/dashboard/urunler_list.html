@@ -5,6 +5,10 @@
 
 {% block head_extra %}
   <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  {% if not koleksiyon_info %}
+    {# Genel/kategori listesinde sonsuz scroll var → sayfalama butonlarını gizle #}
+    <style>#urunler-results .pagination{display:none}</style>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -60,7 +64,7 @@
         <h1 class="page-title">
           {% if koleksiyon_info %}{{ koleksiyon_info.ad }}{% else %}Ürünler{% endif %}
         </h1>
-        <p class="page-subtitle" id="urunler-subtitle">{{ total }} ürün · sayfa {{ page }}/{{ total_pages }}</p>
+        <p class="page-subtitle" id="urunler-subtitle">{{ total }} ürün</p>
       </div>
 
       {% if koleksiyon_info %}
@@ -213,9 +217,16 @@
       </form>
     {% endif %}
 
-    <div id="urunler-results">
+    <div id="urunler-results"
+         data-page="{{ page }}"
+         data-total-pages="{{ total_pages }}"
+         data-total="{{ total }}">
       {% include "dashboard/_urunler_results.html" %}
     </div>
+    {% if not koleksiyon_info %}
+      {# Sonsuz scroll tetikleyicisi — görünüme girince sonraki sayfa yüklenir #}
+      <div id="scroll-sentinel" aria-hidden="true" style="height:1px"></div>
+    {% endif %}
   </main>
 
   {# CSRF — sil/takım/etc. tüm AJAX'lar için (her modda gerekli) #}
@@ -322,6 +333,10 @@
               subtitle.textContent = data.subtitle;
             }
             resultsWrap.innerHTML = data.html || '';
+            // Sonsuz scroll durumu sıfırlanır (yeni filtre → 1. sayfa)
+            resultsWrap.dataset.page = String(data.page || 1);
+            resultsWrap.dataset.totalPages = String(data.total_pages || 1);
+            if (typeof data.total === 'number') resultsWrap.dataset.total = String(data.total);
             // Tarayıcı URL'ini güncelle (geri tuşu için history.pushState
             // kullanılabilir ama her tuşta history kaydı şişer — replaceState
             // tercih edildi).
@@ -354,6 +369,60 @@
             fetchAndUpdate();
           });
         });
+      }
+
+      // ─── Sonsuz scroll ───────────────────────────────────────────────────
+      // Genel/kategori listesinde (koleksiyon modu HARİÇ — orada drag-drop
+      // sıralama ve 15 satır etiket limiti tüm ürünlerin sayfada olmasını
+      // ister) sayfa sonuna yaklaşınca sonraki sayfa çekilip kartlar mevcut
+      // grid'e eklenir. Sentinel #urunler-results dışında olduğu için filtre
+      // sonucu innerHTML değişse de gözlemci kopmaz.
+      const sentinel = document.getElementById('scroll-sentinel');
+      if (sentinel && resultsWrap) {
+        let scrollLoading = false;
+
+        async function loadNextPage() {
+          const cur = parseInt(resultsWrap.dataset.page || '1', 10);
+          const totalPages = parseInt(resultsWrap.dataset.totalPages || '1', 10);
+          if (scrollLoading || cur >= totalPages) return;
+          scrollLoading = true;
+          try {
+            const params = new URLSearchParams(window.location.search);
+            params.set('page', String(cur + 1));
+            const res = await fetch(window.location.pathname + '?' + params.toString(), {
+              headers: { 'X-Partial': '1', 'Accept': 'application/json' },
+              credentials: 'same-origin',
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+
+            const tmp = document.createElement('div');
+            tmp.innerHTML = data.html || '';
+            const grid = resultsWrap.querySelector('.urun-grid');
+            const yeniKartlar = tmp.querySelectorAll('.urun-card');
+            if (grid && yeniKartlar.length) {
+              yeniKartlar.forEach((c) => grid.appendChild(c));
+            }
+            resultsWrap.dataset.page = String(data.page || cur + 1);
+            if (typeof data.total_pages === 'number') {
+              resultsWrap.dataset.totalPages = String(data.total_pages);
+            }
+            if (subtitle) {
+              const shown = resultsWrap.querySelectorAll('.urun-card').length;
+              const toplam = resultsWrap.dataset.total || shown;
+              subtitle.textContent = `${shown} / ${toplam} ürün`;
+            }
+          } catch (err) {
+            console.error('Sonsuz scroll hatası:', err);
+          } finally {
+            scrollLoading = false;
+          }
+        }
+
+        const io = new IntersectionObserver((entries) => {
+          if (entries.some((e) => e.isIntersecting)) loadNextPage();
+        }, { rootMargin: '600px' });
+        io.observe(sentinel);
       }
 
       // ─── Ürünü tamamen sil (X butonu, genel ürünler sayfası) ────────────
