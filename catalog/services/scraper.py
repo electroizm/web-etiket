@@ -1,11 +1,15 @@
 """
 Doğtaş Web Scraper — Katalog tarayıcı (Django entegrasyonlu)
 
-- "Tümü" sayfasını sayfa sayfa gez (https://www.dogtas.com/tumu-c-0?siralama=a-z&sayfa=N)
-- Her sayfanın ürün URL'lerini çıkar
+- Ürün keşfi sitemap'ten yapılır (https://www.dogtas.com/sitemap.xml →
+  /sitemap/products/N.xml). Sitemap, Doğtaş'ın Google'a verdiği kanonik
+  "tüm ürünler" listesidir; takım modülleri dahil her ürünü standalone içerir.
+  (Eski yöntem "Tümü" sayfasını sayfa sayfa gezerdi; o, listede görünmeyen
+  modülleri kaçırıyordu ve robots.txt `?siralama=` yolunu Disallow ediyor.)
 - Her ürün detayından: SKU, ad, kategori, koleksiyon, liste/perakende fiyat, indirim
 - Yeni ürün → DB'ye ekle (Kategori + Koleksiyon otomatik)
 - Mevcut ürün → fiyat güncelle (Fiyat tablosuna verification kaydı)
+- Fiyatı okunamayan ürün (SKU olsa bile) DB'ye yazılmaz, atlanır.
 
 Anti-bot:
 - Cookie warming (anasayfa → kategori → ürün)
@@ -25,7 +29,7 @@ import logging
 import random
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from urllib.parse import urljoin
@@ -44,7 +48,16 @@ log = logging.getLogger("catalog.scraper")
 # ─── Sabitler ────────────────────────────────────────────────────────────────
 
 BASE_URL = "https://www.dogtas.com"
-KATALOG_URL = f"{BASE_URL}/tumu-c-0?siralama=a-z&sayfa={{page}}"
+
+# Ürün keşfi sitemap'ten. Index → birden çok /sitemap/products/N.xml.
+SITEMAP_INDEX_URL = f"{BASE_URL}/sitemap.xml"
+# Sadece TR ürün sitemap'leri (EN olan /sitemap/en/products/... hariç).
+_PRODUCT_SITEMAP_RE = re.compile(r"/sitemap/products/\d+\.xml$")
+# <loc>...</loc> içeriğini çıkar (XML parse'a gerek yok, namespace derdi olmaz).
+_LOC_RE = re.compile(r"<loc>\s*([^<]+?)\s*</loc>")
+# Toplanan URL'leri loglama/test (--max-pages, --start-page) için bu boyutta
+# "sayfa" bloklarına böleriz. Sitemap'in kendi sayfa kavramı yok; bu kozmetik.
+SITEMAP_CHUNK = 50
 
 USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -96,6 +109,11 @@ class ScrapeSonucu:
     perakende_fiyat: int | None = None   # TL cinsinden tam sayı
     indirim_yuzde: int | None = None
     hata: str | None = None
+    # Bu sayfada keşfedilen takım modüllerinin kendi ürün sayfası (/p-{id})
+    # linkleri. Sadece takım (set) sayfalarında dolu gelir; modül ve normal
+    # ürün sayfalarında boştur. tarama_yap bunları kuyruğa ekleyip ayrı ürün
+    # olarak scrape eder.
+    modul_urls: list[str] = field(default_factory=list)
 
     @property
     def basarili(self) -> bool:
@@ -165,7 +183,7 @@ def sku_from_url(url: str) -> str | None:
 class DogtasScraper:
     """
     Doğtaş.com kataloğunu tarar:
-      tarama_yap(): "Tümü" sayfasını sayfa sayfa gezer, tüm ürünleri keşfeder.
+      tarama_yap(): sitemap'ten tüm ürün URL'lerini toplar, her birini scrape eder.
     """
 
     def __init__(
@@ -230,59 +248,90 @@ class DogtasScraper:
         await self._fetch(session, BASE_URL + "/tumu-c-0")
         await self._wait_jitter()
 
-    # ─── "Tümü" sayfasından ürün linkleri ───────────────────────────────────
+    # ─── Sitemap'ten ürün URL keşfi ─────────────────────────────────────────
 
-    @staticmethod
-    def _extract_urun_links(soup: BeautifulSoup) -> list[str]:
+    async def _fetch_sitemap_urls(self, session: aiohttp.ClientSession) -> list[str]:
         """
-        Katalog sayfasındaki ürün detay URL'lerini çıkar.
+        Sitemap index'ten tüm TR ürün URL'lerini topla.
 
-        Doğtaş katalog HTML yapısı:
-            .card-product → .image-wrapper → .image → .carousel
-                → .carousel-inner → .carousel-item.active → <a>
+        Akış: /sitemap.xml (index) → birden çok /sitemap/products/N.xml →
+        her birindeki <loc> ürün URL'leri. EN sitemap'leri (/sitemap/en/...)
+        atlanır. Sonuç sırası sitemap'teki sırayla, tekrarsız.
 
-        Sadece her ürünün ANA görsel linkini istiyoruz (carousel'de aktif slide).
+        Bu, eski "Tümü sayfasını sayfa sayfa gez" keşfinin yerini alır:
+        sitemap takım modüllerini de standalone listeler, yani katalog
+        listesinde görünmeyen ürünleri kaçırmayız.
         """
-        if not soup:
-            return []
+        index_xml = await self._fetch(session, SITEMAP_INDEX_URL)
+        if not index_xml:
+            raise RuntimeError(f"Sitemap index çekilemedi: {SITEMAP_INDEX_URL}")
+
+        product_sitemaps = [
+            loc for loc in _LOC_RE.findall(index_xml)
+            if _PRODUCT_SITEMAP_RE.search(loc)
+        ]
+        if not product_sitemaps:
+            raise RuntimeError("Sitemap index'te ürün sitemap'i bulunamadı")
+        log.info("Sitemap index: %d ürün sitemap'i", len(product_sitemaps))
 
         seen: set[str] = set()
         urls: list[str] = []
-
-        for el in soup.select(".card-product .carousel-item.active a"):
-            href = (el.get("href") or "").strip()
-            if not href or href.startswith("javascript:") or href.startswith("#"):
+        for sm in product_sitemaps:
+            await self._wait_jitter()
+            xml = await self._fetch(session, sm)
+            if not xml:
+                log.warning("Ürün sitemap'i çekilemedi, atlandı: %s", sm)
                 continue
-            if "#" in href:
-                href = href.split("#")[0]
-            full = urljoin(BASE_URL, href)
+            once = len(urls)
+            for loc in _LOC_RE.findall(xml):
+                if "dogtas.com" not in loc or loc in seen:
+                    continue
+                seen.add(loc)
+                urls.append(loc)
+            log.info("  %s → %d ürün", sm.rsplit("/", 1)[-1], len(urls) - once)
+        return urls
+
+    @staticmethod
+    def _extract_modul_links(soup: BeautifulSoup) -> list[str]:
+        """
+        Takım (set) ürün sayfasındaki "TAKIM İÇERİĞİNİ ÖZELLEŞTİR" modüllerinin
+        kendi ürün sayfası (/p-{id}) linklerini çıkar.
+
+        Keşif artık sitemap'ten yapıldığı için bu fonksiyon yalnızca EMNİYET
+        KEMERİ: modüller (ör. "Avenia Tekli Sağ Kollu Modül") normalde
+        sitemap'te standalone listelidir. Ama sitemap bir modülü kaçırırsa,
+        modül ait olduğu takımın detay sayfasındaki `.product-groups
+        .product-item` bloklarında bulunur — buradan toplanıp, tarama_yap
+        içinde sitemap'te OLMAYANLAR kuyruğa eklenir.
+
+        Modül linki iki formatta gelebilir: '/p-6164' (iç id) veya
+        '/avenia-tekli-kolsuz-3120029104' (slug + SKU). Her ikisi de modülün
+        başlık (a.title) anchor'ında bulunur — selector buna dayanır.
+
+        Not: kanonik SKU takım sayfasının bloğunda YOKTUR (sadece data-item-id
+        gibi iç id'ler var); her modülün gerçek SKU'su ancak kendi sayfası
+        scrape edilince (scrape_detail) alınır.
+        """
+        if not soup:
+            return []
+        seen: set[str] = set()
+        urls: list[str] = []
+        for el in soup.select(".product-groups .product-item a.title[href]"):
+            href = (el.get("href") or "").strip()
+            # boş / JS / template kalıntısı (href="...${product.id}...") elenir
+            if (
+                not href
+                or href.startswith("javascript:")
+                or href.startswith("#")
+                or "${" in href
+            ):
+                continue
+            full = urljoin(BASE_URL, href.split("#")[0])
             if "dogtas.com" not in full or full in seen:
                 continue
             seen.add(full)
             urls.append(full)
-
         return urls
-
-    @staticmethod
-    def _son_sayfa_mi(soup: BeautifulSoup | None) -> bool:
-        """'Ürün bulunamadı' uyarısı varsa son sayfaya geldik."""
-        if not soup:
-            return True
-        warn = soup.find(class_="alert alert-warning")
-        return bool(warn and "Ürün bulunamadı" in warn.get_text())
-
-    async def listele_sayfa(
-        self, session: aiohttp.ClientSession, page: int
-    ) -> list[str] | None:
-        """Tek bir kategori sayfasının ürün URL'lerini al. Son sayfaysa None döner."""
-        page_url = KATALOG_URL.format(page=page)
-        html = await self._fetch(session, page_url)
-        if not html:
-            return None
-        soup = BeautifulSoup(html, "lxml")
-        if self._son_sayfa_mi(soup):
-            return None
-        return self._extract_urun_links(soup)
 
     # ─── Detail parse ───────────────────────────────────────────────────────
 
@@ -429,6 +478,11 @@ class DogtasScraper:
                     sonuc.indirim_yuzde = v
                     break
 
+        # Takım sayfasıysa: içindeki modüllerin /p-{id} linklerini topla.
+        # tarama_yap bunları kuyruğa ekleyip ayrı ürün olarak çeker.
+        # Modül/normal ürün sayfalarında bu liste boş döner.
+        sonuc.modul_urls = self._extract_modul_links(soup)
+
         return sonuc
 
     # ─── Tarama akışı ───────────────────────────────────────────────────────
@@ -440,11 +494,16 @@ class DogtasScraper:
         ilerle_callback=None,
     ) -> list[ScrapeSonucu]:
         """
-        Doğtaş kataloğunu sayfa sayfa gez, tüm ürünleri scrape et.
+        Sitemap'ten tüm ürün URL'lerini topla, her birini scrape et.
+
+        Keşif sitemap'ten yapılır (_fetch_sitemap_urls); toplanan URL listesi
+        loglama ve test kolaylığı için SITEMAP_CHUNK boyutunda "sayfa"lara
+        bölünür — sitemap'in kendi sayfa kavramı yoktur, bu kozmetiktir.
 
         Args:
-            max_pages: ilk N sayfa (test için). None = tüm sayfalar.
-            start_page: hangi sayfadan başla (kalınan yerden devam için).
+            max_pages: ilk N "sayfa" (= ilk N*SITEMAP_CHUNK ürün; test için).
+                       None = tüm ürünler.
+            start_page: kaçıncı "sayfadan" başla (önceki blokları atla).
             ilerle_callback: her ürün bittikten sonra çağrılır (sayfa, idx, sonuc).
         """
         sonuclar: list[ScrapeSonucu] = []
@@ -455,25 +514,44 @@ class DogtasScraper:
         ) as session:
             await self.warmup(session)
 
-            page = start_page
-            while True:
-                if max_pages and (page - start_page + 1) > max_pages:
+            log.info("Sitemap'ten ürün URL'leri toplanıyor...")
+            tum_urls = await self._fetch_sitemap_urls(session)
+            if not tum_urls:
+                raise RuntimeError("Sitemap'ten hiç ürün URL'si çıkmadı")
+            log.info("Sitemap: toplam %d ürün URL'si", len(tum_urls))
+
+            # Sitemap'in zaten içerdiği URL'ler — modül emniyet kemeri (aşağıda)
+            # sadece sitemap'te OLMAYAN modülleri eklesin diye kullanılır.
+            sitemap_seti = set(tum_urls)
+
+            chunklar = [
+                tum_urls[i:i + SITEMAP_CHUNK]
+                for i in range(0, len(tum_urls), SITEMAP_CHUNK)
+            ]
+            islenen: set[str] = set()   # global URL dedupe
+
+            for sayfa, chunk in enumerate(chunklar, start=1):
+                if sayfa < start_page:
+                    continue
+                if max_pages and (sayfa - start_page + 1) > max_pages:
                     log.info("Max sayfa limit: %d", max_pages)
                     break
 
-                log.info("─── Sayfa %d ─────────────────", page)
-                urls = await self.listele_sayfa(session, page)
-                if urls is None:
-                    log.info("Son sayfa: %d. Tarama bitti.", page - 1)
-                    break
-                if not urls:
-                    log.warning("Sayfa %d boş ürün döndü, atlandı", page)
-                    page += 1
-                    continue
+                log.info("─── Sayfa %d/%d ─────────────────", sayfa, len(chunklar))
 
-                log.info("Sayfa %d: %d ürün", page, len(urls))
+                # Kuyruk = bu bloğun ürünleri + (nadiren) sitemap'te olmayıp
+                # takım sayfasından keşfedilen modüller.
+                kuyruk: list[str] = list(chunk)
+                idx = 0
+                i = 0
+                while i < len(kuyruk):
+                    url = kuyruk[i]
+                    i += 1
+                    if url in islenen:
+                        continue
+                    islenen.add(url)
+                    idx += 1
 
-                for idx, url in enumerate(urls, 1):
                     await self._wait_jitter()
                     try:
                         sonuc = await self.scrape_detail(session, url)
@@ -481,11 +559,27 @@ class DogtasScraper:
                         log.exception("Beklenmeyen hata %s", url)
                         sonuc = ScrapeSonucu(url=url, hata=f"{type(e).__name__}: {e}")
                     sonuclar.append(sonuc)
+
+                    # Emniyet kemeri: sitemap bir takım modülünü kaçırmışsa
+                    # (sitemap_seti'nde yoksa) takım sayfasından yakalayıp ekle.
+                    # Sitemap zaten içeriyorsa eklemeyiz — sırası gelince taranır.
+                    yeni_modul = 0
+                    for m in sonuc.modul_urls:
+                        if m in sitemap_seti or m in islenen or m in kuyruk:
+                            continue
+                        kuyruk.append(m)
+                        yeni_modul += 1
+                    if yeni_modul:
+                        log.info(
+                            "    ↳ %d takım modülü kuyruğa eklendi (sitemap dışı)",
+                            yeni_modul,
+                        )
+
                     if sonuc.basarili:
                         log.info(
                             "  [%d/%d] OK %s — %s (L:%s P:%s)",
                             idx,
-                            len(urls),
+                            len(kuyruk),
                             sonuc.sku,
                             (sonuc.urun_adi_tam or "")[:50],
                             sonuc.liste_fiyat,
@@ -495,16 +589,17 @@ class DogtasScraper:
                         log.warning(
                             "  [%d/%d] FAIL %s: %s",
                             idx,
-                            len(urls),
+                            len(kuyruk),
                             sonuc.sku or "?",
                             sonuc.hata or "ad/sku eksik",
                         )
                     if ilerle_callback:
-                        ilerle_callback(page, idx, sonuc)
+                        ilerle_callback(sayfa, idx, sonuc)
 
                 # Sayfa arası ekstra bekleme
                 await self._wait_jitter()
-                page += 1
+
+            log.info("Tüm sitemap URL'leri tarandı. Tarama bitti.")
 
         return sonuclar
 
@@ -557,6 +652,8 @@ def db_upsert(sonuclar: Iterable[ScrapeSonucu], *, dry_run: bool = False) -> dic
         "filtrelenen": 0,         # KategoriKurali (filtre) ile atlanan (sadece yeni SKU için)
         "duplike_edilen": 0,      # KategoriKurali (duplikasyon) ile çoğaltılan (yeni SKU)
         "yeni_koleksiyon_eklendi": 0,  # mevcut SKU'ya scrape yeni koleksiyon ekledi
+        "atlanan_fiyatsiz": 0,    # SKU+ad var ama fiyat okunamadı → DB'ye yazılmadı
+        "atlanan_kategorisiz": 0, # yeni ürün ama kategori okunamadı → DB'ye yazılmadı
         "hata": 0,
     }
 
@@ -599,6 +696,13 @@ def db_upsert(sonuclar: Iterable[ScrapeSonucu], *, dry_run: bool = False) -> dic
         for s in sonuclar:
             if not s.basarili:
                 rapor["hata"] += 1
+                continue
+
+            # Fiyatı okunamayan ürünü (SKU/ad olsa bile) DB'ye yazma — ne yeni
+            # ekle, ne de mevcut kaydı None'la ez. Kullanıcı kararı: boşver,
+            # zamanla problem çıkarsa tekrar bakılır.
+            if s.liste_fiyat is None or s.perakende_fiyat is None:
+                rapor["atlanan_fiyatsiz"] += 1
                 continue
 
             # Mevcut SKU'yu önce ara — varsa filtre/skip kuralları uygulanmaz
@@ -651,7 +755,16 @@ def db_upsert(sonuclar: Iterable[ScrapeSonucu], *, dry_run: bool = False) -> dic
                 continue
 
             # ─── Yeni SKU: tam pipeline ────────────────────────────────────
-            kat_ad = (s.kategori or "Tanımsız").strip()
+            # Kategori okunamadıysa ürünü HİÇ oluşturma. Eskiden "Tanımsız"
+            # adlı bir kategoriye düşerdi; ama db_upsert mevcut SKU'ların
+            # kategorisini bir daha değiştirmediği için, breadcrumb'ı geçici
+            # olarak okunamayan ürünler (özellikle takım modülleri) "Tanımsız"da
+            # kalıcı olarak donuyordu. Artık atlıyoruz: bir sonraki tarama
+            # breadcrumb'ı düzgün okursa ürün doğru kategoriyle eklenir.
+            if not s.kategori:
+                rapor["atlanan_kategorisiz"] += 1
+                continue
+            kat_ad = s.kategori.strip()
 
             # Skip listesindeki kategoriler atlanır (sadece yeni SKU için)
             if kat_ad in skip_kategoriler:
