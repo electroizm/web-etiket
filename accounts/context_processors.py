@@ -8,3 +8,12 @@ def supabase_settings(request):
         'SUPABASE_URL': settings.SUPABASE_URL,
         'SUPABASE_ANON_KEY': settings.SUPABASE_ANON_KEY,
     }
+
+
+def app_surum(request):
+    """Telif satırı + sürümü template'lere expose eder (tek kaynak: settings).
+    Footer'larda `{{ APP_TELIF }} • v{{ APP_SURUM }}` olarak gösterilir."""
+    return {
+        'APP_SURUM': settings.APP_SURUM,
+        'APP_TELIF': settings.APP_TELIF,
+    }

@@ -25,6 +25,9 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
 SUPABASE_JWT_SECRET = os.getenv('SUPABASE_JWT_SECRET', '')   # legacy HS256
 SUPABASE_JWT_JWK = os.getenv('SUPABASE_JWT_JWK', '')         # yeni ES256 public JWK (JSON string)
 
+# Fiyat API (instALL köprü sunucusu buradan fiyat sorgular) — X-API-Key header'ında bu değer beklenir.
+ETIKET_API_KEY = os.getenv('ETIKET_API_KEY', '')
+
 # Scraper — Supabase Postgres direct connection (SQLAlchemy)
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 SCRAPER_CONCURRENCY = int(os.getenv('SCRAPER_CONCURRENCY', '2'))
@@ -99,10 +102,17 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'accounts.context_processors.supabase_settings',
+                'accounts.context_processors.app_surum',
             ],
         },
     },
 ]
+
+# Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
+# APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
+# APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
+APP_SURUM = "2607.01"
+APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
 
