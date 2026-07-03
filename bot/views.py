@@ -15,6 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from bot import ig_presenter, meta_client, wa_presenter
+from bot.kayit import kaydet, ozet_gelen, ozet_giden
 from bot.router import yanit_uret
 from bot.webhook_core import extract_events, verify_challenge
 
@@ -53,12 +54,14 @@ def webhook(request):
 
     for olay in extract_events(govde):
         try:
+            kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
             if olay.platform == "instagram":
                 mesaj = yanit_uret(olay.tetik, P=ig_presenter)
                 meta_client.gonder_instagram(olay.gonderen, mesaj)
             else:
                 mesaj = yanit_uret(olay.tetik, P=wa_presenter)
                 meta_client.gonder_whatsapp(olay.gonderen, mesaj)
+            kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
         except Exception:
             log.exception("olay işlenemedi: %s", olay)
 

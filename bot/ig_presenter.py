@@ -21,6 +21,11 @@ def _tl(n) -> str:
     return f"{n:,.0f} TL".replace(",", ".") if n is not None else "—"
 
 
+def metin_mesaji(govde: str) -> dict:
+    """Düz metin mesajı (router'ın yetkili yönlendirmesi gibi hazır metinler için)."""
+    return {"text": govde}
+
+
 def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:
     """secenekler: [(baslik, payload), ...] → quick reply mesajı."""
     qrs = [
@@ -36,6 +41,7 @@ def kategoriler_mesaji(kategoriler: list[dict]) -> dict:
     if not kategoriler:
         return {"text": "Şu an gösterilecek kategori yok."}
     sec = [(k["ad"], f"KAT:{k['id']}") for k in kategoriler]
+    sec.append(("👤 Yetkiliyle görüş", "YETKILI"))   # yetkiliye yönlendirme
     return quick_replies("Hangi kategoriye bakmak istersin?", sec)
 
 

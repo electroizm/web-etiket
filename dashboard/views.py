@@ -16,6 +16,7 @@ from django.views.decorators.http import require_http_methods
 from accounts.decorators import login_required_supabase, login_required_supabase_api
 from catalog.database import SessionLocal
 from catalog.sa_models import (
+    BotMesaj,
     Fiyat,
     Kategori,
     Kombinasyon,
@@ -2069,4 +2070,38 @@ def ayarlar_yerli_uretim(request):
         "active_tab": "yerli_uretim",
         "yerli_uretim_url": mevcut_url,
         "max_mb": SLOGAN_MAX_BYTES // (1024 * 1024),
+    })
+
+
+# ─── Bot Konuşmaları (WhatsApp/Instagram) ─────────────────────────────────────
+@login_required_supabase
+def bot_konusmalar(request):
+    """0488/Instagram botunda geçen konuşmalar — kullanıcıya göre gruplu, en yeni önce."""
+    session = SessionLocal()
+    try:
+        rows = list(session.scalars(
+            select(BotMesaj).order_by(BotMesaj.olusturma.desc()).limit(500)
+        ).all())
+    finally:
+        session.close()
+
+    # (platform, kullanici) bazında grupla. rows yeniden-eskiye sıralı geldiği için
+    # ilk görülen mesaj o konuşmanın en yenisidir.
+    gruplar: dict[tuple[str, str], list] = {}
+    for m in rows:
+        gruplar.setdefault((m.platform, m.kullanici), []).append(m)
+
+    konusmalar = [
+        {
+            "platform": platform,
+            "kullanici": kullanici,
+            "son": msgs[0].olusturma,          # en yeni mesaj zamanı
+            "adet": len(msgs),
+            "mesajlar": list(reversed(msgs)),  # okuma sırası: eskiden yeniye
+        }
+        for (platform, kullanici), msgs in gruplar.items()
+    ]
+    return render(request, "dashboard/bot_konusmalar.html", {
+        "konusmalar": konusmalar,
+        "toplam": len(rows),
     })

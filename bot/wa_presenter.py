@@ -33,6 +33,11 @@ def _metin(govde: str) -> dict:
     return {"type": "text", "text": {"body": govde}}
 
 
+def metin_mesaji(govde: str) -> dict:
+    """Düz metin mesajı (router'ın yetkili yönlendirmesi gibi hazır metinler için)."""
+    return _metin(govde)
+
+
 def _butonlar(metin: str, secenekler: list[tuple[str, str]]) -> dict:
     """secenekler: [(baslik, id), ...] — en çok 3 → button tipi."""
     butonlar = [
@@ -81,6 +86,9 @@ def kategoriler_mesaji(kategoriler: list[dict]) -> dict:
     if not kategoriler:
         return _metin("Şu an gösterilecek kategori yok.")
     sec = [(k["ad"], f"KAT:{k['id']}", "") for k in kategoriler]
+    # Son satır: yetkiliye yönlendirme. (WhatsApp list en çok 10 satır — kategori
+    # sayısı 9'u aşarsa bu seçenek görünmez; şu an ~8 kategori var, sığıyor.)
+    sec.append(("👤 Yetkiliyle görüş", "YETKILI", ""))
     return _secim_mesaji("Hangi kategoriye bakmak istersin?", sec)
 
 

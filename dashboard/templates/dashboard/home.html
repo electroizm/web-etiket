@@ -83,6 +83,15 @@
           <div class="stat-card__value">0</div>
         {% endif %}
       </a>
+      <a href="{% url 'dashboard:bot_konusmalar' %}" class="stat-card glass">
+        <div class="stat-card__label">Bot Konuşmaları</div>
+        <div class="stat-card__value">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <div class="stat-card__hint">WhatsApp · Instagram →</div>
+      </a>
     </section>
 
     {% if stats.urun == 0 %}
