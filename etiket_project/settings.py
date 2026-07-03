@@ -28,6 +28,20 @@ SUPABASE_JWT_JWK = os.getenv('SUPABASE_JWT_JWK', '')         # yeni ES256 public
 # Fiyat API (instALL köprü sunucusu buradan fiyat sorgular) — X-API-Key header'ında bu değer beklenir.
 ETIKET_API_KEY = os.getenv('ETIKET_API_KEY', '')
 
+# ─── WhatsApp/Instagram bot (instALL köprüsü — artık bu app içinde, tek Render servisi) ──
+# Webhook doğrulaması için Meta'ya verilen gizli kelime (hub.verify_token ile karşılaştırılır).
+VERIFY_TOKEN = os.getenv('VERIFY_TOKEN', '')
+# WhatsApp Cloud API (graph.facebook.com) — gönderim token'ı + numara kimliği.
+META_TOKEN = os.getenv('META_TOKEN', '')
+PHONE_NUMBER_ID = os.getenv('PHONE_NUMBER_ID', '')
+# Instagram Login API (graph.instagram.com) — ayrı token, ayrı host.
+IG_TOKEN = os.getenv('IG_TOKEN', '')
+IG_ID = os.getenv('IG_ID', 'me')
+GRAPH_API_VERSION = os.getenv('GRAPH_API_VERSION', 'v22.0')
+# Token yoksa gerçek gönderim yapılmaz, payload loglanır (geliştirme kolaylığı).
+BOT_DRY_RUN = not META_TOKEN        # WhatsApp
+BOT_DRY_RUN_IG = not IG_TOKEN       # Instagram
+
 # Scraper — Supabase Postgres direct connection (SQLAlchemy)
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 SCRAPER_CONCURRENCY = int(os.getenv('SCRAPER_CONCURRENCY', '2'))
@@ -74,6 +88,7 @@ INSTALLED_APPS = [
     'accounts',
     'dashboard',
     'catalog',
+    'bot',
 ]
 
 MIDDLEWARE = [
