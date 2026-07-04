@@ -9,7 +9,8 @@ import logging
 from sqlalchemy import and_, case, func, or_, select, update
 
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
@@ -2104,4 +2105,38 @@ def bot_konusmalar(request):
     return render(request, "dashboard/bot_konusmalar.html", {
         "konusmalar": konusmalar,
         "toplam": len(rows),
+        "sonuc": request.GET.get("sonuc", ""),
     })
+
+
+@login_required_supabase
+def bot_cevap(request):
+    """Konuşmaya elle (yetkili) cevap gönder — Business Suite gelen kutusu muadili.
+
+    Bot karışmaz: mesaj doğrudan Cloud API'den gider, '[yetkili]' etiketiyle
+    kaydedilir. WhatsApp kuralı: müşterinin son mesajından 24 saat geçtiyse
+    serbest metin gönderilemez (API hata döner → kullanıcıya bildirilir).
+    """
+    if request.method != "POST":
+        return redirect("dashboard:bot_konusmalar")
+
+    from bot import ig_presenter, meta_client, wa_presenter
+    from bot.kayit import kaydet
+
+    platform = (request.POST.get("platform") or "").strip()
+    kullanici = (request.POST.get("kullanici") or "").strip()
+    metin = (request.POST.get("metin") or "").strip()
+
+    if platform not in ("whatsapp", "instagram") or not kullanici or not metin:
+        return redirect(f"{reverse('dashboard:bot_konusmalar')}?sonuc=hata")
+
+    if platform == "instagram":
+        mesaj = ig_presenter.metin_mesaji(metin)
+        basarili = meta_client.gonder_instagram(kullanici, mesaj)
+    else:
+        mesaj = wa_presenter.metin_mesaji(metin)
+        basarili = meta_client.gonder_whatsapp(kullanici, mesaj)
+
+    if basarili:
+        kaydet(platform, kullanici, "giden", f"[yetkili] {metin}")
+    return redirect(f"{reverse('dashboard:bot_konusmalar')}?sonuc={'ok' if basarili else 'hata'}")

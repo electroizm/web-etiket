@@ -29,6 +29,18 @@
     .bk-msg.giden { align-self:flex-end; background: rgba(124,92,255,.22);
                     border-bottom-right-radius: 4px; }
     .bk-time { display:block; margin-top:4px; font-size:.68rem; opacity:.5; }
+    .bk-msg.giden.elle { background: rgba(37,211,102,.22); }
+    .bk-reply { display:flex; gap:8px; margin-top:12px; }
+    .bk-reply input[type=text] { flex:1; padding:9px 12px; border-radius: 12px;
+        border: 1px solid rgba(125,125,140,.3); background: rgba(125,125,140,.06);
+        color: inherit; font-size:.92rem; }
+    .bk-reply button { padding: 9px 16px; border-radius: 12px; border: none;
+        background: #25d366; color: #fff; font-weight: 700; cursor: pointer; }
+    .bk-reply button:hover { filter: brightness(1.08); }
+    .bk-banner { padding: 10px 14px; border-radius: 12px; margin-bottom: 14px;
+                 font-size:.92rem; font-weight:600; }
+    .bk-banner--ok { background: rgba(37,211,102,.15); color:#1faa53; }
+    .bk-banner--hata { background: rgba(255,80,80,.14); color:#e05656; }
   </style>
 {% endblock %}
 
@@ -54,6 +66,14 @@
         <span class="bk-sub">Botun cevapladığı son konuşmalar · {{ toplam }} mesaj</span>
       </div>
 
+      {% if sonuc == 'ok' %}
+        <div class="bk-banner bk-banner--ok">✅ Cevabınız gönderildi.</div>
+      {% elif sonuc == 'hata' %}
+        <div class="bk-banner bk-banner--hata">⚠️ Gönderilemedi. Müşterinin son
+          mesajından 24 saatten fazla geçtiyse WhatsApp serbest mesaja izin vermez —
+          müşteri tekrar yazana kadar beklemek gerekir.</div>
+      {% endif %}
+
       {% if not konusmalar %}
         <div class="bk-empty">
           Henüz kayıtlı mesaj yok.<br>
@@ -75,12 +95,20 @@
           </div>
           <div class="bk-msgs">
             {% for m in k.mesajlar %}
-              <div class="bk-msg {{ m.yon }}">
+              <div class="bk-msg {{ m.yon }}{% if '[yetkili]' in m.metin %} elle{% endif %}">
                 {{ m.metin }}
                 <span class="bk-time">{{ m.olusturma|date:"d.m H:i" }}</span>
               </div>
             {% endfor %}
           </div>
+          <form class="bk-reply" method="post" action="{% url 'dashboard:bot_cevap' %}">
+            {% csrf_token %}
+            <input type="hidden" name="platform" value="{{ k.platform }}">
+            <input type="hidden" name="kullanici" value="{{ k.kullanici }}">
+            <input type="text" name="metin" maxlength="1000" required
+                   placeholder="Yetkili olarak cevap yaz… (bot karışmaz, direkt gider)">
+            <button type="submit">Gönder</button>
+          </form>
         </section>
       {% endfor %}
     </div>
