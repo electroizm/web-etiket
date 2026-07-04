@@ -1,5 +1,6 @@
 """SQLAlchemy modelleri (Django ORM ile karışmasın diye `sa_models` adı verildi)."""
 from catalog.sa_models.ayar import AppAyari
+from catalog.sa_models.bot_kisi import BotKisi
 from catalog.sa_models.bot_mesaj import BotMesaj
 from catalog.sa_models.kategori import Kategori, KategoriKurali, Koleksiyon
 from catalog.sa_models.kombinasyon import (
@@ -11,6 +12,7 @@ from catalog.sa_models.urun import Fiyat, Urun, urun_koleksiyon
 
 __all__ = [
     "AppAyari",
+    "BotKisi",
     "BotMesaj",
     "Kategori",
     "KategoriKurali",

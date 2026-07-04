@@ -2105,11 +2105,25 @@ def bot_konusmalar(request):
     for m in rows:
         gruplar.setdefault((m.platform, m.kullanici), []).append(m)
 
+    from bot.kisi import profil_haritasi
+    profiller = profil_haritasi()
+
+    def _baslik(platform, kullanici):
+        """Görünen ad: profil adı > IG @kullanıcı adı > çıplak id."""
+        p = profiller.get((platform, kullanici)) or {}
+        if p.get("ad"):
+            return p["ad"]
+        if p.get("kullanici_adi"):
+            return "@" + p["kullanici_adi"]
+        return ("+" + kullanici) if platform == "whatsapp" else kullanici
+
     konusmalar = [
         {
             "platform": platform,
             "kullanici": kullanici,
             "anahtar": f"{platform}:{kullanici}",
+            "baslik": _baslik(platform, kullanici),
+            "foto": (profiller.get((platform, kullanici)) or {}).get("foto_url"),
             "son": msgs[0].olusturma,                       # en yeni mesaj zamanı
             "onizleme": _bot_mesaj_goster(msgs[0])["metin"][:60],
             "adet": len(msgs),
@@ -2124,10 +2138,14 @@ def bot_konusmalar(request):
         p, _, u = k.partition(":")
         msgs = gruplar.get((p, u))
         if msgs:
+            prof = profiller.get((p, u)) or {}
             secili = {
                 "platform": p,
                 "kullanici": u,
                 "anahtar": k,
+                "baslik": _baslik(p, u),
+                "kullanici_adi": prof.get("kullanici_adi"),
+                "foto": prof.get("foto_url"),
                 "mesajlar": [_bot_mesaj_goster(m) for m in reversed(msgs)],
             }
 

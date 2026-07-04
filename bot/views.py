@@ -15,7 +15,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from bot import ig_presenter, meta_client, wa_presenter
+from bot import ig_presenter, kisi, meta_client, wa_presenter
 from bot.kayit import kaydet, ozet_gelen, ozet_giden
 from bot.router import yanit_uret
 from bot.webhook_core import extract_events, verify_challenge
@@ -100,6 +100,11 @@ def _olaylari_isle(govde: dict) -> None:
     for olay in extract_events(govde):
         try:
             kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
+            # Profil bilgisini güncelle (id yerine isim/foto göstermek için).
+            if olay.platform == "whatsapp":
+                kisi.guncelle_wa(olay.gonderen, olay.gonderen_ad)
+            else:
+                kisi.guncelle_ig(olay.gonderen)
             if olay.platform == "instagram":
                 cevap = yanit_uret(olay.tetik, P=ig_presenter,
                                    platform=olay.platform, kullanici=olay.gonderen)

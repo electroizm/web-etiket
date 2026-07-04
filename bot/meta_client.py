@@ -39,6 +39,28 @@ def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
     return False
 
 
+def profil_instagram(igsid: str) -> dict | None:
+    """Bize mesaj atan IG kullanıcısının profilini çek (ad, kullanıcı adı, foto).
+
+    Yalnızca işletmeye mesaj göndermiş kullanıcılar için çalışır (Meta kuralı) —
+    bizim senaryo tam olarak bu. Hata durumunda None (çağıran id göstermeye devam eder).
+    """
+    if settings.BOT_DRY_RUN_IG:
+        return None
+    url = f"https://graph.instagram.com/{settings.GRAPH_API_VERSION}/{igsid}"
+    try:
+        r = requests.get(url,
+                         params={"fields": "name,username,profile_pic"},
+                         headers={"Authorization": f"Bearer {settings.IG_TOKEN}"},
+                         timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        log.warning("IG profil hatası %s: %s", r.status_code, r.text[:200])
+    except requests.RequestException as e:
+        log.warning("IG profil istisnası: %s", e)
+    return None
+
+
 def gonder_whatsapp(alici_id: str, mesaj: dict) -> bool:
     """WhatsApp mesajı gönder (Cloud API /{PHONE_NUMBER_ID}/messages).
 

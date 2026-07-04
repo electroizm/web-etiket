@@ -28,6 +28,7 @@ class GelenOlay:
     gonderen: str          # kullanıcı id'si (cevabı buraya yollarız)
     secim: str | None      # tıklanan buton payload'ı (KAT:48 gibi) ya da None
     metin: str | None      # serbest metin (varsa)
+    gonderen_ad: str | None = None   # WA: contacts[].profile.name (pushname); IG: yok
 
     @property
     def tetik(self) -> str:
@@ -64,6 +65,11 @@ def extract_events(govde: dict) -> list[GelenOlay]:
         # ── WhatsApp Cloud API formatı ──
         for ch in entry.get("changes", []):
             value = ch.get("value") or {}
+            # contacts[].profile.name = müşterinin WhatsApp görünen adı (pushname)
+            adlar = {
+                (c.get("wa_id") or ""): ((c.get("profile") or {}).get("name") or None)
+                for c in value.get("contacts", [])
+            }
             for msg in value.get("messages", []):
                 gonderen = msg.get("from", "")
                 if not gonderen:
@@ -75,7 +81,8 @@ def extract_events(govde: dict) -> list[GelenOlay]:
                 elif inter.get("type") == "list_reply":
                     secim = (inter.get("list_reply") or {}).get("id")
                 metin = (msg.get("text") or {}).get("body")
-                olaylar.append(GelenOlay("whatsapp", gonderen, secim, metin))
+                olaylar.append(GelenOlay("whatsapp", gonderen, secim, metin,
+                                         gonderen_ad=adlar.get(gonderen)))
     return olaylar
 
 
