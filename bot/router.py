@@ -86,6 +86,58 @@ def _ai_gerekli_mi(tetik: str) -> bool:
     return False
 
 
+# ── Hibrit karşılama + yazarak menü navigasyonu ──────────────────────────────
+SELAM_KELIMELER = (
+    "merhaba", "meraba", "selam", "slm", "mrb", "mrhb", "sa", "selamun",
+    "selamünaleyküm", "selamunaleykum", "iyi günler", "iyi gunler", "günaydın",
+    "gunaydin", "iyi akşamlar", "iyi aksamlar", "iyi geceler", "hey", "alo",
+    "hoş buldum", "hos buldum", "kolay gelsin",
+)
+
+
+def _selam_mi(tetik: str) -> bool:
+    """Kısa ve selamlama içeren mesaj mı? (uzun/içerikli mesaj selam sayılmaz)"""
+    metin = (tetik or "").strip().lower()
+    if not metin or len(metin) > 28:
+        return False
+    if metin in SELAM_KELIMELER:
+        return True
+    kelimeler = metin.split()
+    return any(k in SELAM_KELIMELER for k in kelimeler) or \
+        any(metin.startswith(s) for s in SELAM_KELIMELER)
+
+
+def selam_metni() -> str:
+    """Sıcak karşılama (sabit şablon — bedava, kota harcamaz)."""
+    return ("Merhaba, hoş geldiniz! 😊 Size nasıl yardımcı olabilirim?\n"
+            "Aşağıdaki menüden ilerleyebilir ya da aradığınız ürünü/fiyatı "
+            "doğrudan yazabilirsiniz.")
+
+
+def _kategori_bul(tetik: str, veri) -> dict | None:
+    """Yazılan metin bir kategori adına uyuyor mu? (yazarak menü navigasyonu)"""
+    metin = (tetik or "").strip().lower()
+    if len(metin) < 3:
+        return None
+    for k in veri.kategoriler():
+        ad = (k.get("ad") or "").lower()
+        if ad and (ad in metin or metin in ad):
+            return k
+    return None
+
+
+def _koleksiyon_bul(tetik: str, veri) -> dict | None:
+    """Yazılan metin bir koleksiyon (ürün grubu) adına uyuyor mu?"""
+    metin = (tetik or "").strip()
+    if len(metin) < 3:
+        return None
+    try:
+        sonuc = veri.koleksiyon_ara(metin)
+    except Exception:
+        return None
+    return sonuc[0] if sonuc else None
+
+
 def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
                platform: str = "", kullanici: str = "") -> dict:
     """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret.
@@ -93,10 +145,14 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     Payload'lar sayfa taşıyabilir: 'KAT:48:2' = 48 no'lu kategorinin 2. sayfası,
     'START:2' = kategori menüsünün 2. sayfası (bkz. presenter sayfalama).
 
-    Faz 5 menü-öncelikli akış: buton payload'ları menü mantığında kalır. Serbest
-    metin VARSAYILAN olarak kategori menüsüne yönlendirilir (bedava, güvenilir,
-    kotayı harcamaz); AI YALNIZCA net ürün/fiyat sorusu sinyali varsa devreye
-    girer (_ai_gerekli_mi). AI kapalı/hata verirse yine menü gösterilir.
+    Faz 5 hibrit akış: buton payload'ları menü mantığında kalır. Serbest metin için:
+      1. Selam → sıcak karşılama metni + kategori menüsü (ikisi de bedava, şablon).
+      2. Net ürün/fiyat sorusu (fiyat, ne kadar, "?"…) → AI (_ai_gerekli_mi).
+      3. Yazılan kategori adı → o kategorinin ürün grupları (yazarak menü navigasyonu).
+      4. Yazılan koleksiyon/ürün adı → o grubun kombinasyonları.
+      5. Aksi halde → kategori menüsü.
+    Menü ve yazarak ilerleme her adımda birlikte çalışır; AI kapalı/kota dolu ise
+    de akış menüyle sürer (müşteri asla cevapsız kalmaz).
     """
     tur, deger = parse_secim(tetik)
 
@@ -113,12 +169,27 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     if tur == "START":
         return P.kategoriler_mesaji(veri.kategoriler(), sayfa=_int(deger) or 1)
 
-    # ── Serbest metin: net ürün/fiyat sorusu ise AI, değilse menü ──
+    # ── Serbest metin: hibrit karşılama + yazarak navigasyon ──
+    # 1) Sadece selam (fiyat/soru sinyali yoksa) → sıcak karşılama + menü (iki mesaj)
+    if _selam_mi(tetik) and not _ai_gerekli_mi(tetik):
+        return [P.metin_mesaji(selam_metni()),
+                P.kategoriler_mesaji(veri.kategoriler())]
+
+    # 2) Net ürün/fiyat sorusu → AI (başarısızsa aşağı, menüye düşer)
     if platform and kullanici and _ai_gerekli_mi(tetik):
         from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
         cevap = ajan.cevapla(tetik, platform, kullanici)
         if cevap:
             return P.metin_mesaji(cevap)
 
-    # Varsayılan / AI kapalı / AI başarısız → kategori menüsü (yönlendirme).
+    # 3) Yazarak menü navigasyonu (bedava): kategori adı → ürün grupları
+    kat = _kategori_bul(tetik, veri)
+    if kat is not None:
+        return P.koleksiyonlar_mesaji(veri.koleksiyonlar(kat["id"]))
+    # 4) koleksiyon/ürün adı → kombinasyonlar
+    kol = _koleksiyon_bul(tetik, veri)
+    if kol is not None:
+        return P.kombinasyonlar_mesaji(veri.kombinasyonlar(kol["id"]))
+
+    # 5) Varsayılan → kategori menüsü
     return P.kategoriler_mesaji(veri.kategoriler())
