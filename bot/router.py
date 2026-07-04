@@ -55,11 +55,16 @@ def _yetkili_mi(tur: str, tetik: str) -> bool:
     return any(k in low for k in YETKILI_KELIMELER)
 
 
-def yanit_uret(tetik: str, veri=_default_veri, P=_default_P) -> dict:
+def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
+               platform: str = "", kullanici: str = "") -> dict:
     """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret.
 
     Payload'lar sayfa taşıyabilir: 'KAT:48:2' = 48 no'lu kategorinin 2. sayfası,
     'START:2' = kategori menüsünün 2. sayfası (bkz. presenter sayfalama).
+
+    Faz 5 hibrit akış: buton payload'ları menü mantığında kalır; TANINMAYAN
+    serbest metin AI ajana gider (bot/ajan.py). Ajan kapalıysa ya da hata
+    verirse eski davranış korunur: kategori menüsü gösterilir.
     """
     tur, deger = parse_secim(tetik)
 
@@ -76,5 +81,12 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P) -> dict:
     if tur == "START":
         return P.kategoriler_mesaji(veri.kategoriler(), sayfa=_int(deger) or 1)
 
-    # Tanınmayan serbest metin → baştan kategori menüsü.
+    # ── Tanınmayan serbest metin → AI ajan (Faz 5) ──
+    if platform and kullanici:
+        from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
+        cevap = ajan.cevapla(tetik, platform, kullanici)
+        if cevap:
+            return P.metin_mesaji(cevap)
+
+    # Ajan kapalı/başarısız → eski davranış: kategori menüsü.
     return P.kategoriler_mesaji(veri.kategoriler())

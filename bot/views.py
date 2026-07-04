@@ -30,6 +30,7 @@ def saglik(request):
         "surum": settings.APP_SURUM,
         "dry_run": settings.BOT_DRY_RUN,
         "dry_run_ig": settings.BOT_DRY_RUN_IG,
+        "ajan": settings.AJAN_MODEL if settings.AJAN_AKTIF else "kapalı",
     })
 
 
@@ -84,10 +85,12 @@ def webhook(request):
         try:
             kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
             if olay.platform == "instagram":
-                cevap = yanit_uret(olay.tetik, P=ig_presenter)
+                cevap = yanit_uret(olay.tetik, P=ig_presenter,
+                                   platform=olay.platform, kullanici=olay.gonderen)
                 gonder = meta_client.gonder_instagram
             else:
-                cevap = yanit_uret(olay.tetik, P=wa_presenter)
+                cevap = yanit_uret(olay.tetik, P=wa_presenter,
+                                   platform=olay.platform, kullanici=olay.gonderen)
                 gonder = meta_client.gonder_whatsapp
             # Presenter tek mesaj (dict) ya da art arda birkaç mesaj (list) dönebilir.
             for mesaj in ([cevap] if isinstance(cevap, dict) else cevap):

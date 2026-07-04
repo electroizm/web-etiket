@@ -87,6 +87,38 @@ def kombinasyonlar(koleksiyon_id: int) -> dict | None:
         session.close()
 
 
+def koleksiyon_ara(q: str) -> list[dict]:
+    """Ad içinde arama — AI ajanın 'MARIZA fiyatı?' gibi serbest metinden koleksiyon
+    bulması için. Kombinasyonu olan koleksiyonlarda, büyük/küçük harf duyarsız."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    session = SessionLocal()
+    try:
+        kombi_say = (
+            select(func.count(Kombinasyon.id))
+            .where(Kombinasyon.koleksiyon_id == Koleksiyon.id)
+            .correlate(Koleksiyon)
+            .scalar_subquery()
+        )
+        rows = session.execute(
+            select(Koleksiyon.id, Koleksiyon.ad, Koleksiyon.kategori_id,
+                   kombi_say.label("ks"))
+            .where(Koleksiyon.ad.ilike(f"%{q}%"))
+            .order_by(Koleksiyon.ad)
+            .limit(10)
+        ).all()
+        kategori_adlari = {k.id: k.ad for k in session.scalars(select(Kategori)).all()}
+        return [
+            {"id": r.id, "ad": r.ad,
+             "kategori": kategori_adlari.get(r.kategori_id, ""),
+             "kombinasyon_sayisi": r.ks}
+            for r in rows if (r.ks or 0) > 0
+        ]
+    finally:
+        session.close()
+
+
 def kombinasyon(kombi_id: int) -> dict | None:
     """Seçilen kombinasyonun fiyat detayı + içindeki ürünler."""
     session = SessionLocal()

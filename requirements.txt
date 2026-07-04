@@ -21,3 +21,6 @@ requests>=2.31.0
 
 # Hata izleme (settings.py — SENTRY_DSN doluysa aktif)
 sentry-sdk[django]>=2.0
+
+# AI ajan (bot/ajan.py) — sağlayıcı-bağımsız model çağrısı (Gemini/Claude/...)
+litellm>=1.60

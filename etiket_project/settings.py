@@ -42,6 +42,17 @@ GRAPH_API_VERSION = os.getenv('GRAPH_API_VERSION', 'v22.0')
 BOT_DRY_RUN = not META_TOKEN        # WhatsApp
 BOT_DRY_RUN_IG = not IG_TOKEN       # Instagram
 
+# ─── AI ajan (Faz 5) — serbest metinleri anlayan model katmanı ──
+# Sağlayıcı-bağımsız: LiteLLM model adı (örn. gemini/gemini-flash-latest,
+# gemini/gemini-flash-lite-latest, anthropic/claude-sonnet-5). Model değişimi = env değişimi.
+AJAN_MODEL = os.getenv('AJAN_MODEL', 'gemini/gemini-flash-latest')
+# Gemini anahtarı LiteLLM tarafından GEMINI_API_KEY env'inden okunur.
+# Anahtar yoksa ajan devre dışı kalır ve bot eski davranışa (menü) düşer.
+AJAN_AKTIF = bool(os.getenv('GEMINI_API_KEY') or os.getenv('ANTHROPIC_API_KEY')) \
+    and os.getenv('AJAN_KAPALI', '') != '1'
+# Konuşma bağlamı: bot_mesaj tablosundan alınacak son mesaj sayısı.
+AJAN_GECMIS_LIMIT = int(os.getenv('AJAN_GECMIS_LIMIT', '10'))
+
 # Scraper — Supabase Postgres direct connection (SQLAlchemy)
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 SCRAPER_CONCURRENCY = int(os.getenv('SCRAPER_CONCURRENCY', '2'))
@@ -126,7 +137,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2607.04.3"
+APP_SURUM = "2607.04.4"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
