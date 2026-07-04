@@ -50,6 +50,14 @@ def _int(s: str | None) -> int | None:
         return None
 
 
+def _id_sayfa(deger: str | None) -> tuple[int | None, int]:
+    """Payload değerinden (id, sayfa) çöz: '48' → (48,1); '48:2' → (48,2)."""
+    if not deger:
+        return None, 1
+    parca, _, sayfa_s = deger.partition(":")
+    return _int(parca), (_int(sayfa_s) or 1)
+
+
 def _yetkili_mi(tur: str, tetik: str) -> bool:
     if tur == YETKILI_PAYLOAD:
         return True
@@ -58,19 +66,25 @@ def _yetkili_mi(tur: str, tetik: str) -> bool:
 
 
 def yanit_uret(tetik: str, veri=_default_veri, P=_default_P) -> dict:
-    """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret."""
+    """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret.
+
+    Payload'lar sayfa taşıyabilir: 'KAT:48:2' = 48 no'lu kategorinin 2. sayfası,
+    'START:2' = kategori menüsünün 2. sayfası (bkz. presenter sayfalama).
+    """
     tur, deger = parse_secim(tetik)
 
     if _yetkili_mi(tur, tetik):
         return P.metin_mesaji(yetkili_metni())
 
-    _id = _int(deger)
+    _id, sayfa = _id_sayfa(deger)
     if tur == "KAT" and _id is not None:
-        return P.koleksiyonlar_mesaji(veri.koleksiyonlar(_id))
+        return P.koleksiyonlar_mesaji(veri.koleksiyonlar(_id), sayfa=sayfa)
     if tur == "KOL" and _id is not None:
-        return P.kombinasyonlar_mesaji(veri.kombinasyonlar(_id))
+        return P.kombinasyonlar_mesaji(veri.kombinasyonlar(_id), sayfa=sayfa)
     if tur == "KOM" and _id is not None:
         return P.kombinasyon_detay_mesaji(veri.kombinasyon(_id))
+    if tur == "START":
+        return P.kategoriler_mesaji(veri.kategoriler(), sayfa=_int(deger) or 1)
 
-    # START veya tanınmayan serbest metin → baştan kategori menüsü.
+    # Tanınmayan serbest metin → baştan kategori menüsü.
     return P.kategoriler_mesaji(veri.kategoriler())

@@ -82,28 +82,59 @@ def _secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
     return _liste(metin, secenekler)
 
 
-def kategoriler_mesaji(kategoriler: list[dict]) -> dict:
+# ─── Sayfalama ────────────────────────────────────────────────────────────────
+# WhatsApp list en çok 10 satır. 10'u aşan menüler sayfalanır: her sayfada
+# SAYFA_SATIR seçenek + "➡️ Devamını gör" + sabit satır(lar) (Ana Menü/Yetkili).
+# Sayfa numarası payload'da taşınır (KAT:48:2) — köprü stateless kalır.
+SAYFA_SATIR = LISTE_MAX - 2   # 8
+
+ANA_MENU = ("⬅️ Ana Menü", "START", "")
+
+
+def _sayfali_liste(metin: str, secenekler: list[tuple[str, str, str]],
+                   sayfa: int, devam_prefix: str,
+                   sabit: list[tuple[str, str, str]]) -> dict:
+    """Uzun listeyi sayfala. devam_prefix: 'KAT:48' → devam payload'ı 'KAT:48:2'."""
+    toplam = len(secenekler)
+    bas = max(0, (sayfa - 1)) * SAYFA_SATIR
+    dilim = secenekler[bas:bas + SAYFA_SATIR]
+    rows = list(dilim)
+    kalan = toplam - (bas + len(dilim))
+    if kalan > 0:
+        rows.append(("➡️ Devamını gör", f"{devam_prefix}:{sayfa + 1}",
+                     f"{kalan} seçenek daha"))
+    rows.extend(sabit)
+    return _liste(metin, rows)
+
+
+def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     if not kategoriler:
         return _metin("Şu an gösterilecek kategori yok.")
     sec = [(k["ad"], f"KAT:{k['id']}", "") for k in kategoriler]
-    # Son satır: yetkiliye yönlendirme. (WhatsApp list en çok 10 satır — kategori
-    # sayısı 9'u aşarsa bu seçenek görünmez; şu an ~8 kategori var, sığıyor.)
-    sec.append(("👤 Yetkiliyle görüş", "YETKILI", ""))
-    return _secim_mesaji("Hangi kategoriye bakmak istersin?", sec)
+    yetkili = ("👤 Yetkiliyle görüş", "YETKILI", "")
+    metin = "Hangi kategoriye bakmak istersin?"
+    if sayfa == 1 and len(sec) + 1 <= LISTE_MAX:
+        return _secim_mesaji(metin, sec + [yetkili])
+    return _sayfali_liste(metin, sec, sayfa, "START", [yetkili])
 
 
-def koleksiyonlar_mesaji(veri: dict) -> dict:
+def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     kols = (veri or {}).get("koleksiyonlar", [])
-    kat = (veri or {}).get("kategori", {}).get("ad", "")
+    kat_bilgi = (veri or {}).get("kategori", {})
+    kat, kat_id = kat_bilgi.get("ad", ""), kat_bilgi.get("id")
     if not kols:
         return _metin("Bu kategoride uygun ürün grubu yok.")
     sec = [(k["ad"], f"KOL:{k['id']}", "") for k in kols]
-    return _secim_mesaji(f"{kat} → bir ürün grubu seç:", sec)
+    metin = f"{kat} → bir ürün grubu seç:"
+    if sayfa == 1 and len(sec) + 1 <= LISTE_MAX:
+        return _secim_mesaji(metin, sec + [ANA_MENU])
+    return _sayfali_liste(metin, sec, sayfa, f"KAT:{kat_id}", [ANA_MENU])
 
 
-def kombinasyonlar_mesaji(veri: dict) -> dict:
+def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     """Her satır: kombinasyon adı (başlık) + fiyat/indirim (açıklama), id=KOM:.."""
     kombis = (veri or {}).get("kombinasyonlar", [])
+    kol_id = ((veri or {}).get("koleksiyon") or {}).get("id")
     if not kombis:
         return _metin("Bu grupta hazır kombinasyon yok.")
     sec = []
@@ -114,7 +145,10 @@ def kombinasyonlar_mesaji(veri: dict) -> dict:
         else:
             ack = _tl(yeni)
         sec.append((k["ad"], f"KOM:{k['id']}", ack))
-    return _liste("Hazır kombinasyonlar — birini seç:", sec)
+    metin = "Hazır kombinasyonlar — birini seç:"
+    if sayfa == 1 and len(sec) + 1 <= LISTE_MAX:
+        return _liste(metin, sec + [ANA_MENU])
+    return _sayfali_liste(metin, sec, sayfa, f"KOL:{kol_id}", [ANA_MENU])
 
 
 def kombinasyon_detay_mesaji(veri: dict) -> dict:
@@ -133,4 +167,6 @@ def kombinasyon_detay_mesaji(veri: dict) -> dict:
         satirlar.append(f"Fiyat: {_tl(veri.get('toplam_perakende'))}  (−%{ind})")
     else:
         satirlar.append(f"Fiyat: {_tl(veri.get('toplam_perakende'))}")
+    satirlar.append("")
+    satirlar.append("⬅️ Menüye dönmek için bir mesaj yazman yeterli.")
     return _metin("\n".join(satirlar))

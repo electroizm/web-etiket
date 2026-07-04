@@ -37,30 +37,67 @@ def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:
     return {"text": metin, "quick_replies": qrs}
 
 
-def kategoriler_mesaji(kategoriler: list[dict]) -> dict:
+# ─── Sayfalama ────────────────────────────────────────────────────────────────
+# Quick reply en çok 13, carousel en çok 10 kart. Aşan menüler sayfalanır;
+# sayfa numarası payload'da taşınır (KAT:48:2) — köprü stateless kalır.
+SAYFA_QR = QR_MAX - 2      # 11 seçenek + Devamı + sabit (Ana Menü/Yetkili)
+SAYFA_KART = KART_MAX - 2  # 8 kart + Devamı kartı + Ana Menü kartı
+
+ANA_MENU_QR = ("⬅️ Ana Menü", "START")
+
+
+def _sayfali_qr(metin: str, secenekler: list[tuple[str, str]],
+                sayfa: int, devam_prefix: str,
+                sabit: list[tuple[str, str]]) -> dict:
+    toplam = len(secenekler)
+    bas = max(0, (sayfa - 1)) * SAYFA_QR
+    dilim = list(secenekler[bas:bas + SAYFA_QR])
+    kalan = toplam - (bas + len(dilim))
+    if kalan > 0:
+        dilim.append(("➡️ Devamını gör", f"{devam_prefix}:{sayfa + 1}"))
+    dilim.extend(sabit)
+    return quick_replies(metin, dilim)
+
+
+def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     if not kategoriler:
         return {"text": "Şu an gösterilecek kategori yok."}
     sec = [(k["ad"], f"KAT:{k['id']}") for k in kategoriler]
-    sec.append(("👤 Yetkiliyle görüş", "YETKILI"))   # yetkiliye yönlendirme
-    return quick_replies("Hangi kategoriye bakmak istersin?", sec)
+    yetkili = ("👤 Yetkiliyle görüş", "YETKILI")
+    metin = "Hangi kategoriye bakmak istersin?"
+    if sayfa == 1 and len(sec) + 1 <= QR_MAX:
+        return quick_replies(metin, sec + [yetkili])
+    return _sayfali_qr(metin, sec, sayfa, "START", [yetkili])
 
 
-def koleksiyonlar_mesaji(veri: dict) -> dict:
+def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     kols = (veri or {}).get("koleksiyonlar", [])
-    kat = (veri or {}).get("kategori", {}).get("ad", "")
+    kat_bilgi = (veri or {}).get("kategori", {})
+    kat, kat_id = kat_bilgi.get("ad", ""), kat_bilgi.get("id")
     if not kols:
         return {"text": "Bu kategoride uygun ürün grubu yok."}
     sec = [(k["ad"], f"KOL:{k['id']}") for k in kols]
-    return quick_replies(f"{kat} → bir ürün grubu seç:", sec)
+    metin = f"{kat} → bir ürün grubu seç:"
+    if sayfa == 1 and len(sec) + 1 <= QR_MAX:
+        return quick_replies(metin, sec + [ANA_MENU_QR])
+    return _sayfali_qr(metin, sec, sayfa, f"KAT:{kat_id}", [ANA_MENU_QR])
 
 
-def kombinasyonlar_mesaji(veri: dict) -> dict:
-    """Carousel (generic template) — her kart: ad + fiyat + 'Detay' butonu."""
+def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
+    """Carousel (generic template) — her kart: ad + fiyat + 'Detay' butonu.
+    10'dan çok kombinasyon → 8 kart + 'Devamını gör' + 'Ana Menü' kartları."""
     kombis = (veri or {}).get("kombinasyonlar", [])
+    kol_id = ((veri or {}).get("koleksiyon") or {}).get("id")
     if not kombis:
         return {"text": "Bu grupta hazır kombinasyon yok."}
+
+    toplam = len(kombis)
+    sayfali = toplam > KART_MAX
+    bas = max(0, (sayfa - 1)) * SAYFA_KART if sayfali else 0
+    dilim = kombis[bas:bas + (SAYFA_KART if sayfali else KART_MAX)]
+
     kartlar = []
-    for k in kombis[:KART_MAX]:
+    for k in dilim:
         eski, yeni, ind = k.get("toplam_liste"), k.get("toplam_perakende"), k.get("indirim_yuzde")
         if ind:
             alt = f"{_tl(yeni)}  (eski {_tl(eski)} · −%{ind})"
@@ -71,6 +108,21 @@ def kombinasyonlar_mesaji(veri: dict) -> dict:
             "subtitle": f"{k.get('urun_sayisi', 0)} ürün · {k.get('toplam_adet', 0)} adet\n{alt}",
             "buttons": [{"type": "postback", "title": "Fiyat detayı",
                          "payload": f"KOM:{k['id']}"}],
+        })
+    if sayfali:
+        kalan = toplam - (bas + len(dilim))
+        if kalan > 0:
+            kartlar.append({
+                "title": "➡️ Devamını gör",
+                "subtitle": f"{kalan} seçenek daha",
+                "buttons": [{"type": "postback", "title": "Devamını gör",
+                             "payload": f"KOL:{kol_id}:{sayfa + 1}"}],
+            })
+        kartlar.append({
+            "title": "⬅️ Ana Menü",
+            "subtitle": "Kategorilere geri dön",
+            "buttons": [{"type": "postback", "title": "Ana Menü",
+                         "payload": "START"}],
         })
     return {
         "attachment": {
@@ -96,4 +148,6 @@ def kombinasyon_detay_mesaji(veri: dict) -> dict:
         satirlar.append(f"Fiyat: {_tl(veri.get('toplam_perakende'))}  (−%{ind})")
     else:
         satirlar.append(f"Fiyat: {_tl(veri.get('toplam_perakende'))}")
-    return {"text": "\n".join(satirlar)}
+    # Fiyat sonrası çıkmaz sokak olmasın: menüye dönüş + yetkili kısayolu.
+    return quick_replies("\n".join(satirlar),
+                         [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI")])
