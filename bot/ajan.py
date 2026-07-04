@@ -207,7 +207,7 @@ def _cevapla(metin: str, platform: str, kullanici: str) -> str | None:
             messages=mesajlar,
             tools=TOOLS,
             max_tokens=600,
-            timeout=25,
+            timeout=15,
         )
         secim = yanit.choices[0].message
 

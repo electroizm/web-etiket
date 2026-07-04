@@ -8,6 +8,7 @@ olayı tekrar tekrar gönderir; bu yüzden işleme hatalarını yutup daima 200 
 """
 import json
 import logging
+import threading
 
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
@@ -81,6 +82,15 @@ def webhook(request):
         log.warning("webhook: geçersiz JSON gövdesi")
         return HttpResponse(status=200)
 
+    # Meta birkaç saniye içinde 200 bekler; AI ajan cevabı ise 5-25 sn sürebilir.
+    # Bu yüzden işleme arka plan thread'ine alınır, 200 HEMEN döner — aksi hâlde
+    # Meta olayı "başarısız" sayıp TEKRAR gönderir (mükerrer cevap riski).
+    threading.Thread(target=_olaylari_isle, args=(govde,), daemon=True).start()
+    return HttpResponse(status=200)
+
+
+def _olaylari_isle(govde: dict) -> None:
+    """Webhook olaylarını işle (arka plan thread'i). Hatalar yutulur, loglanır."""
     for olay in extract_events(govde):
         try:
             kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
@@ -98,6 +108,3 @@ def webhook(request):
                 kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
         except Exception:
             log.exception("olay işlenemedi: %s", olay)
-
-    # Meta 200 bekler; yoksa olayı tekrar gönderir.
-    return HttpResponse(status=200)
