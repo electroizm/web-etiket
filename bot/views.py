@@ -22,6 +22,9 @@ from bot.webhook_core import extract_events, verify_challenge
 
 log = logging.getLogger("bot")
 
+# Son webhook hatası — Render loguna erişim olmadan /saglik'tan teşhis için.
+WEBHOOK_SON_HATA: str | None = None
+
 
 @require_http_methods(["GET"])
 def saglik(request):
@@ -33,6 +36,7 @@ def saglik(request):
         "dry_run_ig": settings.BOT_DRY_RUN_IG,
         "ajan": settings.AJAN_MODEL if settings.AJAN_AKTIF else "kapalı",
         "ajan_son_hata": _ajan_son_hata(),
+        "webhook_son_hata": WEBHOOK_SON_HATA,
     })
 
 
@@ -82,22 +86,33 @@ def webhook(request):
         return HttpResponse(govde, status=status, content_type="text/plain")
 
     # ── POST: gelen olayları işle ──
+    # Meta 200 dışında her yanıtı "başarısız" sayıp olayı TEKRAR gönderir; bu yüzden
+    # NE OLURSA OLSUN 200 döneriz (senkron yolda beklenmedik hata bile olsa).
+    global WEBHOOK_SON_HATA
     try:
         govde = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        log.warning("webhook: geçersiz JSON gövdesi")
-        return HttpResponse(status=200)
-
-    # Meta birkaç saniye içinde 200 bekler; AI ajan cevabı ise 5-25 sn sürebilir.
-    # Bu yüzden işleme arka plan thread'ine alınır, 200 HEMEN döner — aksi hâlde
-    # Meta olayı "başarısız" sayıp TEKRAR gönderir (mükerrer cevap riski).
-    threading.Thread(target=_olaylari_isle, args=(govde,), daemon=True).start()
+        # AI ajan cevabı 5-25 sn sürebilir → işleme arka plan thread'inde, 200 hemen döner.
+        threading.Thread(target=_olaylari_isle, args=(govde,), daemon=True).start()
+    except Exception as e:
+        import traceback
+        from datetime import datetime
+        WEBHOOK_SON_HATA = f"{datetime.now():%H:%M:%S} {type(e).__name__}: {e}"
+        log.exception("webhook senkron hata")
+        traceback.print_exc()
     return HttpResponse(status=200)
 
 
 def _olaylari_isle(govde: dict) -> None:
     """Webhook olaylarını işle (arka plan thread'i). Hatalar yutulur, loglanır."""
-    for olay in extract_events(govde):
+    global WEBHOOK_SON_HATA
+    try:
+        olaylar = extract_events(govde)
+    except Exception as e:
+        from datetime import datetime
+        WEBHOOK_SON_HATA = f"{datetime.now():%H:%M:%S} extract_events {type(e).__name__}: {e}"
+        log.exception("webhook: extract_events hatası")
+        return
+    for olay in olaylar:
         try:
             kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
             # Profil bilgisini güncelle (id yerine isim/foto göstermek için).
@@ -117,5 +132,7 @@ def _olaylari_isle(govde: dict) -> None:
             for mesaj in ([cevap] if isinstance(cevap, dict) else cevap):
                 gonder(olay.gonderen, mesaj)
                 kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
-        except Exception:
+        except Exception as e:
+            from datetime import datetime
+            WEBHOOK_SON_HATA = f"{datetime.now():%H:%M:%S} işleme {type(e).__name__}: {e}"
             log.exception("olay işlenemedi: %s", olay)
