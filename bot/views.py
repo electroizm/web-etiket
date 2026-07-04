@@ -46,6 +46,28 @@ def _ajan_son_hata():
 
 
 @require_http_methods(["GET"])
+def saglik_wa(request):
+    """WhatsApp numarasının Cloud API durumu (Graph API'den) — teşhis.
+
+    'Bu kişi artık WhatsApp kullanmıyor' hatası numaranın bağlantısı mı düştü,
+    yoksa sadece o cihazın önbelleği mi — bunu ayırmak için kullanılır.
+    """
+    import requests
+    if settings.BOT_DRY_RUN:
+        return JsonResponse({"hata": "META_TOKEN yok (dry_run)"}, status=200)
+    url = (f"https://graph.facebook.com/{settings.GRAPH_API_VERSION}"
+           f"/{settings.PHONE_NUMBER_ID}")
+    try:
+        r = requests.get(url, params={
+            "fields": "display_phone_number,verified_name,code_verification_status,"
+                      "platform_type,quality_rating,name_status,status,messaging_limit_tier",
+        }, headers={"Authorization": f"Bearer {settings.META_TOKEN}"}, timeout=10)
+        return JsonResponse({"http": r.status_code, "graph": r.json()}, status=200)
+    except requests.RequestException as e:
+        return JsonResponse({"hata": str(e)}, status=200)
+
+
+@require_http_methods(["GET"])
 def ara(request):
     """📞 'Sesli arama yap' butonunun hedefi — telefonun arama ekranını açar.
 
