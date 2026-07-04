@@ -25,8 +25,11 @@ from catalog.services import menu_veri
 
 log = logging.getLogger("bot.ajan")
 
-MAKS_TOOL_TURU = 5      # tool çağrısı döngüsü üst sınırı (sonsuz döngü emniyeti)
+MAKS_TOOL_TURU = 6      # tool çağrısı döngüsü üst sınırı (sonsuz döngü emniyeti)
 MAKS_CEVAP_KR = 900     # WA/IG'de rahat okunur üst sınır (tek mesaj)
+
+# Son ajan hatası — Render loguna erişim olmadan teşhis için /saglik'ta gösterilir.
+SON_HATA: str | None = None
 
 # ─── Sistem promptu ──────────────────────────────────────────────────────────
 SISTEM_PROMPTU = """Sen Doğtaş Çevreyolu mobilya mağazasının WhatsApp/Instagram asistanısın.
@@ -36,6 +39,9 @@ KURALLAR (kesin):
 1. FİYAT UYDURMA. Fiyat ve ürün bilgisini YALNIZCA sana verilen araçlardan (tool) al.
    Araç sonucu yoksa fiyat söyleme; "menüden bakalım" de.
 2. Kısa yaz — bu bir mesajlaşma sohbeti. En fazla 3-4 cümle. Emoji az ve yerinde.
+   İPUCU: kombinasyonlari_listele zaten her kombinasyonun toplam fiyatını döndürür —
+   fiyat sorusu için o yeterli; fiyat_detay'ı yalnızca TEK bir kombinasyonun içeriği
+   (hangi ürünler var) sorulduğunda çağır. Gereksiz araç çağrısı yapma.
 3. Türkçe konuş, "siz" diye hitap et, sıcak ve yardımsever ol.
 4. Fiyat verirken ürün/kombinasyon adını da yaz (örn. "MARIZA Köşe Takımı: 85.000 TL")
    ve fiyatların liste fiyatı olduğunu, mağazada özel fiyat sorulabileceğini ekle.
@@ -181,11 +187,14 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
 
 def cevapla(metin: str, platform: str, kullanici: str) -> str | None:
     """Serbest metne AI cevabı üret. Ajan kapalıysa/hata olursa None (→ menüye düş)."""
+    global SON_HATA
     if not settings.AJAN_AKTIF:
         return None
     try:
         return _cevapla(metin, platform, kullanici)
-    except Exception:
+    except Exception as e:
+        from datetime import datetime
+        SON_HATA = f"{datetime.now():%H:%M:%S} {type(e).__name__}: {str(e)[:300]}"
         log.exception("ajan: cevap üretilemedi, menüye düşülüyor")
         return None
 
@@ -233,5 +242,8 @@ def _cevapla(metin: str, platform: str, kullanici: str) -> str | None:
                 "content": json.dumps(sonuc, ensure_ascii=False, default=str)[:6000],
             })
 
+    global SON_HATA
+    from datetime import datetime
+    SON_HATA = f"{datetime.now():%H:%M:%S} ToolTuruAsildi: {MAKS_TOOL_TURU} tur yetmedi"
     log.warning("ajan: %s tool turu aşıldı, menüye düşülüyor", MAKS_TOOL_TURU)
     return None

@@ -32,7 +32,13 @@ def saglik(request):
         "dry_run": settings.BOT_DRY_RUN,
         "dry_run_ig": settings.BOT_DRY_RUN_IG,
         "ajan": settings.AJAN_MODEL if settings.AJAN_AKTIF else "kapalı",
+        "ajan_son_hata": _ajan_son_hata(),
     })
+
+
+def _ajan_son_hata():
+    from bot import ajan
+    return ajan.SON_HATA
 
 
 @require_http_methods(["GET"])
