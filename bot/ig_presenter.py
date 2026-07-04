@@ -115,6 +115,15 @@ def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     return _sayfali_qr(metin, sec, sayfa, f"KAT:{kat_id}", [ANA_MENU_QR])
 
 
+def koleksiyon_secim_mesaji(eslesmeler: list[dict]) -> dict:
+    """Aynı ad birden fazla kategoride bulunduğunda (ör. VERMONT hem Yemek hem
+    Yatak Odası) kategorisiyle listeleyip müşteriye seçtirir."""
+    sec = [(f"{k['ad']} · {k['kategori']}" if k.get("kategori") else k["ad"],
+            f"KOL:{k['id']}") for k in eslesmeler]
+    metin = "Birden fazla grupta bulundu — hangisine bakalım?"
+    return quick_replies(_tam_adlar_eki(metin, sec), sec[:QR_MAX - 1] + [ANA_MENU_QR])
+
+
 def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     """Carousel (generic template) — her kart: ad + fiyat + 'Detay' butonu.
     10'dan çok kombinasyon → 8 kart + 'Devamını gör' + 'Ana Menü' kartları."""

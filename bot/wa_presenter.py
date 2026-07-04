@@ -166,6 +166,14 @@ def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     return _sayfali_liste(metin, sec, sayfa, f"KAT:{kat_id}", [ANA_MENU])
 
 
+def koleksiyon_secim_mesaji(eslesmeler: list[dict]) -> dict:
+    """Aynı ad birden fazla kategoride bulunduğunda (ör. VERMONT hem Yemek hem
+    Yatak Odası) kategorisiyle listeleyip müşteriye seçtirir. Satır: ad + kategori."""
+    sec = [(k["ad"], f"KOL:{k['id']}", k.get("kategori") or "") for k in eslesmeler]
+    metin = "Birden fazla grupta bulundu — hangisine bakalım?"
+    return _liste(metin, sec[:LISTE_MAX - 1] + [ANA_MENU])
+
+
 def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     """Her satır: kombinasyon adı (başlık) + fiyat/indirim (açıklama), id=KOM:.."""
     kombis = (veri or {}).get("kombinasyonlar", [])

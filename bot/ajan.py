@@ -55,6 +55,10 @@ KURALLAR (kesin):
    — arama aracını kullanıp en yakınını bul.
 9. Markdown/biçimlendirme işareti KULLANMA (**, ##, madde imi vb.) — WhatsApp ve
    Instagram bunları göstermez, olduğu gibi görünür. Düz metin + emoji yaz.
+10. Aynı seri adı birden fazla kategoride olabilir (örn. VERMONT hem Yemek Odası
+    hem Yatak Odası). koleksiyon_ara birden çok sonuç dönerse: müşterinin
+    mesajından kategori belliyse onu seç; belli değilse fiyat vermeden önce
+    hangi kategoriyi istediğini sor.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -66,7 +70,9 @@ TOOLS = [
         "function": {
             "name": "koleksiyon_ara",
             "description": "Koleksiyon (ürün serisi) adıyla arama yapar. Müşteri bir "
-                           "ürün/seri adı geçirdiğinde önce bunu çağır.",
+                           "ürün/seri adı geçirdiğinde önce bunu çağır. Aynı ad birden "
+                           "fazla kategoride olabilir — sonuçtaki 'kategori' alanına bak, "
+                           "birden çok eşleşme varsa müşteriye hangisi olduğunu sor.",
             "parameters": {
                 "type": "object",
                 "properties": {

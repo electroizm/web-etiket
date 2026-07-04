@@ -137,16 +137,35 @@ def _kategori_bul(tetik: str, veri) -> dict | None:
     return None
 
 
-def _koleksiyon_bul(tetik: str, veri) -> dict | None:
-    """Yazılan metin bir koleksiyon (ürün grubu) adına uyuyor mu?"""
+def _koleksiyon_bul(tetik: str, veri) -> list[dict]:
+    """Yazılan metne uyan koleksiyonları (ürün gruplarını) bul — HEPSİNİ döndürür.
+
+    Aynı ad birden fazla kategoride olabilir (ör. VERMONT hem Yemek Odası hem
+    Yatak Odası); ilkini körlemesine seçmek yanlış kategoriye götürür. Birden
+    fazla eşleşmede metinde geçen kategori kelimesiyle daraltılır ("vermont
+    yatak" → Yatak Odası); daralmıyorsa çağıran seçim menüsü gösterir.
+    """
     metin = (tetik or "").strip()
     if len(metin) < 3:
-        return None
+        return []
     try:
         sonuc = veri.koleksiyon_ara(metin)
+        if not sonuc:
+            # "vermont yatak" gibi ad+kategori yazımı tam aramada boş döner:
+            # ilk kelimeyle ara, kategori daraltması aşağıda devreye girer.
+            kelimeler = metin.split()
+            if len(kelimeler) > 1 and len(kelimeler[0]) >= 3:
+                sonuc = veri.koleksiyon_ara(kelimeler[0])
     except Exception:
-        return None
-    return sonuc[0] if sonuc else None
+        return []
+    if len(sonuc) > 1:
+        d = _duzle(metin)
+        daralt = [k for k in sonuc
+                  if any(p in d for p in _duzle(k.get("kategori", "")).split()
+                         if len(p) >= 4)]
+        if daralt:
+            return daralt
+    return sonuc
 
 
 def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
@@ -197,10 +216,13 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     kat = _kategori_bul(tetik, veri)
     if kat is not None:
         return P.koleksiyonlar_mesaji(veri.koleksiyonlar(kat["id"]))
-    # 4) koleksiyon/ürün adı → kombinasyonlar
-    kol = _koleksiyon_bul(tetik, veri)
-    if kol is not None:
-        return P.kombinasyonlar_mesaji(veri.kombinasyonlar(kol["id"]))
+    # 4) koleksiyon/ürün adı → kombinasyonlar (tek eşleşmede);
+    #    aynı ad birden fazla kategorideyse kategorili seçim menüsü
+    kols = _koleksiyon_bul(tetik, veri)
+    if len(kols) == 1:
+        return P.kombinasyonlar_mesaji(veri.kombinasyonlar(kols[0]["id"]))
+    if len(kols) > 1:
+        return P.koleksiyon_secim_mesaji(kols)
 
     # 5) Varsayılan → kategori menüsü
     return P.kategoriler_mesaji(veri.kategoriler())
