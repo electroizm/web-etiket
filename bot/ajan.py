@@ -186,20 +186,28 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
 
 
 def cevapla(metin: str, platform: str, kullanici: str) -> str | None:
-    """Serbest metne AI cevabı üret. Ajan kapalıysa/hata olursa None (→ menüye düş)."""
+    """Serbest metne AI cevabı üret. Ajan kapalıysa/hata olursa None (→ menüye düş).
+
+    Model zinciri: settings.AJAN_MODELLER soldan denenir. Kota (429) ya da başka
+    hata alan model atlanır, sıradaki denenir — her Gemini modelinin ücretsiz
+    kotası ayrı sayıldığı için zincir kota direncini katlar.
+    """
     global SON_HATA
     if not settings.AJAN_AKTIF:
         return None
-    try:
-        return _cevapla(metin, platform, kullanici)
-    except Exception as e:
-        from datetime import datetime
-        SON_HATA = f"{datetime.now():%H:%M:%S} {type(e).__name__}: {str(e)[:300]}"
-        log.exception("ajan: cevap üretilemedi, menüye düşülüyor")
-        return None
+    from datetime import datetime
+    for model in settings.AJAN_MODELLER:
+        try:
+            return _cevapla(metin, platform, kullanici, model)
+        except Exception as e:
+            SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
+            log.warning("ajan: %s başarısız (%s), sıradaki model deneniyor",
+                        model, type(e).__name__)
+    log.error("ajan: tüm modeller başarısız, menüye düşülüyor")
+    return None
 
 
-def _cevapla(metin: str, platform: str, kullanici: str) -> str | None:
+def _cevapla(metin: str, platform: str, kullanici: str, model: str) -> str | None:
     import litellm
     litellm.suppress_debug_info = True
 
@@ -212,7 +220,7 @@ def _cevapla(metin: str, platform: str, kullanici: str) -> str | None:
 
     for _ in range(MAKS_TOOL_TURU):
         yanit = litellm.completion(
-            model=settings.AJAN_MODEL,
+            model=model,
             messages=mesajlar,
             tools=TOOLS,
             max_tokens=600,

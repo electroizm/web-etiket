@@ -43,9 +43,13 @@ BOT_DRY_RUN = not META_TOKEN        # WhatsApp
 BOT_DRY_RUN_IG = not IG_TOKEN       # Instagram
 
 # ─── AI ajan (Faz 5) — serbest metinleri anlayan model katmanı ──
-# Sağlayıcı-bağımsız: LiteLLM model adı (örn. gemini/gemini-flash-latest,
-# gemini/gemini-flash-lite-latest, anthropic/claude-sonnet-5). Model değişimi = env değişimi.
-AJAN_MODEL = os.getenv('AJAN_MODEL', 'gemini/gemini-flash-latest')
+# Sağlayıcı-bağımsız: LiteLLM model adları, virgülle ZİNCİR (soldan denenir;
+# kota/hata → sıradaki). Her Gemini modelinin ücretsiz kotası AYRI sayılır.
+AJAN_MODEL = os.getenv(
+    'AJAN_MODEL',
+    'gemini/gemini-flash-latest,gemini/gemini-flash-lite-latest,gemini/gemini-2.5-flash-lite',
+)
+AJAN_MODELLER = [m.strip() for m in AJAN_MODEL.split(',') if m.strip()]
 # Gemini anahtarı LiteLLM tarafından GEMINI_API_KEY env'inden okunur.
 # Anahtar yoksa ajan devre dışı kalır ve bot eski davranışa (menü) düşer.
 AJAN_AKTIF = bool(os.getenv('GEMINI_API_KEY') or os.getenv('ANTHROPIC_API_KEY')) \
@@ -137,7 +141,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2607.04.7"
+APP_SURUM = "2607.04.8"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
