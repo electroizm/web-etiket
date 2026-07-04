@@ -5,6 +5,7 @@ Auth gate: @login_required_supabase (Supabase JWT → Django session).
 """
 import json
 import logging
+from urllib.parse import quote
 
 from sqlalchemy import and_, case, func, or_, select, update
 
@@ -2075,9 +2076,21 @@ def ayarlar_yerli_uretim(request):
 
 
 # ─── Bot Konuşmaları (WhatsApp/Instagram) ─────────────────────────────────────
+def _bot_mesaj_goster(m) -> dict:
+    """BotMesaj satırını şablon için sadeleştir: [yetkili] öneki etikete çevrilir."""
+    metin = (m.metin or "")
+    elle = metin.startswith("[yetkili] ")
+    if elle:
+        metin = metin[len("[yetkili] "):]
+    return {"yon": m.yon, "metin": metin, "elle": elle, "olusturma": m.olusturma}
+
+
 @login_required_supabase
 def bot_konusmalar(request):
-    """0488/Instagram botunda geçen konuşmalar — kullanıcıya göre gruplu, en yeni önce."""
+    """WhatsApp Web tarzı gelen kutusu: solda sohbet listesi, sağda seçili konuşma.
+
+    Seçim `?k=platform:kullanici` parametresiyle taşınır (sunucu taraflı, JS'siz).
+    """
     session = SessionLocal()
     try:
         rows = list(session.scalars(
@@ -2096,14 +2109,31 @@ def bot_konusmalar(request):
         {
             "platform": platform,
             "kullanici": kullanici,
-            "son": msgs[0].olusturma,          # en yeni mesaj zamanı
+            "anahtar": f"{platform}:{kullanici}",
+            "son": msgs[0].olusturma,                       # en yeni mesaj zamanı
+            "onizleme": _bot_mesaj_goster(msgs[0])["metin"][:60],
             "adet": len(msgs),
-            "mesajlar": list(reversed(msgs)),  # okuma sırası: eskiden yeniye
         }
         for (platform, kullanici), msgs in gruplar.items()
     ]
+
+    # Seçili konuşma (?k=platform:kullanici)
+    secili = None
+    k = request.GET.get("k", "")
+    if ":" in k:
+        p, _, u = k.partition(":")
+        msgs = gruplar.get((p, u))
+        if msgs:
+            secili = {
+                "platform": p,
+                "kullanici": u,
+                "anahtar": k,
+                "mesajlar": [_bot_mesaj_goster(m) for m in reversed(msgs)],
+            }
+
     return render(request, "dashboard/bot_konusmalar.html", {
         "konusmalar": konusmalar,
+        "secili": secili,
         "toplam": len(rows),
         "sonuc": request.GET.get("sonuc", ""),
     })
@@ -2139,4 +2169,7 @@ def bot_cevap(request):
 
     if basarili:
         kaydet(platform, kullanici, "giden", f"[yetkili] {metin}")
-    return redirect(f"{reverse('dashboard:bot_konusmalar')}?sonuc={'ok' if basarili else 'hata'}")
+    # Aynı sohbette kal (?k=...) — WhatsApp Web davranışı.
+    sonuc = "ok" if basarili else "hata"
+    return redirect(f"{reverse('dashboard:bot_konusmalar')}"
+                    f"?k={quote(f'{platform}:{kullanici}')}&sonuc={sonuc}")
