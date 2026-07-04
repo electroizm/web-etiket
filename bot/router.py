@@ -18,6 +18,9 @@ from bot.webhook_core import parse_secim
 # ── Yetkiliye yönlendirme ────────────────────────────────────────────────────
 YETKILI_WA = "905321370627"            # wa.me linki (0532 137 06 27)
 YETKILI_URL = f"https://wa.me/{YETKILI_WA}"   # https şart: IG/WA ancak böyle tıklanabilir yapar
+# Butonlar tel: linki kabul etmez (yalnız https) → /ara sayfası telefonun
+# arama ekranını tetikler (bot/views.ara).
+YETKILI_ARA_URL = "https://etiket.gunesler.info/ara"
 YETKILI_TEL_GORUNEN = "0532 137 06 27"
 YETKILI_PAYLOAD = "YETKILI"
 # Serbest metinde yetkili talebi sayılan kelimeler (küçük harfte aranır).
@@ -61,7 +64,7 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P) -> dict:
     tur, deger = parse_secim(tetik)
 
     if _yetkili_mi(tur, tetik):
-        return P.yetkili_mesaji(yetkili_metni(), YETKILI_URL)
+        return P.yetkili_mesaji(yetkili_metni(), YETKILI_URL, YETKILI_ARA_URL)
 
     _id, sayfa = _id_sayfa(deger)
     if tur == "KAT" and _id is not None:

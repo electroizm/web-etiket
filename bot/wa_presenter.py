@@ -38,8 +38,8 @@ def metin_mesaji(govde: str) -> dict:
     return _metin(govde)
 
 
-def yetkili_mesaji(metin: str, url: str) -> dict:
-    """Yetkiliye yönlendirme: URL butonlu mesaj (cta_url) — basınca 0532 sohbeti açılır."""
+def _cta(metin: str, buton: str, url: str) -> dict:
+    """Tek URL butonlu mesaj (cta_url). WhatsApp cta_url'de yalnız 1 buton olabilir."""
     return {
         "type": "interactive",
         "interactive": {
@@ -47,10 +47,19 @@ def yetkili_mesaji(metin: str, url: str) -> dict:
             "body": {"text": metin},
             "action": {
                 "name": "cta_url",
-                "parameters": {"display_text": "📱 WhatsApp'ta yaz", "url": url},
+                "parameters": {"display_text": buton, "url": url},
             },
         },
     }
+
+
+def yetkili_mesaji(metin: str, url: str, ara_url: str) -> list[dict]:
+    """Yetkiliye yönlendirme: iki art arda buton mesajı (cta_url tek buton taşır) —
+    WhatsApp'ta yaz (0532 sohbeti) + Sesli arama (arama ekranını açan /ara sayfası)."""
+    return [
+        _cta(metin, "📱 WhatsApp'ta yaz", url),
+        _cta("📞 Aramak için 👇", "📞 Sesli arama yap", ara_url),
+    ]
 
 
 def _butonlar(metin: str, secenekler: list[tuple[str, str]]) -> dict:

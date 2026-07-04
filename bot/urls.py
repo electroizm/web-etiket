@@ -12,4 +12,5 @@ app_name = 'bot'
 urlpatterns = [
     path('webhook', views.webhook, name='webhook'),
     path('saglik', views.saglik, name='saglik'),
+    path('ara', views.ara, name='ara'),   # 📞 Sesli arama butonu → tel: yönlendirme
 ]

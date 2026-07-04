@@ -26,8 +26,9 @@ def metin_mesaji(govde: str) -> dict:
     return {"text": govde}
 
 
-def yetkili_mesaji(metin: str, url: str) -> dict:
-    """Yetkiliye yönlendirme: web_url butonlu kart — basınca 0532 WhatsApp'ı açılır."""
+def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
+    """Yetkiliye yönlendirme: tek kartta iki web_url butonu —
+    WhatsApp'ta yaz (0532 sohbeti) + Sesli arama (arama ekranını açan /ara sayfası)."""
     return {
         "attachment": {
             "type": "template",
@@ -36,8 +37,10 @@ def yetkili_mesaji(metin: str, url: str) -> dict:
                 "elements": [{
                     "title": "👤 Yetkiliyle görüş",
                     "subtitle": _kirp(metin, 80),
-                    "buttons": [{"type": "web_url", "url": url,
-                                 "title": "📱 WhatsApp'ta yaz"}],
+                    "buttons": [
+                        {"type": "web_url", "url": url, "title": "📱 WhatsApp'ta yaz"},
+                        {"type": "web_url", "url": ara_url, "title": "📞 Sesli arama yap"},
+                    ],
                 }],
             },
         }
