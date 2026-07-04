@@ -47,6 +47,8 @@ KURALLAR (kesin):
    tahmin yürütme → yetkiliye yönlendir.
 8. Müşteri kategori/koleksiyon adını yanlış yazabilir (örn. "mariza", "yatak odsı")
    — arama aracını kullanıp en yakınını bul.
+9. Markdown/biçimlendirme işareti KULLANMA (**, ##, madde imi vb.) — WhatsApp ve
+   Instagram bunları göstermez, olduğu gibi görünür. Düz metin + emoji yaz.
 
 Mağazadaki kategoriler: {kategoriler}
 """
