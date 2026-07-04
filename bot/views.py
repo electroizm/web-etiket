@@ -27,6 +27,7 @@ def saglik(request):
     """Basit sağlık ucu — izleme/ping için."""
     return JsonResponse({
         "durum": "ayakta",
+        "surum": settings.APP_SURUM,
         "dry_run": settings.BOT_DRY_RUN,
         "dry_run_ig": settings.BOT_DRY_RUN_IG,
     })

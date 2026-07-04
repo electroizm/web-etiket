@@ -19,6 +19,7 @@ from bot.webhook_core import parse_secim
 
 # ── Yetkiliye yönlendirme ────────────────────────────────────────────────────
 YETKILI_WA = "905321370627"            # wa.me linki (0532 137 06 27)
+YETKILI_URL = f"https://wa.me/{YETKILI_WA}"   # https şart: IG/WA ancak böyle tıklanabilir yapar
 YETKILI_TEL_GORUNEN = "0532 137 06 27"
 YETKILI_PAYLOAD = "YETKILI"
 # Serbest metinde yetkili talebi sayılan kelimeler (küçük harfte aranır).
@@ -37,7 +38,7 @@ def yetkili_metni() -> str:
              else "Şu an kapalıyız; mesai saatlerinde size hemen dönüş yapılır.")
     return (
         "Sizi yetkilimize bağlayalım 👇\n"
-        f"📱 wa.me/{YETKILI_WA}  ({YETKILI_TEL_GORUNEN})\n\n"
+        f"📱 {YETKILI_URL}  ({YETKILI_TEL_GORUNEN})\n\n"
         "🕙 Pazartesi–Cumartesi 10:00–19:00 (Pazar kapalı)\n"
         f"{durum}"
     )
@@ -74,7 +75,7 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P) -> dict:
     tur, deger = parse_secim(tetik)
 
     if _yetkili_mi(tur, tetik):
-        return P.metin_mesaji(yetkili_metni())
+        return P.yetkili_mesaji(yetkili_metni(), YETKILI_URL)
 
     _id, sayfa = _id_sayfa(deger)
     if tur == "KAT" and _id is not None:

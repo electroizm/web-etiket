@@ -22,8 +22,24 @@ def _tl(n) -> str:
 
 
 def metin_mesaji(govde: str) -> dict:
-    """Düz metin mesajı (router'ın yetkili yönlendirmesi gibi hazır metinler için)."""
+    """Düz metin mesajı (router'ın hazır metinleri için)."""
     return {"text": govde}
+
+
+def yetkili_mesaji(metin: str, url: str) -> dict:
+    """Yetkiliye yönlendirme. Metindeki https linki IG'de tıklanabilir görünür;
+    (url zaten metnin içinde — ayrıca URL butonu IG şablonlarında riskli, metin güvenli yol)."""
+    return quick_replies(metin, [ANA_MENU_QR])
+
+
+def _tam_adlar_eki(metin: str, secenekler: list[tuple[str, str]]) -> str:
+    """Quick reply başlığı 20 karakterde kırpılır (platform sınırı, açıklama alanı yok).
+    Kırpılan adların tamamını mesaj gövdesine ekle — hiçbir ad kaybolmasın."""
+    uzunlar = [(b or "").strip() for b, _ in secenekler
+               if len((b or "").strip()) > QR_BASLIK_LIMIT]
+    if not uzunlar:
+        return metin
+    return metin + "\n\nTam adlar:\n" + "\n".join(f"• {a}" for a in uzunlar)
 
 
 def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:
@@ -53,6 +69,7 @@ def _sayfali_qr(metin: str, secenekler: list[tuple[str, str]],
     bas = max(0, (sayfa - 1)) * SAYFA_QR
     dilim = list(secenekler[bas:bas + SAYFA_QR])
     kalan = toplam - (bas + len(dilim))
+    metin = _tam_adlar_eki(metin, dilim)   # bu sayfada kırpılan adların tam hali gövdeye
     if kalan > 0:
         dilim.append(("➡️ Devamını gör", f"{devam_prefix}:{sayfa + 1}"))
     dilim.extend(sabit)
@@ -66,7 +83,7 @@ def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     yetkili = ("👤 Yetkiliyle görüş", "YETKILI")
     metin = "Hangi kategoriye bakmak istersin?"
     if sayfa == 1 and len(sec) + 1 <= QR_MAX:
-        return quick_replies(metin, sec + [yetkili])
+        return quick_replies(_tam_adlar_eki(metin, sec), sec + [yetkili])
     return _sayfali_qr(metin, sec, sayfa, "START", [yetkili])
 
 
@@ -79,7 +96,7 @@ def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
     sec = [(k["ad"], f"KOL:{k['id']}") for k in kols]
     metin = f"{kat} → bir ürün grubu seç:"
     if sayfa == 1 and len(sec) + 1 <= QR_MAX:
-        return quick_replies(metin, sec + [ANA_MENU_QR])
+        return quick_replies(_tam_adlar_eki(metin, sec), sec + [ANA_MENU_QR])
     return _sayfali_qr(metin, sec, sayfa, f"KAT:{kat_id}", [ANA_MENU_QR])
 
 

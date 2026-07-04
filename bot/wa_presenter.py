@@ -34,8 +34,23 @@ def _metin(govde: str) -> dict:
 
 
 def metin_mesaji(govde: str) -> dict:
-    """Düz metin mesajı (router'ın yetkili yönlendirmesi gibi hazır metinler için)."""
+    """Düz metin mesajı (router'ın hazır metinleri için)."""
     return _metin(govde)
+
+
+def yetkili_mesaji(metin: str, url: str) -> dict:
+    """Yetkiliye yönlendirme: URL butonlu mesaj (cta_url) — basınca 0532 sohbeti açılır."""
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {"text": metin},
+            "action": {
+                "name": "cta_url",
+                "parameters": {"display_text": "📱 WhatsApp'ta yaz", "url": url},
+            },
+        },
+    }
 
 
 def _butonlar(metin: str, secenekler: list[tuple[str, str]]) -> dict:
@@ -58,6 +73,11 @@ def _liste(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
     """secenekler: [(baslik, id, aciklama), ...] — en çok 10 → list tipi."""
     satirlar = []
     for baslik, _id, aciklama in secenekler[:LISTE_MAX]:
+        baslik = (baslik or "").strip()
+        # Başlık 24 karakterde kırpılır (platform sınırı); kırpılıyorsa ve
+        # açıklama boşsa tam ad açıklamada gösterilsin — hiçbir ad kaybolmasın.
+        if not aciklama and len(baslik) > SATIR_BASLIK:
+            aciklama = baslik
         satir = {"id": _id, "title": _kirp(baslik, SATIR_BASLIK)}
         if aciklama:
             satir["description"] = _kirp(aciklama, SATIR_ACIKLAMA)
@@ -76,8 +96,14 @@ def _liste(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
 
 
 def _secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
-    """≤3 seçenek → buton, fazlası → liste. secenekler: (baslik, id, aciklama)."""
-    if len(secenekler) <= BUTON_MAX and all(not a for *_, a in secenekler):
+    """≤3 seçenek → buton, fazlası → liste. secenekler: (baslik, id, aciklama).
+
+    Buton başlığı 20 karakterde kırpılır ve açıklama alanı yoktur; ad sığmıyorsa
+    liste tipine geç (24 + 72 karakterlik açıklamayla tam ad gösterilebiliyor).
+    """
+    if (len(secenekler) <= BUTON_MAX
+            and all(not a for *_, a in secenekler)
+            and all(len((b or "").strip()) <= BUTON_BASLIK for b, *_ in secenekler)):
         return _butonlar(metin, [(b, i) for b, i, _ in secenekler])
     return _liste(metin, secenekler)
 
@@ -144,7 +170,10 @@ def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
             ack = f"{_tl(yeni)} (eski {_tl(eski)} · −%{ind})"
         else:
             ack = _tl(yeni)
-        sec.append((k["ad"], f"KOM:{k['id']}", ack))
+        ad = (k["ad"] or "").strip()
+        if len(ad) > SATIR_BASLIK:   # başlık kırpılacak → tam ad açıklamanın başına
+            ack = f"{ad} · {ack}"
+        sec.append((ad, f"KOM:{k['id']}", ack))
     metin = "Hazır kombinasyonlar — birini seç:"
     if sayfa == 1 and len(sec) + 1 <= LISTE_MAX:
         return _liste(metin, sec + [ANA_MENU])
