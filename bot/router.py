@@ -55,6 +55,37 @@ def _yetkili_mi(tur: str, tetik: str) -> bool:
     return any(k in low for k in YETKILI_KELIMELER)
 
 
+# ── AI yönlendirme (Faz 5, menü-öncelikli mod) ───────────────────────────────
+# Menü varsayılan yoldur (bedava, güvenilir, günlük 1500 Gemini kotasını harcamaz).
+# AI YALNIZCA aşağıdaki net ürün/fiyat sorusu sinyallerinde devreye girer; selam
+# ve belirsiz mesajlar doğrudan kategori menüsüne düşer.
+AI_SINYAL_KELIMELER = (
+    # fiyat niyeti
+    "fiyat", "ne kadar", "kaç para", "kaça", "kaç lira", "kaç tl", "ücret",
+    "tutar", "indirim", "kampanya", "taksit", "kaç bin", "peşin",
+    # arama / soru niyeti
+    "var mı", "varmı", "nedir", "hangi", "nasıl", "arıyorum", "ariyorum",
+    "istiyorum", "bakıyorum", "bakiyorum", "lazım", "lazim", "önerir", "onerir",
+    "modeli", "ölçü", "olcu", "renk",
+)
+
+
+def _ai_gerekli_mi(tetik: str) -> bool:
+    """Serbest metin AI'ya mı gitsin (net ürün/fiyat sorusu), yoksa menüye mi?
+
+    Muhafazakâr: emin değilsek MENÜ (bedava + güvenilir). Böylece selam/kısa
+    mesajlar kotayı harcamaz, sadece gerçek sorular AI'ya gider.
+    """
+    metin = (tetik or "").strip()
+    low = " " + metin.lower() + " "
+    if any(s in low for s in AI_SINYAL_KELIMELER):
+        return True
+    # Net soru işareti + yeterli içerik (tek "?" değil)
+    if "?" in metin and len(metin) >= 6:
+        return True
+    return False
+
+
 def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
                platform: str = "", kullanici: str = "") -> dict:
     """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret.
@@ -62,9 +93,10 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     Payload'lar sayfa taşıyabilir: 'KAT:48:2' = 48 no'lu kategorinin 2. sayfası,
     'START:2' = kategori menüsünün 2. sayfası (bkz. presenter sayfalama).
 
-    Faz 5 hibrit akış: buton payload'ları menü mantığında kalır; TANINMAYAN
-    serbest metin AI ajana gider (bot/ajan.py). Ajan kapalıysa ya da hata
-    verirse eski davranış korunur: kategori menüsü gösterilir.
+    Faz 5 menü-öncelikli akış: buton payload'ları menü mantığında kalır. Serbest
+    metin VARSAYILAN olarak kategori menüsüne yönlendirilir (bedava, güvenilir,
+    kotayı harcamaz); AI YALNIZCA net ürün/fiyat sorusu sinyali varsa devreye
+    girer (_ai_gerekli_mi). AI kapalı/hata verirse yine menü gösterilir.
     """
     tur, deger = parse_secim(tetik)
 
@@ -81,12 +113,12 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     if tur == "START":
         return P.kategoriler_mesaji(veri.kategoriler(), sayfa=_int(deger) or 1)
 
-    # ── Tanınmayan serbest metin → AI ajan (Faz 5) ──
-    if platform and kullanici:
+    # ── Serbest metin: net ürün/fiyat sorusu ise AI, değilse menü ──
+    if platform and kullanici and _ai_gerekli_mi(tetik):
         from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
         cevap = ajan.cevapla(tetik, platform, kullanici)
         if cevap:
             return P.metin_mesaji(cevap)
 
-    # Ajan kapalı/başarısız → eski davranış: kategori menüsü.
+    # Varsayılan / AI kapalı / AI başarısız → kategori menüsü (yönlendirme).
     return P.kategoriler_mesaji(veri.kategoriler())
