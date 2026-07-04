@@ -27,9 +27,21 @@ def metin_mesaji(govde: str) -> dict:
 
 
 def yetkili_mesaji(metin: str, url: str) -> dict:
-    """Yetkiliye yönlendirme. Metindeki https linki IG'de tıklanabilir görünür;
-    (url zaten metnin içinde — ayrıca URL butonu IG şablonlarında riskli, metin güvenli yol)."""
-    return quick_replies(metin, [ANA_MENU_QR])
+    """Yetkiliye yönlendirme: web_url butonlu kart — basınca 0532 WhatsApp'ı açılır."""
+    return {
+        "attachment": {
+            "type": "template",
+            "payload": {
+                "template_type": "generic",
+                "elements": [{
+                    "title": "👤 Yetkiliyle görüş",
+                    "subtitle": _kirp(metin, 80),
+                    "buttons": [{"type": "web_url", "url": url,
+                                 "title": "📱 WhatsApp'ta yaz"}],
+                }],
+            },
+        }
+    }
 
 
 def _tam_adlar_eki(metin: str, secenekler: list[tuple[str, str]]) -> str:
