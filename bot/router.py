@@ -114,13 +114,24 @@ def selam_metni() -> str:
             "doğrudan yazabilirsiniz.")
 
 
+# Türkçe karakterleri sadeleştir: müşteri "yatak odasi" yazsa da "Yatak Odası" eşleşsin.
+_TR_DUZLE = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosucgiosu")
+
+
+def _duzle(s: str) -> str:
+    # Önce çevir (İ→i büyükken yakalansın), sonra küçült, kalan Türkçe harfleri çevir;
+    # Python'un "İ".lower() çıktısındaki birleşik noktayı (U+0307) da at.
+    s = (s or "").strip().translate(_TR_DUZLE).lower().translate(_TR_DUZLE)
+    return s.replace("̇", "")
+
+
 def _kategori_bul(tetik: str, veri) -> dict | None:
     """Yazılan metin bir kategori adına uyuyor mu? (yazarak menü navigasyonu)"""
-    metin = (tetik or "").strip().lower()
+    metin = _duzle(tetik)
     if len(metin) < 3:
         return None
     for k in veri.kategoriler():
-        ad = (k.get("ad") or "").lower()
+        ad = _duzle(k.get("ad"))
         if ad and (ad in metin or metin in ad):
             return k
     return None
