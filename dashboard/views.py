@@ -2080,11 +2080,14 @@ def ayarlar_yerli_uretim(request):
 
 # ─── Bot Konuşmaları (WhatsApp/Instagram) ─────────────────────────────────────
 def _bot_mesaj_goster(m) -> dict:
-    """BotMesaj satırını şablon için sadeleştir: [yetkili] öneki etikete çevrilir."""
-    metin = (m.metin or "")
+    """BotMesaj satırını şablon için sadeleştir: [yetkili] öneki etikete çevrilir,
+    '[menü]' teknik eki gizlenir (İsmail isteği, 2026-07-06)."""
+    metin = (m.metin or "").strip()
     elle = metin.startswith("[yetkili] ")
     if elle:
         metin = metin[len("[yetkili] "):]
+    if metin.endswith("[menü]"):
+        metin = metin[: -len("[menü]")].rstrip()
     return {"yon": m.yon, "metin": metin, "elle": elle, "olusturma": m.olusturma}
 
 

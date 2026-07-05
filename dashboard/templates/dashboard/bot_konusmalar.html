@@ -1,10 +1,12 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Bot Konuşmaları · Etiket Studio{% endblock %}
+{% block title %}WhatsApp & Instagram · Etiket Studio{% endblock %}
 
 {% block head_extra %}
   <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  {# iOS Safari telefon numaralarını mavi tel: linkine çevirir — kapat (okunaklılık). #}
+  <meta name="format-detection" content="telephone=no">
   <style>
     /* ── WhatsApp Web tarzı iki panel — MOBİL ÖNCELİKLİ (telefondan cevap) ── */
     .wa {
@@ -88,15 +90,20 @@
                display: flex; flex-direction: column; gap: 4px;
                background-image: radial-gradient(rgba(134,150,160,.045) 1px, transparent 1.4px);
                background-size: 26px 26px; }
-    .wa-msg { max-width: 70%; padding: 8px 11px 9px; border-radius: 10px; font-size: .92rem;
-              line-height: 1.4; white-space: pre-wrap; word-break: break-word;
-              box-shadow: 0 1px 1px rgba(0,0,0,.25); }
+    .wa-msg { max-width: 70%; padding: 6px 9px 7px; border-radius: 10px; font-size: .9rem;
+              line-height: 1.35; white-space: pre-wrap; word-break: break-word;
+              box-shadow: 0 1px 1px rgba(0,0,0,.25); width: fit-content; }
     .wa-msg.gelen { align-self: flex-start; background: #202c33; border-top-left-radius: 3px; }
     .wa-msg.giden { align-self: flex-end; background: #005c4b; border-top-right-radius: 3px; }
     .wa-msg .kaynak { display: block; font-size: .66rem; font-weight: 700; opacity: .55;
                       margin-bottom: 2px; letter-spacing: .3px; }
     .wa-msg .saat { display: block; text-align: right; font-size: .65rem; opacity: .45;
                     margin-top: 3px; }
+    /* Mesaj içindeki linkler (iOS yine de algılarsa dahil) okunaklı olsun —
+       koyu yeşil balonda mavi yerine açık nane rengi. */
+    .wa-msg a, .wa-msg a:visited, a[x-apple-data-detectors] {
+      color: #9fe8cf !important; text-decoration: underline; }
+    .wa-chat__alt a, .wa-chat__alt a:visited { color: #9fc9e8 !important; }
 
     /* Cevap kutusu — dokunmatik hedefler büyük, iOS zoom yok (16px) */
     .wa-yaz { display: flex; gap: 10px; align-items: center; padding: 10px 12px;
@@ -139,7 +146,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         <span>Panel</span>
       </a>
-      <span class="topbar__title">Bot Konuşmaları</span>
+      <span class="topbar__title">WhatsApp & Instagram</span>
     </div>
     <div class="topbar__user">
       <a href="{% url 'dashboard:home' %}" class="user-link">{{ request.supabase_user.display_name }}</a>
@@ -245,16 +252,10 @@
             </div>
           </div>
 
+          {# DİKKAT: .wa-msg pre-wrap'lı — içine şablon girintisi/satır sonu
+             SIZMAMALI, yoksa balonlar boşlukla şişer. Tek satırda render edilir. #}
           <div class="wa-msgs" id="waMsgs">
-            {% for m in secili.mesajlar %}
-              <div class="wa-msg {{ m.yon }}">
-                {% if m.yon == 'giden' %}
-                  <span class="kaynak">{% if m.elle %}👤 YETKİLİ{% else %}🤖 BOT{% endif %}</span>
-                {% endif %}
-                {{ m.metin }}
-                <span class="saat">{{ m.olusturma|date:"d.m H:i" }}</span>
-              </div>
-            {% endfor %}
+            {% for m in secili.mesajlar %}<div class="wa-msg {{ m.yon }}">{% if m.elle %}<span class="kaynak">👤 YETKİLİ</span>{% endif %}{{ m.metin }}<span class="saat">{{ m.olusturma|date:"d.m H:i" }}</span></div>{% endfor %}
           </div>
 
           <form class="wa-yaz" method="post" action="{% url 'dashboard:bot_cevap' %}">
@@ -262,7 +263,7 @@
             <input type="hidden" name="platform" value="{{ secili.platform }}">
             <input type="hidden" name="kullanici" value="{{ secili.kullanici }}">
             <input type="text" name="metin" maxlength="1000" required autocomplete="off"
-                   placeholder="Yetkili olarak yazın (bot karışmaz)">
+                   placeholder="Yetkili olarak yaz…">
             <button type="submit" title="Gönder">➤</button>
           </form>
         {% else %}
