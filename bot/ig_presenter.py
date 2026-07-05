@@ -71,18 +71,19 @@ def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:
 # ─── Sayfalama ────────────────────────────────────────────────────────────────
 # Quick reply en çok 13, carousel en çok 10 kart. Aşan menüler sayfalanır;
 # sayfa numarası payload'da taşınır (KAT:48:2) — köprü stateless kalır.
-SAYFA_QR = QR_MAX - 2      # 11 seçenek + Devamı + sabit (Ana Menü/Yetkili)
 SAYFA_KART = KART_MAX - 2  # 8 kart + Devamı kartı + Ana Menü kartı
 
 ANA_MENU_QR = ("⬅️ Ana Menü", "START")
+BENI_ARA_QR = ("📞 Beni arayın", "BENIARA")
 
 
 def _sayfali_qr(metin: str, secenekler: list[tuple[str, str]],
                 sayfa: int, devam_prefix: str,
                 sabit: list[tuple[str, str]]) -> dict:
+    qr_basi = QR_MAX - 1 - len(sabit)   # sabitler + Devamı hep sığsın
     toplam = len(secenekler)
-    bas = max(0, (sayfa - 1)) * SAYFA_QR
-    dilim = list(secenekler[bas:bas + SAYFA_QR])
+    bas = max(0, (sayfa - 1)) * qr_basi
+    dilim = list(secenekler[bas:bas + qr_basi])
     kalan = toplam - (bas + len(dilim))
     metin = _tam_adlar_eki(metin, dilim)   # bu sayfada kırpılan adların tam hali gövdeye
     if kalan > 0:
@@ -95,11 +96,11 @@ def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     if not kategoriler:
         return {"text": "Şu an gösterilecek kategori yok."}
     sec = [(k["ad"], f"KAT:{k['id']}") for k in kategoriler]
-    yetkili = ("👤 Yetkiliyle görüş", "YETKILI")
+    sabit = [("👤 Yetkiliyle görüş", "YETKILI"), BENI_ARA_QR]
     metin = "Hangi kategoriye bakmak istersin?"
-    if sayfa == 1 and len(sec) + 1 <= QR_MAX:
-        return quick_replies(_tam_adlar_eki(metin, sec), sec + [yetkili])
-    return _sayfali_qr(metin, sec, sayfa, "START", [yetkili])
+    if sayfa == 1 and len(sec) + len(sabit) <= QR_MAX:
+        return quick_replies(_tam_adlar_eki(metin, sec), sec + sabit)
+    return _sayfali_qr(metin, sec, sayfa, "START", sabit)
 
 
 def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
@@ -189,6 +190,7 @@ def kombinasyon_detay_mesaji(veri: dict) -> dict:
         satirlar.append(f"Fiyat: {_tl(veri.get('toplam_perakende'))}  (−%{ind})")
     else:
         satirlar.append(f"Fiyat: {_tl(veri.get('toplam_perakende'))}")
-    # Fiyat sonrası çıkmaz sokak olmasın: menüye dönüş + yetkili kısayolu.
+    # Fiyat sonrası çıkmaz sokak olmasın: menüye dönüş + yetkili + geri arama.
     return quick_replies("\n".join(satirlar),
-                         [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI")])
+                         [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI"),
+                          BENI_ARA_QR])

@@ -33,6 +33,74 @@ def yetkili_metni() -> str:
     return f"👤 Yetkilimiz: {YETKILI_TEL_GORUNEN} 👇"
 
 
+# ── "Beni arayın" (geri arama talebi) ────────────────────────────────────────
+# Müşteri seçince numarası + uygun saati sorulur; cevabı İsmail'in 0532
+# WhatsApp'ına bildirim olarak gider (bot/bildirim.py — WA olmadıysa e-posta).
+# Akış stateless: "soru soruldu mu?" durumu bot_mesaj geçmişinden okunur
+# (son giden mesaj ARA_SORU ise sıradaki serbest metin = cevap).
+BENIARA_PAYLOAD = "BENIARA"
+BENIARA_KELIMELER = ("beni ara", "geri ara", "arar mısın", "arar misin",
+                     "arayın", "arayin", "beni arasın", "beni arasin")
+ARA_SORU_ISARET = "📞 Sizi arayalım"     # giden kayıtta bu başlangıç aranır
+
+
+def ara_soru_metni() -> str:
+    return (f"{ARA_SORU_ISARET}!\n"
+            "Lütfen telefon numaranızı ve size uygun saati yazın.\n"
+            "Örn: 0555 111 22 33 — öğleden sonra")
+
+
+def ara_tesekkur_metni() -> str:
+    return ("✅ Talebiniz alındı, en kısa sürede sizi arayacağız. 🙏\n"
+            "⬅️ Menüye dönmek için bir mesaj yazmanız yeterli.")
+
+
+def _beniara_mi(tur: str, tetik: str) -> bool:
+    if tur == BENIARA_PAYLOAD:
+        return True
+    low = (tetik or "").lower()
+    return any(k in low for k in BENIARA_KELIMELER)
+
+
+def _ara_bekleniyor_mu(platform: str, kullanici: str) -> bool:
+    """Bota gönderilen SON mesaj 'Beni arayın' sorusu mu?
+
+    Öyleyse müşterinin şimdiki serbest metni numara+saat cevabıdır.
+    Müşteri soru yerine bir butona basarsa akış normal menüden sürer ve
+    bir sonraki giden mesaj soruyu ezer → bekleme kendiliğinden düşer.
+    """
+    if not (platform and kullanici):
+        return False
+    try:
+        from catalog.database import SessionLocal   # geç import: testte DB yok
+        from catalog.sa_models import BotMesaj
+        from sqlalchemy import select
+        session = SessionLocal()
+        try:
+            son = session.scalar(
+                select(BotMesaj)
+                .where(BotMesaj.platform == platform,
+                       BotMesaj.kullanici == kullanici,
+                       BotMesaj.yon == "giden")
+                .order_by(BotMesaj.id.desc())
+                .limit(1)
+            )
+        finally:
+            session.close()
+    except Exception:
+        return False
+    return son is not None and (son.metin or "").startswith(ARA_SORU_ISARET)
+
+
+def _ara_talebi_isle(platform: str, kullanici: str, metin: str) -> None:
+    """Cevabı yetkiliye ilet (bildirim hatası müşteri akışını bozmaz)."""
+    try:
+        from bot import bildirim   # geç import: testte Django/DB gerekmesin
+        bildirim.geri_arama_bildir(platform, kullanici, metin)
+    except Exception:
+        pass
+
+
 def _int(s: str | None) -> int | None:
     try:
         return int(s)
@@ -236,6 +304,12 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     if _yetkili_mi(tur, tetik):
         return P.yetkili_mesaji(yetkili_metni(), YETKILI_URL, YETKILI_ARA_URL)
 
+    # "📞 Beni arayın" BUTONU → numara + uygun saat sorulur. (Yazıyla tetikleme
+    # serbest metin bölümünde, bekleme kontrolünden SONRA — cevaptaki "arayın"
+    # kelimesi soruyu yeniden tetiklemesin.)
+    if tur == BENIARA_PAYLOAD:
+        return P.metin_mesaji(ara_soru_metni())
+
     _id, sayfa = _id_sayfa(deger)
     if tur == "KAT" and _id is not None:
         return P.koleksiyonlar_mesaji(veri.koleksiyonlar(_id), sayfa=sayfa)
@@ -247,6 +321,17 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
         return P.kategoriler_mesaji(veri.kategoriler(), sayfa=_int(deger) or 1)
 
     # ── Serbest metin: hibrit karşılama + yazarak navigasyon ──
+    # 0) "Beni arayın" sorusuna cevap bekleniyorsa bu metin numara+saat'tir:
+    #    yetkiliye bildir, müşteriye teşekkür et. (Selam/AI kontrollerinden ÖNCE —
+    #    cevap "fiyat" gibi kelimeler içerse bile AI'ya kaçmasın.)
+    if platform and kullanici and _ara_bekleniyor_mu(platform, kullanici):
+        _ara_talebi_isle(platform, kullanici, tetik)
+        return P.metin_mesaji(ara_tesekkur_metni())
+
+    # 0b) Yazıyla geri arama isteği ("beni arayın", "geri ara"…) → soruyu sor.
+    if _beniara_mi(tur, tetik):
+        return P.metin_mesaji(ara_soru_metni())
+
     # 1) Sadece selam (fiyat/soru sinyali yoksa) → sıcak karşılama + menü (iki mesaj)
     if _selam_mi(tetik) and not _ai_gerekli_mi(tetik):
         return [P.metin_mesaji(selam_metni()),

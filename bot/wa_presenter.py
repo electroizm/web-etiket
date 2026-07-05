@@ -119,20 +119,20 @@ def _secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
 
 # ─── Sayfalama ────────────────────────────────────────────────────────────────
 # WhatsApp list en çok 10 satır. 10'u aşan menüler sayfalanır: her sayfada
-# SAYFA_SATIR seçenek + "➡️ Devamını gör" + sabit satır(lar) (Ana Menü/Yetkili).
+# (10 − 1 devam − sabit sayısı) seçenek + "➡️ Devamını gör" + sabit satır(lar).
 # Sayfa numarası payload'da taşınır (KAT:48:2) — köprü stateless kalır.
-SAYFA_SATIR = LISTE_MAX - 2   # 8
-
 ANA_MENU = ("⬅️ Ana Menü", "START", "")
+BENI_ARA = ("📞 Beni arayın", "BENIARA", "")
 
 
 def _sayfali_liste(metin: str, secenekler: list[tuple[str, str, str]],
                    sayfa: int, devam_prefix: str,
                    sabit: list[tuple[str, str, str]]) -> dict:
     """Uzun listeyi sayfala. devam_prefix: 'KAT:48' → devam payload'ı 'KAT:48:2'."""
+    satir_basi = LISTE_MAX - 1 - len(sabit)   # sabitler + Devamı hep sığsın
     toplam = len(secenekler)
-    bas = max(0, (sayfa - 1)) * SAYFA_SATIR
-    dilim = secenekler[bas:bas + SAYFA_SATIR]
+    bas = max(0, (sayfa - 1)) * satir_basi
+    dilim = secenekler[bas:bas + satir_basi]
     rows = list(dilim)
     kalan = toplam - (bas + len(dilim))
     if kalan > 0:
@@ -146,11 +146,11 @@ def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     if not kategoriler:
         return _metin("Şu an gösterilecek kategori yok.")
     sec = [(k["ad"], f"KAT:{k['id']}", "") for k in kategoriler]
-    yetkili = ("👤 Yetkiliyle görüş", "YETKILI", "")
+    sabit = [("👤 Yetkiliyle görüş", "YETKILI", ""), BENI_ARA]
     metin = "Hangi kategoriye bakmak istersin?"
-    if sayfa == 1 and len(sec) + 1 <= LISTE_MAX:
-        return _secim_mesaji(metin, sec + [yetkili])
-    return _sayfali_liste(metin, sec, sayfa, "START", [yetkili])
+    if sayfa == 1 and len(sec) + len(sabit) <= LISTE_MAX:
+        return _secim_mesaji(metin, sec + sabit)
+    return _sayfali_liste(metin, sec, sayfa, "START", sabit)
 
 
 def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
