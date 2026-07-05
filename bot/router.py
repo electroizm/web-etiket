@@ -137,13 +137,54 @@ def _kategori_bul(tetik: str, veri) -> dict | None:
     return None
 
 
-def _koleksiyon_bul(tetik: str, veri) -> list[dict]:
+def _mevcut_kategori_id(platform: str, kullanici: str) -> int | None:
+    """Müşterinin ŞU AN gezindiği kategori id'sini konuşma geçmişinden çıkar.
+
+    Menü stateless: durum buton payload'ında taşınır ama serbest metin bunu
+    bilmez. Müşteri "TV Üniteleri" kategorisine girip (KAT:1702) sonra "vermont"
+    yazınca, aramayı o kategoriye daraltabilmek için son basılan KAT butonunu
+    geçmişten okuruz. Arada "Ana Menü" (START) varsa bağlam sıfırlanmış sayılır.
+    """
+    if not (platform and kullanici):
+        return None
+    try:
+        from catalog.database import SessionLocal   # geç import: testte DB yok
+        from catalog.sa_models import BotMesaj
+        from sqlalchemy import select
+        session = SessionLocal()
+        try:
+            rows = session.scalars(
+                select(BotMesaj)
+                .where(BotMesaj.platform == platform,
+                       BotMesaj.kullanici == kullanici,
+                       BotMesaj.yon == "gelen")
+                .order_by(BotMesaj.id.desc())
+                .limit(8)
+            ).all()
+        finally:
+            session.close()
+    except Exception:
+        return None
+    for r in rows:
+        m = (r.metin or "").strip()
+        if m.startswith("[buton] KAT:"):
+            kid, _, _ = m[len("[buton] KAT:"):].partition(":")
+            return _int(kid)
+        if m.startswith("[buton] START"):
+            return None   # ana menüye dönmüş → kategori bağlamı yok
+    return None
+
+
+def _koleksiyon_bul(tetik: str, veri, kategori_id: int | None = None) -> list[dict]:
     """Yazılan metne uyan koleksiyonları (ürün gruplarını) bul — HEPSİNİ döndürür.
 
-    Aynı ad birden fazla kategoride olabilir (ör. VERMONT hem Yemek Odası hem
-    Yatak Odası); ilkini körlemesine seçmek yanlış kategoriye götürür. Birden
-    fazla eşleşmede metinde geçen kategori kelimesiyle daraltılır ("vermont
-    yatak" → Yatak Odası); daralmıyorsa çağıran seçim menüsü gösterir.
+    Aynı ad birden fazla kategoride olabilir (ör. VERMONT; Yemek/Yatak/Oturma/Tv).
+    İlkini körlemesine seçmek yanlış kategoriye götürür. Birden fazla eşleşmede
+    öncelik sırası:
+      1. Metinde kategori kelimesi açıkça geçiyorsa ona daralt ("vermont yatak").
+      2. Müşteri şu an bir kategori içindeyse (kategori_id) ORAYA daralt
+         ("Tv Üniteleri"ndeyken "vermont" → sadece Tv Üniteleri VERMONT'u).
+      3. Hâlâ birden fazlaysa → çağıran kategorili seçim menüsü gösterir.
     """
     metin = (tetik or "").strip()
     if len(metin) < 3:
@@ -159,12 +200,18 @@ def _koleksiyon_bul(tetik: str, veri) -> list[dict]:
     except Exception:
         return []
     if len(sonuc) > 1:
+        # 1) Metinde açıkça kategori kelimesi (en güçlü sinyal) → ona daralt.
         d = _duzle(metin)
         daralt = [k for k in sonuc
                   if any(p in d for p in _duzle(k.get("kategori", "")).split()
                          if len(p) >= 4)]
         if daralt:
             return daralt
+        # 2) Aksi halde müşteri bir kategori içindeyse o kategoriye daralt.
+        if kategori_id is not None:
+            iceride = [k for k in sonuc if k.get("kategori_id") == kategori_id]
+            if iceride:
+                return iceride
     return sonuc
 
 
@@ -217,8 +264,10 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     if kat is not None:
         return P.koleksiyonlar_mesaji(veri.koleksiyonlar(kat["id"]))
     # 4) koleksiyon/ürün adı → kombinasyonlar (tek eşleşmede);
-    #    aynı ad birden fazla kategorideyse kategorili seçim menüsü
-    kols = _koleksiyon_bul(tetik, veri)
+    #    aynı ad birden fazla kategorideyse önce mevcut kategoriye daralt,
+    #    hâlâ birden fazlaysa kategorili seçim menüsü göster.
+    kat_baglam = _mevcut_kategori_id(platform, kullanici)
+    kols = _koleksiyon_bul(tetik, veri, kategori_id=kat_baglam)
     if len(kols) == 1:
         return P.kombinasyonlar_mesaji(veri.kombinasyonlar(kols[0]["id"]))
     if len(kols) > 1:

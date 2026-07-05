@@ -111,6 +111,7 @@ def koleksiyon_ara(q: str) -> list[dict]:
         kategori_adlari = {k.id: k.ad for k in session.scalars(select(Kategori)).all()}
         return [
             {"id": r.id, "ad": r.ad,
+             "kategori_id": r.kategori_id,
              "kategori": kategori_adlari.get(r.kategori_id, ""),
              "kombinasyon_sayisi": r.ks}
             for r in rows if (r.ks or 0) > 0
