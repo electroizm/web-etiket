@@ -49,8 +49,12 @@ KURALLAR (kesin):
    "yetkili" yazmasını söyle (bot onu mağaza yetkilisine yönlendirir).
 6. Konu dışı sorularda (siyaset, genel bilgi, başka markalar...) kibarca
    mobilya konusuna dön; tartışmaya girme.
-7. Garanti, teslimat süresi, kampanya gibi bilmediğin operasyonel konularda
-   tahmin yürütme → yetkiliye yönlendir.
+7. MAĞAZA BİLGİSİ UYDURMA (adres, konum, mesai saati, telefon, kargo,
+   teslimat, iade, garanti, taksit, montaj...): bu bilgileri YALNIZCA
+   magaza_bilgi aracından al. Araç "bulunamadi" dönerse bilgiyi BİLMEDİĞİNİ
+   söyle ve "yetkili" yazmasını öner — sorusu yetkiliye iletilmiştir, de.
+   Kendi genel bilginden ya da internetten mağaza bilgisi verme; başka
+   şehirlerdeki/şubelerdeki Doğtaş mağazalarının bilgisi BİZİM bilgimiz değildir.
 8. Müşteri kategori/koleksiyon adını yanlış yazabilir (örn. "mariza", "yatak odsı")
    — arama aracını kullanıp en yakınını bul.
 9. Markdown/biçimlendirme işareti KULLANMA (**, ##, madde imi vb.) — WhatsApp ve
@@ -122,6 +126,26 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "magaza_bilgi",
+            "description": "Mağaza hakkında operasyonel bilgi getirir: adres/konum, "
+                           "mesai saatleri, telefon, kargo/teslimat, iade, garanti, "
+                           "taksit, montaj vb. Müşteri mağazayla ilgili bir bilgi "
+                           "sorduğunda MUTLAKA önce bunu çağır; cevabında YALNIZCA "
+                           "buradan dönen bilgiyi kullan. 'bulunamadi' dönerse "
+                           "bilmediğini söyle ve yetkiliye yönlendir.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "soru": {"type": "string",
+                             "description": "Müşterinin sorusu, örn. 'mağazanız nerede'"},
+                },
+                "required": ["soru"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fiyat_detay",
             "description": "Bir kombinasyonun fiyat detayını ve içindeki ürünleri verir. "
                            "Müşteriye fiyat söylemeden önce MUTLAKA bu (veya "
@@ -138,7 +162,8 @@ TOOLS = [
 ]
 
 
-def _tool_calistir(ad: str, argumanlar: dict):
+def _tool_calistir(ad: str, argumanlar: dict,
+                   platform: str = "", kullanici: str = ""):
     """Modelin istediği aracı gerçek veriyle çalıştır."""
     if ad == "koleksiyon_ara":
         return menu_veri.koleksiyon_ara(str(argumanlar.get("q", "")))
@@ -150,6 +175,16 @@ def _tool_calistir(ad: str, argumanlar: dict):
         return menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"]))
     if ad == "fiyat_detay":
         return menu_veri.kombinasyon(int(argumanlar["kombinasyon_id"]))
+    if ad == "magaza_bilgi":
+        soru = str(argumanlar.get("soru", ""))
+        bilgiler = menu_veri.bilgi_ara(soru)
+        if bilgiler:
+            return {"bilgiler": bilgiler}
+        # DB'de yok → soruyu İsmail'in cevaplaması için kaydet (panel: /app/bot/bilgi)
+        menu_veri.soru_kaydet(platform, kullanici, soru)
+        return {"bulunamadi": True,
+                "not": "Bu bilgi kayıtlı değil. Müşteriye bilmediğini söyle, "
+                       "yetkiliye iletildiğini belirt ve 'yetkili' yazmasını öner."}
     return {"hata": f"bilinmeyen araç: {ad}"}
 
 
@@ -246,7 +281,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str) -> str | Non
             except json.JSONDecodeError:
                 argumanlar = {}
             try:
-                sonuc = _tool_calistir(tc.function.name, argumanlar)
+                sonuc = _tool_calistir(tc.function.name, argumanlar,
+                                       platform=platform, kullanici=kullanici)
             except Exception:
                 log.exception("ajan: araç hatası %s(%s)", tc.function.name, argumanlar)
                 sonuc = {"hata": "veri okunamadı"}

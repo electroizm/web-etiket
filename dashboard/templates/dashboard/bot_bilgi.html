@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bot Bilgi · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  <style>
+    .bb { max-width: 760px; margin: 0 auto; padding: 12px; color: #e9edef; }
+    .bb h2 { font-size: 1.05rem; margin: 18px 4px 10px; display: flex;
+             align-items: center; gap: 8px; }
+    .bb h2 .rozet { background: #ef4444; color: #fff; border-radius: 999px;
+                    font-size: .72rem; padding: 2px 8px; font-weight: 800; }
+    .bb-not { background: #1b2a33; border: 1px solid #22323d; border-radius: 12px;
+              padding: 12px 14px; font-size: .85rem; line-height: 1.5; opacity: .85; }
+
+    .bb-kart { background: #111b21; border: 1px solid #222d34; border-radius: 14px;
+               padding: 14px; margin-bottom: 10px; }
+    .bb-kart__baslik { font-weight: 800; font-size: .98rem; margin-bottom: 4px;
+                       display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .bb-kart__anahtar { font-size: .76rem; color: #ffd166; margin-bottom: 8px;
+                        word-break: break-word; }
+    .bb-kart__cevap { font-size: .9rem; line-height: 1.5; white-space: pre-wrap;
+                      word-break: break-word; }
+    .bb-kart__meta { font-size: .72rem; opacity: .45; margin-top: 8px; }
+    .bb-kart--soru { border-color: #7c3f00; background: #1a1207; }
+    .bb-kart--soru .kim { font-size: .76rem; opacity: .6; margin-bottom: 6px; }
+
+    .bb-ops { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .bb-ops form { display: inline; }
+    .bb-btn { border: none; cursor: pointer; border-radius: 10px; padding: 10px 16px;
+              font-size: .85rem; font-weight: 700; min-height: 42px;
+              background: #2a3942; color: #e9edef; }
+    .bb-btn:hover { filter: brightness(1.15); }
+    .bb-btn--yesil { background: #00a884; color: #fff; }
+    .bb-btn--kirmizi { background: #3b1d1d; color: #ffb4b4; }
+    .bb-btn--tam { width: 100%; }
+
+    .bb-form { display: none; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .bb-form.acik { display: flex; }
+    .bb-form input, .bb-form textarea {
+      width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a3942;
+      background: #202c33; color: #e9edef; font-size: 16px; outline: none;
+      font-family: inherit; box-sizing: border-box; }
+    .bb-form textarea { min-height: 90px; resize: vertical; }
+    .bb-form label { font-size: .76rem; opacity: .6; margin: 2px 4px -4px; }
+
+    .bb-mesajlar { margin-bottom: 10px; }
+    .bb-mesaj { padding: 10px 14px; border-radius: 10px; font-size: .86rem;
+                font-weight: 600; margin-bottom: 6px; }
+    .bb-mesaj--success { background: #005c4b; color: #d9fdd3; }
+    .bb-mesaj--error { background: #5c1a1a; color: #ffd6d6; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:bot_konusmalar' %}" class="btn-ghost" title="Bot Konuşmalarına dön">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <span>Konuşmalar</span>
+      </a>
+      <span class="topbar__title">💡 Bot Bilgi</span>
+    </div>
+    <div class="topbar__user">
+      <a href="{% url 'dashboard:home' %}" class="user-link">{{ request.supabase_user.display_name }}</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="bb">
+
+      {% if messages %}
+        <div class="bb-mesajlar">
+          {% for m in messages %}
+            <div class="bb-mesaj bb-mesaj--{{ m.tags }}">{{ m }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="bb-not">
+        🤖 Bot; adres, mesai, kargo, iade gibi mağaza bilgilerini <b>yalnızca buradaki
+        kayıtlardan</b> söyler — asla uydurmaz. Müşterinin sorusu burada yoksa bot
+        "yetkilimiz yardımcı olacak" der ve soru aşağıya <b>Cevapsız Sorular</b>'a düşer.
+        Cevabı eklediğin anda bot bir sonraki mesajda artık biliyor (deploy gerekmez).
+      </div>
+
+      <!-- ── Cevapsız sorular ── -->
+      {% if sorular %}
+        <h2>❓ Cevapsız Sorular <span class="rozet">{{ sorular|length }}</span></h2>
+        {% for s in sorular %}
+          <div class="bb-kart bb-kart--soru">
+            <div class="kim">{{ s.olusturma|date:"d.m H:i" }} ·
+              {% if s.platform == 'whatsapp' %}💬 +{{ s.kullanici }}{% else %}📷 Instagram{% endif %}</div>
+            <div class="bb-kart__cevap">"{{ s.soru }}"</div>
+            <div class="bb-ops">
+              <button type="button" class="bb-btn bb-btn--yesil"
+                      onclick="bbAc('soruForm{{ s.id }}')">✍️ Cevapla</button>
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="islem" value="soru_sil">
+                <input type="hidden" name="soru_id" value="{{ s.id }}">
+                <button type="submit" class="bb-btn bb-btn--kirmizi"
+                        onclick="return confirm('Soru silinsin mi?');">🗑️</button>
+              </form>
+            </div>
+            <form class="bb-form" id="soruForm{{ s.id }}" method="post">
+              {% csrf_token %}
+              <input type="hidden" name="islem" value="ekle">
+              <input type="hidden" name="soru_id" value="{{ s.id }}">
+              <label>Konu başlığı</label>
+              <input name="baslik" required maxlength="200" placeholder="örn. Kargo süresi">
+              <label>Anahtar kelimeler (virgülle — müşteri hangi kelimelerle sorar?)</label>
+              <input name="anahtar" required maxlength="500" placeholder="örn. kargo, teslimat, kaç günde">
+              <label>Botun vereceği cevap</label>
+              <textarea name="cevap" required maxlength="2000" placeholder="örn. Siparişleriniz 2-4 hafta içinde adresinize teslim edilir."></textarea>
+              <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Kaydet — bot artık bilsin</button>
+            </form>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      <!-- ── Yeni bilgi ekle ── -->
+      <h2>➕ Yeni Bilgi</h2>
+      <div class="bb-kart">
+        <button type="button" class="bb-btn bb-btn--yesil bb-btn--tam" onclick="bbAc('yeniForm')">
+          ➕ Yeni bilgi ekle
+        </button>
+        <form class="bb-form" id="yeniForm" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="islem" value="ekle">
+          <label>Konu başlığı</label>
+          <input name="baslik" required maxlength="200" placeholder="örn. Adres">
+          <label>Anahtar kelimeler (virgülle)</label>
+          <input name="anahtar" required maxlength="500" placeholder="örn. adres, konum, nerede, yol tarifi">
+          <label>Botun vereceği cevap</label>
+          <textarea name="cevap" required maxlength="2000" placeholder="örn. Mağazamız: Doğtaş Çevreyolu — ... adresindedir. 📍 Konum: https://maps.app..."></textarea>
+          <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Kaydet</button>
+        </form>
+      </div>
+
+      <!-- ── Kayıtlı bilgiler ── -->
+      <h2>📚 Kayıtlı Bilgiler ({{ bilgiler|length }})</h2>
+      {% for b in bilgiler %}
+        <div class="bb-kart">
+          <div class="bb-kart__baslik">{{ b.baslik }}</div>
+          <div class="bb-kart__anahtar">🔑 {{ b.anahtar }}</div>
+          <div class="bb-kart__cevap">{{ b.cevap }}</div>
+          <div class="bb-kart__meta">güncelleme: {{ b.guncelleme|date:"d.m.Y H:i" }}</div>
+          <div class="bb-ops">
+            <button type="button" class="bb-btn" onclick="bbAc('duzenle{{ b.id }}')">✏️ Düzenle</button>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="islem" value="sil">
+              <input type="hidden" name="id" value="{{ b.id }}">
+              <button type="submit" class="bb-btn bb-btn--kirmizi"
+                      onclick="return confirm('{{ b.baslik }} silinsin mi? Bot bu bilgiyi artık veremez.');">🗑️ Sil</button>
+            </form>
+          </div>
+          <form class="bb-form" id="duzenle{{ b.id }}" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="islem" value="guncelle">
+            <input type="hidden" name="id" value="{{ b.id }}">
+            <label>Konu başlığı</label>
+            <input name="baslik" required maxlength="200" value="{{ b.baslik }}">
+            <label>Anahtar kelimeler (virgülle)</label>
+            <input name="anahtar" required maxlength="500" value="{{ b.anahtar }}">
+            <label>Botun vereceği cevap</label>
+            <textarea name="cevap" required maxlength="2000">{{ b.cevap }}</textarea>
+            <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Güncelle</button>
+          </form>
+        </div>
+      {% empty %}
+        <div class="bb-kart" style="opacity:.6">Henüz bilgi kaydı yok. "Yeni bilgi ekle"
+          ile başla — önerilen ilk kayıtlar: Adres/Konum, Mesai saatleri, Telefon,
+          Kargo/Teslimat, İade, Garanti, Taksit.</div>
+      {% endfor %}
+
+    </div>
+  </main>
+</div>
+
+<script>
+  function bbAc(id) {
+    var f = document.getElementById(id);
+    if (f) f.classList.toggle('acik');
+  }
+</script>
+{% endblock %}

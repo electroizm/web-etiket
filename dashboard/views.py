@@ -18,7 +18,10 @@ from django.views.decorators.http import require_http_methods
 from accounts.decorators import login_required_supabase, login_required_supabase_api
 from catalog.database import SessionLocal
 from catalog.sa_models import (
+    BotBilgi,
+    BotKisi,
     BotMesaj,
+    BotSoru,
     Fiyat,
     Kategori,
     Kombinasyon,
@@ -2085,25 +2088,106 @@ def _bot_mesaj_goster(m) -> dict:
     return {"yon": m.yon, "metin": metin, "elle": elle, "olusturma": m.olusturma}
 
 
+BOT_TEMIZLIK_GUN = 7   # okunmuş/çözülmüş konuşmalar bu yaştan sonra silinir
+
+
+def _bot_kisi_upsert(session, platform: str, kullanici: str) -> "BotKisi":
+    """(platform, kullanici) için BotKisi satırını getir; yoksa oluştur."""
+    kisi = session.scalar(
+        select(BotKisi).where(BotKisi.platform == platform,
+                              BotKisi.kullanici == kullanici)
+    )
+    if kisi is None:
+        kisi = BotKisi(platform=platform, kullanici=kullanici)
+        session.add(kisi)
+        session.flush()
+    return kisi
+
+
+def _bot_temizlik(session) -> int:
+    """7 günden eski, OKUNMUŞ ya da ÇÖZÜLMÜŞ konuşmaları DB'den sil.
+
+    Panel her açıldığında sessizce çalışır (Render free'de cron yok — İsmail
+    kararı, 2026-07-06). Okunmamış ve çözülmemiş konuşmalara dokunulmaz.
+    """
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    from sqlalchemy import delete as _delete
+
+    esik = _dt.now(_tz.utc) - _td(days=BOT_TEMIZLIK_GUN)
+    son_stmt = (
+        select(BotMesaj.platform, BotMesaj.kullanici,
+               func.max(BotMesaj.olusturma).label("son"),
+               func.max(BotMesaj.id).label("son_id"))
+        .group_by(BotMesaj.platform, BotMesaj.kullanici)
+    )
+    rows = session.execute(son_stmt).all()
+    kisiler = {(k.platform, k.kullanici): k
+               for k in session.scalars(select(BotKisi)).all()}
+    silinen = 0
+    for r in rows:
+        if r.son is None or r.son > esik:
+            continue   # konuşma hâlâ taze
+        kisi = kisiler.get((r.platform, r.kullanici))
+        okunmus = kisi is not None and (kisi.son_okunan_id or 0) >= r.son_id
+        cozulmus = kisi is not None and kisi.cozuldu
+        if not (okunmus or cozulmus):
+            continue   # okunmamış VE çözülmemiş → sakla
+        session.execute(_delete(BotMesaj).where(
+            BotMesaj.platform == r.platform, BotMesaj.kullanici == r.kullanici))
+        # Profil (isim/foto) kalsın ama durum sıfırlansın — yeni konuşma
+        # geldiğinde yanlışlıkla "çözülmüş" sayılıp silinmesin.
+        if kisi is not None:
+            kisi.cozuldu = False
+            kisi.son_okunan_id = None
+        silinen += 1
+    if silinen:
+        session.commit()
+    return silinen
+
+
 @login_required_supabase
 def bot_konusmalar(request):
     """WhatsApp Web tarzı gelen kutusu: solda sohbet listesi, sağda seçili konuşma.
 
-    Seçim `?k=platform:kullanici` parametresiyle taşınır (sunucu taraflı, JS'siz).
+    Seçim `?k=platform:kullanici`, filtre `?f=okunmamis|acik` (sunucu taraflı).
+    Konuşma açılınca okundu sayılır (son_okunan_id ilerletilir); ✓ Çözüldü
+    işareti bot_durum ucundan gelir. Sayfa açılışında 7 günlük oto temizlik.
     """
     session = SessionLocal()
     try:
+        try:
+            _bot_temizlik(session)   # sessiz — hata sayfayı düşürmesin
+        except Exception:
+            session.rollback()
+            logging.getLogger(__name__).exception("bot oto temizlik hatası")
+
         rows = list(session.scalars(
             select(BotMesaj).order_by(BotMesaj.olusturma.desc()).limit(500)
         ).all())
+
+        # (platform, kullanici) bazında grupla. rows yeniden-eskiye sıralı geldiği
+        # için ilk görülen mesaj o konuşmanın en yenisidir.
+        gruplar: dict[tuple[str, str], list] = {}
+        for m in rows:
+            gruplar.setdefault((m.platform, m.kullanici), []).append(m)
+
+        durumlar = {(k.platform, k.kullanici): k
+                    for k in session.scalars(select(BotKisi)).all()}
+
+        # Seçili konuşma açıldıysa OKUNDU işaretle (en yeni mesaj id'sine kadar).
+        k = request.GET.get("k", "")
+        if ":" in k:
+            p, _, u = k.partition(":")
+            msgs = gruplar.get((p, u))
+            if msgs:
+                kisi = _bot_kisi_upsert(session, p, u)
+                son_id = max(m.id for m in msgs)
+                if (kisi.son_okunan_id or 0) < son_id:
+                    kisi.son_okunan_id = son_id
+                    session.commit()
+                durumlar[(p, u)] = kisi
     finally:
         session.close()
-
-    # (platform, kullanici) bazında grupla. rows yeniden-eskiye sıralı geldiği için
-    # ilk görülen mesaj o konuşmanın en yenisidir.
-    gruplar: dict[tuple[str, str], list] = {}
-    for m in rows:
-        gruplar.setdefault((m.platform, m.kullanici), []).append(m)
 
     from bot.kisi import profil_haritasi
     profiller = profil_haritasi()
@@ -2117,8 +2201,16 @@ def bot_konusmalar(request):
             return "@" + p["kullanici_adi"]
         return ("+" + kullanici) if platform == "whatsapp" else kullanici
 
-    konusmalar = [
-        {
+    def _durum(platform, kullanici, msgs):
+        kisi = durumlar.get((platform, kullanici))
+        son_okunan = (kisi.son_okunan_id or 0) if kisi is not None else 0
+        okunmamis = sum(1 for m in msgs if m.yon == "gelen" and m.id > son_okunan)
+        return okunmamis, bool(kisi is not None and kisi.cozuldu)
+
+    konusmalar = []
+    for (platform, kullanici), msgs in gruplar.items():
+        okunmamis, cozuldu = _durum(platform, kullanici, msgs)
+        konusmalar.append({
             "platform": platform,
             "kullanici": kullanici,
             "anahtar": f"{platform}:{kullanici}",
@@ -2127,18 +2219,25 @@ def bot_konusmalar(request):
             "son": msgs[0].olusturma,                       # en yeni mesaj zamanı
             "onizleme": _bot_mesaj_goster(msgs[0])["metin"][:60],
             "adet": len(msgs),
-        }
-        for (platform, kullanici), msgs in gruplar.items()
-    ]
+            "okunmamis": okunmamis,
+            "cozuldu": cozuldu,
+        })
+
+    # Filtre: ?f=okunmamis → yalnız rozetliler; ?f=acik → çözülmemişler.
+    f = request.GET.get("f", "")
+    if f == "okunmamis":
+        konusmalar = [c for c in konusmalar if c["okunmamis"] > 0]
+    elif f == "acik":
+        konusmalar = [c for c in konusmalar if not c["cozuldu"]]
 
     # Seçili konuşma (?k=platform:kullanici)
     secili = None
-    k = request.GET.get("k", "")
     if ":" in k:
         p, _, u = k.partition(":")
         msgs = gruplar.get((p, u))
         if msgs:
             prof = profiller.get((p, u)) or {}
+            kisi = durumlar.get((p, u))
             secili = {
                 "platform": p,
                 "kullanici": u,
@@ -2146,14 +2245,159 @@ def bot_konusmalar(request):
                 "baslik": _baslik(p, u),
                 "kullanici_adi": prof.get("kullanici_adi"),
                 "foto": prof.get("foto_url"),
+                "cozuldu": bool(kisi is not None and kisi.cozuldu),
                 "mesajlar": [_bot_mesaj_goster(m) for m in reversed(msgs)],
             }
+
+    acik_soru = 0
+    try:
+        s2 = SessionLocal()
+        try:
+            acik_soru = s2.scalar(
+                select(func.count()).select_from(BotSoru).where(BotSoru.durum == "acik")
+            ) or 0
+        finally:
+            s2.close()
+    except Exception:
+        pass
 
     return render(request, "dashboard/bot_konusmalar.html", {
         "konusmalar": konusmalar,
         "secili": secili,
         "toplam": len(rows),
+        "filtre": f,
+        "acik_soru": acik_soru,
         "sonuc": request.GET.get("sonuc", ""),
+    })
+
+
+@login_required_supabase
+@require_http_methods(["POST"])
+def bot_durum(request):
+    """Konuşmayı ✓ çözüldü / tekrar açık işaretle (panel butonu)."""
+    platform = (request.POST.get("platform") or "").strip()
+    kullanici = (request.POST.get("kullanici") or "").strip()
+    deger = (request.POST.get("cozuldu") or "") == "1"
+    if platform in ("whatsapp", "instagram") and kullanici:
+        session = SessionLocal()
+        try:
+            kisi = _bot_kisi_upsert(session, platform, kullanici)
+            kisi.cozuldu = deger
+            session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+    return redirect(f"{reverse('dashboard:bot_konusmalar')}"
+                    f"?k={quote(f'{platform}:{kullanici}')}")
+
+
+@login_required_supabase
+@require_http_methods(["POST"])
+def bot_sil(request):
+    """Konuşmayı DB'den tamamen sil (mesajlar + durum sıfırlama)."""
+    from sqlalchemy import delete as _delete
+
+    platform = (request.POST.get("platform") or "").strip()
+    kullanici = (request.POST.get("kullanici") or "").strip()
+    if platform in ("whatsapp", "instagram") and kullanici:
+        session = SessionLocal()
+        try:
+            session.execute(_delete(BotMesaj).where(
+                BotMesaj.platform == platform, BotMesaj.kullanici == kullanici))
+            kisi = session.scalar(
+                select(BotKisi).where(BotKisi.platform == platform,
+                                      BotKisi.kullanici == kullanici))
+            if kisi is not None:
+                kisi.cozuldu = False
+                kisi.son_okunan_id = None
+            session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+    return redirect(f"{reverse('dashboard:bot_konusmalar')}?sonuc=silindi")
+
+
+@login_required_supabase
+def bot_bilgi(request):
+    """Bot Bilgi sayfası — mağaza bilgileri (soru-cevap) + cevapsız müşteri soruları.
+
+    Bot, mağaza bilgilerini (adres, mesai, kargo, iade...) YALNIZCA buradaki
+    kayıtlardan söyler. DB'de karşılığı olmayan sorular 'Cevapsız Sorular'
+    bölümüne düşer; İsmail cevabı ekleyince bot artık bilir.
+    """
+    from django.contrib import messages as _messages
+
+    session = SessionLocal()
+    try:
+        if request.method == "POST":
+            islem = (request.POST.get("islem") or "").strip()
+            try:
+                if islem == "ekle":
+                    baslik = (request.POST.get("baslik") or "").strip()[:200]
+                    anahtar = (request.POST.get("anahtar") or "").strip()[:500]
+                    cevap = (request.POST.get("cevap") or "").strip()[:2000]
+                    if baslik and anahtar and cevap:
+                        session.add(BotBilgi(baslik=baslik, anahtar=anahtar, cevap=cevap))
+                        # Cevapsız sorudan geliyorsa soruyu kapat.
+                        soru_id = request.POST.get("soru_id")
+                        if soru_id and soru_id.isdigit():
+                            soru = session.get(BotSoru, int(soru_id))
+                            if soru is not None:
+                                soru.durum = "cevaplandi"
+                        session.commit()
+                        _messages.success(request, f"Bilgi eklendi: {baslik}")
+                    else:
+                        _messages.error(request, "Başlık, anahtar kelimeler ve cevap zorunlu.")
+                elif islem == "guncelle":
+                    bid = request.POST.get("id") or ""
+                    kayit = session.get(BotBilgi, int(bid)) if bid.isdigit() else None
+                    if kayit is not None:
+                        kayit.baslik = (request.POST.get("baslik") or kayit.baslik).strip()[:200]
+                        kayit.anahtar = (request.POST.get("anahtar") or kayit.anahtar).strip()[:500]
+                        kayit.cevap = (request.POST.get("cevap") or kayit.cevap).strip()[:2000]
+                        from datetime import datetime as _dt, timezone as _tz
+                        kayit.guncelleme = _dt.now(_tz.utc)
+                        session.commit()
+                        _messages.success(request, f"Güncellendi: {kayit.baslik}")
+                elif islem == "sil":
+                    bid = request.POST.get("id") or ""
+                    kayit = session.get(BotBilgi, int(bid)) if bid.isdigit() else None
+                    if kayit is not None:
+                        session.delete(kayit)
+                        session.commit()
+                        _messages.success(request, "Bilgi silindi.")
+                elif islem == "soru_sil":
+                    sid = request.POST.get("soru_id") or ""
+                    soru = session.get(BotSoru, int(sid)) if sid.isdigit() else None
+                    if soru is not None:
+                        session.delete(soru)
+                        session.commit()
+            except Exception as e:
+                session.rollback()
+                _messages.error(request, f"İşlem başarısız: {e}")
+            return redirect("dashboard:bot_bilgi")
+
+        bilgiler = [
+            {"id": b.id, "baslik": b.baslik, "anahtar": b.anahtar,
+             "cevap": b.cevap, "guncelleme": b.guncelleme}
+            for b in session.scalars(
+                select(BotBilgi).order_by(BotBilgi.baslik)).all()
+        ]
+        sorular = [
+            {"id": s.id, "platform": s.platform, "kullanici": s.kullanici,
+             "soru": s.soru, "olusturma": s.olusturma}
+            for s in session.scalars(
+                select(BotSoru).where(BotSoru.durum == "acik")
+                .order_by(BotSoru.olusturma.desc()).limit(50)).all()
+        ]
+    finally:
+        session.close()
+
+    return render(request, "dashboard/bot_bilgi.html", {
+        "bilgiler": bilgiler,
+        "sorular": sorular,
     })
 
 

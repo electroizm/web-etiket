@@ -120,6 +120,69 @@ def koleksiyon_ara(q: str) -> list[dict]:
         session.close()
 
 
+# ─── Mağaza bilgi tabanı (bot_bilgi) ─────────────────────────────────────────
+# Türkçe karakter sadeleştirme — "mesai" / "MESAİ" / "mesaı" hepsi eşleşsin.
+_TR_DUZLE = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosucgiosu")
+
+
+def _duz(s: str) -> str:
+    s = (s or "").strip().translate(_TR_DUZLE).lower().translate(_TR_DUZLE)
+    return s.replace("̇", "")   # İ.lower() birleşik noktası (U+0307)
+
+
+def bilgi_ara(soru: str) -> list[dict]:
+    """Mağaza bilgi kayıtlarında anahtar kelime eşleşmesi.
+
+    Her bot_bilgi satırının `anahtar` alanı virgüllü kelime listesidir
+    ("adres, konum, nerede"). Sorunun düzleştirilmiş halinde bu kelimelerden
+    biri geçiyorsa kayıt eşleşir. AI ajan mağaza bilgisini YALNIZCA buradan
+    alır — boş dönerse uydurmak yerine yetkiliye yönlendirir.
+    """
+    from catalog.sa_models import BotBilgi
+    d = _duz(soru)
+    if not d:
+        return []
+    session = SessionLocal()
+    try:
+        rows = session.scalars(select(BotBilgi)).all()
+        sonuc = []
+        for r in rows:
+            kelimeler = [_duz(k) for k in (r.anahtar or "").split(",")]
+            if any(k and k in d for k in kelimeler):
+                sonuc.append({"baslik": r.baslik, "cevap": r.cevap})
+        return sonuc
+    finally:
+        session.close()
+
+
+def soru_kaydet(platform: str, kullanici: str, soru: str) -> None:
+    """Cevapsız kalan müşteri sorusunu bot_soru'ya yaz (İsmail panelden cevaplar).
+
+    Aynı kullanıcının aynı açık sorusu varsa mükerrer yazılmaz. Hata akışı
+    bozmasın: yut (bilgi kaydı, müşteri cevabından önemli değil).
+    """
+    from catalog.sa_models import BotSoru
+    soru = (soru or "").strip()[:500]
+    if not soru:
+        return
+    try:
+        session = SessionLocal()
+        try:
+            var = session.scalar(
+                select(BotSoru).where(BotSoru.platform == platform,
+                                      BotSoru.kullanici == kullanici,
+                                      BotSoru.soru == soru,
+                                      BotSoru.durum == "acik")
+            )
+            if var is None:
+                session.add(BotSoru(platform=platform, kullanici=kullanici, soru=soru))
+                session.commit()
+        finally:
+            session.close()
+    except Exception:
+        pass
+
+
 def kombinasyon(kombi_id: int) -> dict | None:
     """Seçilen kombinasyonun fiyat detayı + içindeki ürünler."""
     session = SessionLocal()

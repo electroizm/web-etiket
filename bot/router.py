@@ -135,6 +135,12 @@ AI_SINYAL_KELIMELER = (
     "var mı", "varmı", "nedir", "hangi", "nasıl", "arıyorum", "ariyorum",
     "istiyorum", "bakıyorum", "bakiyorum", "lazım", "lazim", "önerir", "onerir",
     "modeli", "ölçü", "olcu", "renk",
+    # mağaza bilgisi niyeti → AI, magaza_bilgi tool'undan (bot_bilgi) cevaplar;
+    # DB'de yoksa soru bot_soru'ya düşer, İsmail /app/bot/bilgi'den cevaplar.
+    "adres", "konum", "nerede", "neredesiniz", "mesai", "açık mı", "acik mi",
+    "kaça kadar", "kaca kadar", "kaçta", "kacta", "kargo", "teslimat",
+    "gönderim", "gonderim", "iade", "garanti", "montaj", "kurulum",
+    "telefon", "numaranız", "numaraniz",
 )
 
 
