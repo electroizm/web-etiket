@@ -252,8 +252,7 @@
             </div>
           </div>
 
-          {# DİKKAT: .wa-msg pre-wrap'lı — içine şablon girintisi/satır sonu
-             SIZMAMALI, yoksa balonlar boşlukla şişer. Tek satırda render edilir. #}
+          {# DİKKAT: .wa-msg pre-wrap'lı — içine şablon girintisi/satır sonu sızmamalı, yoksa balonlar boşlukla şişer. Tek satırda render edilir. #}
           <div class="wa-msgs" id="waMsgs">
             {% for m in secili.mesajlar %}<div class="wa-msg {{ m.yon }}">{% if m.elle %}<span class="kaynak">👤 YETKİLİ</span>{% endif %}{{ m.metin }}<span class="saat">{{ m.olusturma|date:"d.m H:i" }}</span></div>{% endfor %}
           </div>
