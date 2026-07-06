@@ -34,8 +34,11 @@ def _kombi_icerik(kombi: Kombinasyon) -> str:
 
 def _coz(session, t: Teshir) -> dict:
     """Tek teşhir kaydını efektif değerleriyle sözlüğe çevir."""
-    kol = session.get(Koleksiyon, t.koleksiyon_id)
-    kat = session.get(Kategori, kol.kategori_id) if kol else None
+    kol = session.get(Koleksiyon, t.koleksiyon_id) if t.koleksiyon_id else None
+    # Kategori: bağlı kayıtta koleksiyondan, manuel kayıtta doğrudan kayıttan.
+    kat_id = kol.kategori_id if kol else t.kategori_id
+    kat = session.get(Kategori, kat_id) if kat_id else None
+    kol_ad = kol.ad if kol else ((t.koleksiyon_adi or "").strip() or "?")
 
     kombi = _kombi_yukle(session, t.kombinasyon_id) if t.kombinasyon_id else None
     web = hesapla_kombinasyon_toplam(kombi) if kombi else {}
@@ -44,19 +47,24 @@ def _coz(session, t: Teshir) -> dict:
     perakende = (t.perakende_fiyat if t.perakende_fiyat is not None
                  else web.get("toplam_perakende"))
     icerik = (t.icerik or "").strip() or (_kombi_icerik(kombi) if kombi else "")
+    pay = t.pazarlik_payi
+    taban = (perakende - pay) if (perakende and pay and pay < perakende) else None
 
     return {
         "id": t.id,
-        "baslik": (t.baslik or "").strip() or (kol.ad if kol else "?"),
+        "baslik": (t.baslik or "").strip() or kol_ad,
         "kategori": kat.ad if kat else "",
-        "kategori_id": kol.kategori_id if kol else None,
-        "koleksiyon": kol.ad if kol else "?",
+        "kategori_id": kat_id,
+        "koleksiyon": kol_ad,
         "koleksiyon_id": t.koleksiyon_id,
+        "manuel": t.koleksiyon_id is None,
         "kombinasyon": kombi.ad if kombi else "",
         "kombinasyon_id": t.kombinasyon_id,
         "icerik": icerik,
         "liste_fiyat": liste,
         "perakende_fiyat": perakende,
+        "pazarlik_payi": pay,
+        "pazarlik_taban": taban,
         # Panelde "mağaza fiyatı mı web fiyatı mı" rozetleri için:
         "fiyat_kaynak": "magaza" if (t.liste_fiyat is not None
                                      or t.perakende_fiyat is not None) else "web",
@@ -66,6 +74,7 @@ def _coz(session, t: Teshir) -> dict:
         "ham_icerik": t.icerik or "",
         "ham_liste": t.liste_fiyat,
         "ham_perakende": t.perakende_fiyat,
+        "ham_koleksiyon_adi": t.koleksiyon_adi or "",
         "notlar": t.notlar or "",
         "guncelleme": t.guncelleme,
     }
@@ -87,6 +96,8 @@ def ajan_icin(koleksiyon_id: int | None = None) -> list[dict]:
     """AI ajanın teshir_bilgi aracı için sade görünüm.
 
     Yalnızca müşteriye söylenebilecek alanlar döner (iç notlar HARİÇ).
+    pazarlik_taban_fiyat: müşteri pazarlık ederse ajanın inebileceği EN DÜŞÜK
+    fiyat (perakende − pazarlık payı). Payın kendisi ajana verilmez.
     """
     session = SessionLocal()
     try:
@@ -97,7 +108,7 @@ def ajan_icin(koleksiyon_id: int | None = None) -> list[dict]:
         sonuc = []
         for t in rows:
             d = _coz(session, t)
-            sonuc.append({
+            kayit = {
                 "ad": d["baslik"],
                 "kategori": d["kategori"],
                 "koleksiyon": d["koleksiyon"],
@@ -105,7 +116,10 @@ def ajan_icin(koleksiyon_id: int | None = None) -> list[dict]:
                 "liste_fiyat": d["liste_fiyat"],
                 "perakende_fiyat": d["perakende_fiyat"],
                 "para_birimi": "TL",
-            })
+            }
+            if d["pazarlik_taban"]:
+                kayit["pazarlik_taban_fiyat"] = d["pazarlik_taban"]
+            sonuc.append(kayit)
         return sonuc
     finally:
         session.close()

@@ -97,7 +97,7 @@
         <div class="teshir-form__grid">
           <label class="field">
             <span class="field-label">Kategori</span>
-            <select class="select" id="ekle-kategori" aria-label="Kategori">
+            <select class="select" name="kategori_id" id="ekle-kategori" aria-label="Kategori">
               <option value="">Kategori seç…</option>
               {% for k in kategoriler %}
                 <option value="{{ k.id }}">{{ k.ad }}</option>
@@ -106,10 +106,15 @@
           </label>
           <label class="field">
             <span class="field-label">Koleksiyon <span style="color: var(--danger);">*</span></span>
-            <select class="select" name="koleksiyon_id" id="ekle-koleksiyon" disabled required
+            <select class="select" name="koleksiyon_id" id="ekle-koleksiyon" disabled
                     aria-label="Koleksiyon">
               <option value="">Önce kategori seç</option>
             </select>
+          </label>
+          <label class="field" id="ekle-manuel-alan" hidden>
+            <span class="field-label">Koleksiyon adı (elle) <span style="color: var(--danger);">*</span></span>
+            <input type="text" name="koleksiyon_adi" id="ekle-koleksiyon-adi" maxlength="200"
+                   placeholder="örn. LORENTA (web'den kalkmış seri)">
           </label>
           <label class="field">
             <span class="field-label">Kombinasyon (opsiyonel — fiyat/içerik buradan gelir)</span>
@@ -131,6 +136,11 @@
             <span class="field-label">Perakende fiyatı (TL)</span>
             <input type="text" inputmode="numeric" name="perakende_fiyat" id="ekle-perakende"
                    placeholder="boş → web fiyatı">
+          </label>
+          <label class="field">
+            <span class="field-label">🤝 Pazarlık payı (TL)</span>
+            <input type="text" inputmode="numeric" name="pazarlik_payi"
+                   placeholder="boş → ajan pazarlık yapmaz">
           </label>
           <label class="field field--wide">
             <span class="field-label">Teşhirin içeriği</span>
@@ -173,6 +183,13 @@
         {% if t.icerik %}
           <p class="teshir-kart__icerik">{{ t.icerik }}</p>
         {% endif %}
+        {% if t.pazarlik_taban %}
+          <p class="teshir-kart__not">🤝 Pazarlık payı: {{ t.pazarlik_payi }} TL —
+             ajan en düşük <b>{{ t.pazarlik_taban }} TL</b>'ye kadar iner (müşteri pazarlık ederse).</p>
+        {% elif t.pazarlik_payi %}
+          <p class="teshir-kart__not">🤝 Pazarlık payı {{ t.pazarlik_payi }} TL yazıldı ama
+             perakende fiyat çözülemediği için ajan pazarlık YAPMAZ.</p>
+        {% endif %}
         {% if t.notlar %}
           <p class="teshir-kart__not">📝 {{ t.notlar }}</p>
         {% endif %}
@@ -194,6 +211,13 @@
           <input type="hidden" name="islem" value="guncelle">
           <input type="hidden" name="id" value="{{ t.id }}">
           <div class="teshir-form__grid">
+            {% if t.manuel %}
+              <label class="field">
+                <span class="field-label">Koleksiyon adı (elle)</span>
+                <input type="text" name="koleksiyon_adi" maxlength="200"
+                       value="{{ t.ham_koleksiyon_adi }}">
+              </label>
+            {% endif %}
             <label class="field">
               <span class="field-label">Görünen ad</span>
               <input type="text" name="baslik" maxlength="200" value="{{ t.ham_baslik }}"
@@ -208,6 +232,12 @@
               <span class="field-label">Perakende fiyatı (TL)</span>
               <input type="text" inputmode="numeric" name="perakende_fiyat"
                      value="{{ t.ham_perakende|default_if_none:'' }}" placeholder="boş → web fiyatı">
+            </label>
+            <label class="field">
+              <span class="field-label">🤝 Pazarlık payı (TL)</span>
+              <input type="text" inputmode="numeric" name="pazarlik_payi"
+                     value="{{ t.pazarlik_payi|default_if_none:'' }}"
+                     placeholder="boş → ajan pazarlık yapmaz">
             </label>
             <label class="field">
               <span class="field-label">İç not</span>
@@ -257,6 +287,9 @@
       const listeInp = document.getElementById('ekle-liste');
       const perakInp = document.getElementById('ekle-perakende');
 
+      const manuelAlan = document.getElementById('ekle-manuel-alan');
+      const manuelInp  = document.getElementById('ekle-koleksiyon-adi');
+
       function doldur(sel, secenekler, bosMetin) {
         sel.innerHTML = '';
         const bos = document.createElement('option');
@@ -272,22 +305,52 @@
         sel.disabled = secenekler.length === 0;
       }
 
+      // Koleksiyon web'den kalkmış olabilir → her durumda "elle yaz" seçeneği.
+      function manuelSecenekEkle() {
+        const o = document.createElement('option');
+        o.value = '__manuel__';
+        o.textContent = '— Listede yok / elle yazacağım —';
+        kolSel.appendChild(o);
+        kolSel.disabled = false;
+      }
+      manuelSecenekEkle();
+
+      function manuelDurum(acik) {
+        manuelAlan.hidden = !acik;
+        manuelInp.required = acik;
+        if (!acik) manuelInp.value = '';
+      }
+
       katSel?.addEventListener('change', async () => {
-        doldur(kolSel, [], 'Yükleniyor…'); kolSel.disabled = true;
+        doldur(kolSel, [], 'Yükleniyor…');
         doldur(kombiSel, [], 'Önce koleksiyon seç'); kombiSel.disabled = true;
-        if (!katSel.value) { doldur(kolSel, [], 'Önce kategori seç'); return; }
+        manuelDurum(false);
+        if (!katSel.value) {
+          doldur(kolSel, [], 'Önce kategori seç'); manuelSecenekEkle(); return;
+        }
         try {
           const res = await fetch(`${SECENEK_URL}?kategori=${katSel.value}`,
                                   { credentials: 'same-origin' });
           const data = await res.json();
           doldur(kolSel, data.koleksiyonlar || [], 'Koleksiyon seç…');
         } catch (_) { doldur(kolSel, [], 'Yüklenemedi — tekrar dene'); }
+        manuelSecenekEkle();
       });
 
       kolSel?.addEventListener('change', async () => {
         doldur(kombiSel, [], 'Yükleniyor…'); kombiSel.disabled = true;
         listeInp.placeholder = 'boş → web fiyatı';
         perakInp.placeholder = 'boş → web fiyatı';
+        if (kolSel.value === '__manuel__') {
+          // Elle yazılan koleksiyon: web bağı yok → kombinasyon da yok.
+          manuelDurum(true);
+          doldur(kombiSel, [], 'Elle kayıtta kombinasyon bağlanmaz');
+          listeInp.placeholder = 'liste fiyatı (elle)';
+          perakInp.placeholder = 'perakende fiyatı (elle)';
+          manuelInp.focus();
+          return;
+        }
+        manuelDurum(false);
         if (!kolSel.value) { doldur(kombiSel, [], 'Önce koleksiyon seç'); return; }
         try {
           const res = await fetch(`${SECENEK_URL}?koleksiyon=${kolSel.value}`,

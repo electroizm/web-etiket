@@ -2466,17 +2466,27 @@ def teshir(request):
         try:
             if islem == "ekle":
                 kol_id = request.POST.get("koleksiyon_id") or ""
-                if not kol_id.isdigit() or session.get(Koleksiyon, int(kol_id)) is None:
-                    _messages.error(request, "Koleksiyon seçimi zorunlu.")
+                kol_adi = (request.POST.get("koleksiyon_adi") or "").strip()[:200]
+                kat_id = request.POST.get("kategori_id") or ""
+                bagli = kol_id.isdigit() and session.get(Koleksiyon, int(kol_id)) is not None
+                if not bagli and not kol_adi:
+                    # Web'de olmayan koleksiyon: adı elle yazılır (manuel kayıt).
+                    _messages.error(
+                        request, "Koleksiyon seç ya da adını elle yaz.")
                 else:
                     kombi_id = request.POST.get("kombinasyon_id") or ""
                     session.add(Teshir(
-                        koleksiyon_id=int(kol_id),
-                        kombinasyon_id=int(kombi_id) if kombi_id.isdigit() else None,
+                        koleksiyon_id=int(kol_id) if bagli else None,
+                        koleksiyon_adi=None if bagli else kol_adi,
+                        kategori_id=(int(kat_id)
+                                     if (not bagli and kat_id.isdigit()) else None),
+                        kombinasyon_id=(int(kombi_id)
+                                        if (bagli and kombi_id.isdigit()) else None),
                         baslik=(request.POST.get("baslik") or "").strip()[:200] or None,
                         icerik=(request.POST.get("icerik") or "").strip()[:2000] or None,
                         liste_fiyat=_sayi("liste_fiyat"),
                         perakende_fiyat=_sayi("perakende_fiyat"),
+                        pazarlik_payi=_sayi("pazarlik_payi"),
                         notlar=(request.POST.get("notlar") or "").strip()[:1000] or None,
                     ))
                     session.commit()
@@ -2489,6 +2499,12 @@ def teshir(request):
                     kayit.icerik = (request.POST.get("icerik") or "").strip()[:2000] or None
                     kayit.liste_fiyat = _sayi("liste_fiyat")
                     kayit.perakende_fiyat = _sayi("perakende_fiyat")
+                    kayit.pazarlik_payi = _sayi("pazarlik_payi")
+                    # Manuel kayıtta koleksiyon adı da düzenlenebilir.
+                    if kayit.koleksiyon_id is None:
+                        yeni_ad = (request.POST.get("koleksiyon_adi") or "").strip()[:200]
+                        if yeni_ad:
+                            kayit.koleksiyon_adi = yeni_ad
                     kayit.notlar = (request.POST.get("notlar") or "").strip()[:1000] or None
                     from datetime import datetime as _dt, timezone as _tz
                     kayit.guncelleme = _dt.now(_tz.utc)
