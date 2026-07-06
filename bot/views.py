@@ -36,6 +36,7 @@ def saglik(request):
         "dry_run_ig": settings.BOT_DRY_RUN_IG,
         "ajan": settings.AJAN_MODEL if settings.AJAN_AKTIF else "kapalı",
         "ajan_son_hata": _ajan_son_hata(),
+        "ses_son_hata": _ses_son_hata(),
         "webhook_son_hata": WEBHOOK_SON_HATA,
     })
 
@@ -43,6 +44,11 @@ def saglik(request):
 def _ajan_son_hata():
     from bot import ajan
     return ajan.SON_HATA
+
+
+def _ses_son_hata():
+    from bot import ses
+    return ses.SON_HATA
 
 
 @require_http_methods(["GET"])
@@ -136,12 +142,33 @@ def _olaylari_isle(govde: dict) -> None:
         return
     for olay in olaylar:
         try:
+            # 🎙️ Sesli mesaj → transkript (Gemini). Başarılıysa serbest metin gibi
+            # akar; kayıtta "[ses] ..." izi kalır (ozet_gelen). Çözülemezse aşağıda
+            # kibar bir özür mesajı gönderilir.
+            if olay.ses and not olay.metin and not olay.secim:
+                from bot import ses as ses_modul
+                olay.metin = ses_modul.coz(olay.ses)
             kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
             # Profil bilgisini güncelle (id yerine isim/foto göstermek için).
             if olay.platform == "whatsapp":
                 kisi.guncelle_wa(olay.gonderen, olay.gonderen_ad)
             else:
                 kisi.guncelle_ig(olay.gonderen)
+            # ⚠️ Memnuniyetsizlik radarı: şikâyet sinyali varsa İsmail'e anında
+            # bildirim (müşteri akışını değiştirmez, paralel gider).
+            if olay.metin and not olay.secim:
+                from bot import duygu
+                duygu.kontrol_et(olay.platform, olay.gonderen, olay.metin)
+            if olay.ses and not olay.metin and not olay.secim:
+                # Ses indirilemedi/çözülemedi → menüye zorlamak yerine dürüst cevap.
+                P = ig_presenter if olay.platform == "instagram" else wa_presenter
+                gonder = (meta_client.gonder_instagram if olay.platform == "instagram"
+                          else meta_client.gonder_whatsapp)
+                mesaj = P.metin_mesaji("🎙️ Ses kaydınızı çözemedim, kusura bakmayın. "
+                                       "Yazarak sorabilir misiniz?")
+                gonder(olay.gonderen, mesaj)
+                kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
+                continue
             if olay.platform == "instagram":
                 cevap = yanit_uret(olay.tetik, P=ig_presenter,
                                    platform=olay.platform, kullanici=olay.gonderen)

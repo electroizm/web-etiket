@@ -34,7 +34,11 @@ def ozet_gelen(olay) -> str:
     """Gelen olayın okunur özeti (buton payload'ı ya da serbest metin)."""
     if olay.secim:
         return f"[buton] {olay.secim}"
-    return (olay.metin or "").strip() or "[sohbeti başlattı]"
+    metin = (olay.metin or "").strip()
+    if getattr(olay, "ses", None):
+        # Sesli mesaj: metin = transkript (views doldurur); çözülmediyse işaret kalsın.
+        return f"[ses] {metin}" if metin else "[ses — çözülemedi]"
+    return metin or "[sohbeti başlattı]"
 
 
 def ozet_giden(mesaj: dict) -> str:

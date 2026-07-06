@@ -219,8 +219,11 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
     for r in rows:
         metin = (r.metin or "").strip()
         if not metin or metin.startswith("[buton]") or "[menü]" in metin \
-                or metin.startswith("[kart") or metin.startswith("[sohbeti"):
+                or metin.startswith("[kart") or metin.startswith("[sohbeti") \
+                or metin.startswith("[ses —"):
             continue
+        if metin.startswith("[ses] "):     # transkript: işareti at, içeriği kullan
+            metin = metin[len("[ses] "):]
         rol = "user" if r.yon == "gelen" else "assistant"
         mesajlar.append({"role": rol, "content": metin[:400]})
     return mesajlar[-settings.AJAN_GECMIS_LIMIT:]

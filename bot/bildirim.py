@@ -1,6 +1,5 @@
-"""Yetkiliye (İsmail) bildirim — geri arama talepleri.
+"""Yetkiliye (İsmail) bildirim — geri arama talepleri + memnuniyetsizlik alarmı.
 
-Müşteri "📞 Beni arayın" akışında numara+saat yazınca burası devreye girer.
 Önce İsmail'in kişisel WhatsApp'ına (0532) Cloud API ile serbest metin denenir;
 24 saat penceresi kapalıysa Meta serbest metni reddeder → e-posta yedeği
 (scraper bildirimleriyle aynı SMTP ayarları) devreye girer.
@@ -36,20 +35,17 @@ def _musteri_adi(platform: str, kullanici: str) -> str | None:
         return None
 
 
-def geri_arama_bildir(platform: str, kullanici: str, mesaj: str) -> None:
-    """Geri arama talebini yetkiliye ilet: önce WhatsApp, olmazsa e-posta."""
+def _kimlik(platform: str, kullanici: str) -> str:
+    if platform == "whatsapp":
+        return f"wa.me/{kullanici}"            # tıklayınca sohbet açılır
+    return f"Instagram ({kullanici})"
+
+
+def _yetkiliye_ilet(eposta_konu: str, govde: str) -> None:
+    """Bildirimi ilet: önce WhatsApp (0532), olmazsa e-posta yedeği."""
     from bot.router import YETKILI_WA   # tek kaynak (0532)
 
-    ad = _musteri_adi(platform, kullanici)
-    if platform == "whatsapp":
-        kimlik = f"wa.me/{kullanici}"          # tıklayınca sohbet açılır
-    else:
-        kimlik = f"Instagram ({kullanici})"
-    govde = ("📞 GERİ ARAMA TALEBİ\n"
-             f"Müşteri: {ad or 'İsimsiz'} — {kimlik}\n"
-             f"Yazdığı: {mesaj}")
-
-    # 1) WhatsApp (0532) — İsmail botla son 24 saatte konuştuysa ulaşır.
+    # 1) WhatsApp — İsmail botla son 24 saatte konuştuysa ulaşır.
     ok = False
     try:
         from bot import meta_client
@@ -60,16 +56,36 @@ def geri_arama_bildir(platform: str, kullanici: str, mesaj: str) -> None:
             from bot.kayit import kaydet   # dashboard'da iz kalsın
             kaydet("whatsapp", YETKILI_WA, "giden", govde)
     except Exception:
-        log.exception("geri arama WA bildirimi gönderilemedi")
+        log.exception("WA bildirimi gönderilemedi")
 
     # 2) E-posta yedeği (24 saat penceresi kapalıysa WA düşer).
     if not ok:
         try:
             if settings.EMAIL_HOST_USER and settings.BILDIRIM_EPOSTA_ALICILAR:
                 from django.core.mail import send_mail
-                send_mail("instALL bot — 📞 geri arama talebi", govde,
+                send_mail(eposta_konu, govde,
                           settings.DEFAULT_FROM_EMAIL,
                           settings.BILDIRIM_EPOSTA_ALICILAR,
                           fail_silently=True)
         except Exception:
-            log.exception("geri arama e-posta bildirimi gönderilemedi")
+            log.exception("e-posta bildirimi gönderilemedi")
+
+
+def geri_arama_bildir(platform: str, kullanici: str, mesaj: str) -> None:
+    """Geri arama talebini yetkiliye ilet."""
+    ad = _musteri_adi(platform, kullanici)
+    govde = ("📞 GERİ ARAMA TALEBİ\n"
+             f"Müşteri: {ad or 'İsimsiz'} — {_kimlik(platform, kullanici)}\n"
+             f"Yazdığı: {mesaj}")
+    _yetkiliye_ilet("instALL bot — 📞 geri arama talebi", govde)
+
+
+def memnuniyetsizlik_bildir(platform: str, kullanici: str,
+                            mesaj: str, sinyal: str) -> None:
+    """Şikâyet sinyali alarmı: müşteri daha hattayken İsmail haberdar olsun."""
+    ad = _musteri_adi(platform, kullanici)
+    govde = ("⚠️ MEMNUNİYETSİZLİK SİNYALİ\n"
+             f"Müşteri: {ad or 'İsimsiz'} — {_kimlik(platform, kullanici)}\n"
+             f"Yazdığı: {mesaj}\n"
+             f"(yakalanan ifade: \"{sinyal}\")")
+    _yetkiliye_ilet("instALL bot — ⚠️ memnuniyetsizlik sinyali", govde)

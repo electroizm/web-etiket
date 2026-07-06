@@ -29,6 +29,9 @@ class GelenOlay:
     secim: str | None      # tıklanan buton payload'ı (KAT:48 gibi) ya da None
     metin: str | None      # serbest metin (varsa)
     gonderen_ad: str | None = None   # WA: contacts[].profile.name (pushname); IG: yok
+    # Sesli mesaj: WA → {"tip":"wa","media_id":...}; IG → {"tip":"ig","url":...}.
+    # views transkripte çevirip metin'e yazar (bot/ses.py); çözülmezse özür mesajı.
+    ses: dict | None = None
 
     @property
     def tetik(self) -> str:
@@ -60,7 +63,13 @@ def extract_events(govde: dict) -> list[GelenOlay]:
                 if msg.get("is_echo"):  # botun kendi mesajının yankısı — işleme
                     continue
                 qr = (msg.get("quick_reply") or {}).get("payload")
-                olaylar.append(GelenOlay("instagram", gonderen, qr, msg.get("text")))
+                ses = None
+                for ek in (msg.get("attachments") or []):
+                    if ek.get("type") == "audio" and (ek.get("payload") or {}).get("url"):
+                        ses = {"tip": "ig", "url": ek["payload"]["url"]}
+                        break
+                olaylar.append(GelenOlay("instagram", gonderen, qr, msg.get("text"),
+                                         ses=ses))
 
         # ── WhatsApp Cloud API formatı ──
         for ch in entry.get("changes", []):
@@ -81,8 +90,10 @@ def extract_events(govde: dict) -> list[GelenOlay]:
                 elif inter.get("type") == "list_reply":
                     secim = (inter.get("list_reply") or {}).get("id")
                 metin = (msg.get("text") or {}).get("body")
+                audio = msg.get("audio") or {}   # sesli mesaj da type="audio" gelir
+                ses = {"tip": "wa", "media_id": audio["id"]} if audio.get("id") else None
                 olaylar.append(GelenOlay("whatsapp", gonderen, secim, metin,
-                                         gonderen_ad=adlar.get(gonderen)))
+                                         gonderen_ad=adlar.get(gonderen), ses=ses))
     return olaylar
 
 
