@@ -80,6 +80,13 @@ class Command(BaseCommand):
             + (f" · ⚠️ Memnuniyetsizlik alarmı: {alarmlar}" if alarmlar else ""),
         ]
 
+        # Fırsat defteri — sıcak müşteriler en üstte (aksiyon alınacak kısım).
+        from bot import firsat
+        firsatlar = firsat.sicak_musteriler(konusmalar, adlar) if konusmalar else []
+        if firsatlar:
+            satirlar += ["", f"🔥 Sıcak müşteriler ({len(firsatlar)}) — aramaya değer:"]
+            satirlar += firsat.ozet_satirlari(firsatlar)
+
         ai_ozet = _ai_ozet(konusmalar, adlar) if konusmalar else None
         if ai_ozet:
             satirlar += ["", ai_ozet]
