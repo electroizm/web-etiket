@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from django.conf import settings
 from sqlalchemy import select
@@ -70,11 +71,20 @@ KURALLAR (kesin):
     fiyat sorularında her zamanki araçları kullan.
 12. PAZARLIK (yalnız teşhir ürünlerinde): teshir_bilgi sonucunda
     "pazarlik_taban_fiyat" alanı VARSA ve müşteri pazarlık ederse ("indirim olur
-    mu", "son fiyat ne", "pazarlık var mı") fiyatı EN FAZLA o tabana kadar
-    indirebilirsin: "size özel son fiyatımız X TL" de. Tabanın ALTINA ASLA inme,
-    taban fiyatın bir "taban/limit" olduğunu müşteriye SÖYLEME, müşteri pazarlık
-    etmeden kendiliğinden indirim önerme. "pazarlik_taban_fiyat" alanı YOKSA
-    pazarlık yapma — mağazaya ya da "yetkili" yazmaya yönlendir.
+    mu", "son fiyat ne", "kaça bırakırsın") indirim yapabilirsin. Kurallar:
+    - pazarlik_taban_fiyat, teklif edebileceğin EN DÜŞÜK fiyattır. O fiyatı
+      teklif etmek SERBESTTİR; yasak olan tek şey onun ALTINA inmektir.
+    - İstersen önce taban ile perakende arasında ARA bir fiyat söyleyebilirsin;
+      ara fiyata "son fiyat" DEME ("size ... TL yapabilirim" de). Müşteri ısrar
+      ederse ("biraz daha", "olmaz mı", daha düşük rakam isterse) pazarlik_taban_fiyat'a
+      İN ve ancak o zaman "size özel son fiyatımız X TL" de (X = pazarlik_taban_fiyat).
+      Müşterinin istediği rakam tabana eşit ya da üstündeyse KABUL ET — "mümkün
+      değil" deme; tabanın altındaysa taban fiyatı teklif et.
+    - Tabana indikten sonra daha aşağı inme. "taban", "limit", "sistemin izin
+      verdiği" gibi ifadeler ASLA kullanma — müşteri bir iç limit olduğunu
+      bilmemeli. Müşteri pazarlık etmeden kendiliğinden indirim önerme.
+    "pazarlik_taban_fiyat" alanı YOKSA pazarlık yapma — mağazaya ya da "yetkili"
+    yazmaya yönlendir.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -210,7 +220,12 @@ def _tool_calistir(ad: str, argumanlar: dict,
         kol = argumanlar.get("koleksiyon_id")
         kayitlar = teshir_servis.ajan_icin(int(kol) if kol else None)
         if kayitlar:
-            return {"teshir": kayitlar}
+            return {"teshir": kayitlar,
+                    "pazarlik_kurali": "pazarlik_taban_fiyat alanı olan üründe müşteri "
+                                       "pazarlık ederse EN DÜŞÜK o rakamı teklif edebilirsin; "
+                                       "onun ALTINDA bir rakamı ASLA telaffuz etme. Müşteri "
+                                       "ısrar ederse tam pazarlik_taban_fiyat'ı 'size özel son "
+                                       "fiyatımız' diye söyle. Alan yoksa pazarlık yapma."}
         return {"bulunamadi": True,
                 "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
     if ad == "magaza_bilgi":
@@ -224,6 +239,53 @@ def _tool_calistir(ad: str, argumanlar: dict,
                 "not": "Bu bilgi kayıtlı değil. Müşteriye bilmediğini söyle, "
                        "yetkiliye iletildiğini belirt ve 'yetkili' yazmasını öner."}
     return {"hata": f"bilinmeyen araç: {ad}"}
+
+
+# ─── Pazarlık kalkanı — kod seviyesi taban koruması ──────────────────────────
+# Prompt tembihine rağmen model (özellikle lite zincir yedekleri) tabanın altında
+# rakam uydurabiliyor (canlıda görüldü: taban 40.000 iken 38.000 teklif etti).
+# Bu kalkan pazarlık bağlamındaki cevaplarda taban altı TL tutarını tabana yükseltir.
+_PAZARLIK_IPUCLARI = ("son fiyat", "özel fiyat", "indirim", "pazarlık", "pazarlik",
+                      "inemiyorum", "inemem", "bırak", "yapabilirim", "kampanya")
+_TL_KALIBI = re.compile(r"\b(\d{1,3}(?:[.\s]\d{3})+|\d{4,6})\s*TL\b", re.IGNORECASE)
+
+
+def _pazarlik_kalkani(cevap: str, mesajlar: list[dict]) -> str:
+    """Teşhir pazarlığı bağlamında taban altı fiyat teklifini tabana çek.
+
+    Yalnız konuşmada teşhir geçiyorsa VE cevap pazarlık dili içeriyorsa devreye
+    girer; normal fiyat cevaplarına dokunmaz. Taban altı ama tabanın %60'ından
+    büyük TL tutarları (fiyat teklifi görünümlü) ilgili tabana yükseltilir —
+    "5.000 TL indirim" gibi küçük tutarlar etkilenmez.
+    """
+    baglam = cevap + " " + " ".join(str(m.get("content", "")) for m in mesajlar)
+    baglam = baglam.lower()
+    if "teşhir" not in baglam and "teshir" not in baglam:
+        return cevap
+    if not any(i in cevap.lower() for i in _PAZARLIK_IPUCLARI):
+        return cevap
+    if not _TL_KALIBI.search(cevap):
+        return cevap
+    try:
+        from catalog.services import teshir as teshir_servis
+        tabanlar = sorted({k["pazarlik_taban_fiyat"] for k in teshir_servis.ajan_icin()
+                           if k.get("pazarlik_taban_fiyat")})
+    except Exception:
+        log.exception("ajan: pazarlık kalkanı taban okunamadı")
+        return cevap
+    if not tabanlar:
+        return cevap
+
+    def duzelt(m: re.Match) -> str:
+        deger = int(re.sub(r"[.\s]", "", m.group(1)))
+        for taban in tabanlar:      # küçükten büyüğe — en yakın üst taban
+            if taban * 0.6 <= deger < taban:
+                log.warning("ajan: pazarlık kalkanı — %s TL taban altı, %s TL yapıldı",
+                            deger, taban)
+                return f"{taban:,} TL".replace(",", ".")
+        return m.group(0)
+
+    return _TL_KALIBI.sub(duzelt, cevap)
 
 
 def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
@@ -312,6 +374,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str) -> str | Non
 
         if not getattr(secim, "tool_calls", None):
             cevap = (secim.content or "").strip()
+            if cevap:
+                cevap = _pazarlik_kalkani(cevap, mesajlar)
             return cevap[:MAKS_CEVAP_KR] if cevap else None
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
