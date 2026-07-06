@@ -2438,3 +2438,125 @@ def bot_cevap(request):
     sonuc = "ok" if basarili else "hata"
     return redirect(f"{reverse('dashboard:bot_konusmalar')}"
                     f"?k={quote(f'{platform}:{kullanici}')}&sonuc={sonuc}")
+
+
+# ─── Teşhir (mağazada sergilenen ürünler) ────────────────────────────────────
+@login_required_supabase
+def teshir(request):
+    """Teşhir sayfası — mağazada sergilenen takımlar + mağaza fiyatları.
+
+    "Bağlı + gerekirse ez" modeli: kayıt bir koleksiyona (istenirse
+    kombinasyona) bağlanır; boş bırakılan fiyat/içerik alanları güncel web
+    verisine düşer, doldurulanlar onu ezer. AI ajan bu kayıtları YALNIZCA
+    müşteri mağazadaki/teşhirdeki üründen bahsederse söyler.
+    """
+    from django.contrib import messages as _messages
+
+    from catalog.sa_models import Teshir
+    from catalog.services import teshir as teshir_servis
+
+    def _sayi(ad):
+        ham = (request.POST.get(ad) or "").strip()
+        ham = ham.replace(".", "").replace(",", "").replace(" ", "").replace("TL", "")
+        return int(ham) if ham.isdigit() else None
+
+    if request.method == "POST":
+        islem = (request.POST.get("islem") or "").strip()
+        session = SessionLocal()
+        try:
+            if islem == "ekle":
+                kol_id = request.POST.get("koleksiyon_id") or ""
+                if not kol_id.isdigit() or session.get(Koleksiyon, int(kol_id)) is None:
+                    _messages.error(request, "Koleksiyon seçimi zorunlu.")
+                else:
+                    kombi_id = request.POST.get("kombinasyon_id") or ""
+                    session.add(Teshir(
+                        koleksiyon_id=int(kol_id),
+                        kombinasyon_id=int(kombi_id) if kombi_id.isdigit() else None,
+                        baslik=(request.POST.get("baslik") or "").strip()[:200] or None,
+                        icerik=(request.POST.get("icerik") or "").strip()[:2000] or None,
+                        liste_fiyat=_sayi("liste_fiyat"),
+                        perakende_fiyat=_sayi("perakende_fiyat"),
+                        notlar=(request.POST.get("notlar") or "").strip()[:1000] or None,
+                    ))
+                    session.commit()
+                    _messages.success(request, "Teşhir kaydı eklendi.")
+            elif islem == "guncelle":
+                tid = request.POST.get("id") or ""
+                kayit = session.get(Teshir, int(tid)) if tid.isdigit() else None
+                if kayit is not None:
+                    kayit.baslik = (request.POST.get("baslik") or "").strip()[:200] or None
+                    kayit.icerik = (request.POST.get("icerik") or "").strip()[:2000] or None
+                    kayit.liste_fiyat = _sayi("liste_fiyat")
+                    kayit.perakende_fiyat = _sayi("perakende_fiyat")
+                    kayit.notlar = (request.POST.get("notlar") or "").strip()[:1000] or None
+                    from datetime import datetime as _dt, timezone as _tz
+                    kayit.guncelleme = _dt.now(_tz.utc)
+                    session.commit()
+                    _messages.success(request, "Teşhir kaydı güncellendi.")
+            elif islem == "sil":
+                tid = request.POST.get("id") or ""
+                kayit = session.get(Teshir, int(tid)) if tid.isdigit() else None
+                if kayit is not None:
+                    session.delete(kayit)
+                    session.commit()
+                    _messages.success(request, "Teşhir kaydı silindi.")
+        except Exception as e:
+            session.rollback()
+            _messages.error(request, f"İşlem başarısız: {e}")
+        finally:
+            session.close()
+        return redirect("dashboard:teshir")
+
+    session = SessionLocal()
+    try:
+        kategoriler = [
+            {"id": k.id, "ad": k.ad}
+            for k in session.scalars(
+                select(Kategori).order_by(Kategori.sira, Kategori.ad)).all()
+        ]
+    finally:
+        session.close()
+
+    return render(request, "dashboard/teshir.html", {
+        "kayitlar": teshir_servis.listele(),
+        "kategoriler": kategoriler,
+    })
+
+
+@require_http_methods(["GET"])
+@login_required_supabase_api
+def teshir_secenekler(request):
+    """Teşhir formu cascade JSON'u.
+
+    ?kategori=ID   → o kategorinin koleksiyonları (kombinasyonsuzlar dahil —
+                     teşhirde web'de kombinasyonu olmayan koleksiyon da olabilir)
+    ?koleksiyon=ID → o koleksiyonun kombinasyonları, web fiyat özetiyle
+                     (formda "boş bırak → web fiyatı" placeholder'ı için)
+    """
+    kat = request.GET.get("kategori") or ""
+    kol = request.GET.get("koleksiyon") or ""
+    session = SessionLocal()
+    try:
+        if kat.isdigit():
+            rows = session.execute(
+                select(Koleksiyon.id, Koleksiyon.ad)
+                .where(Koleksiyon.kategori_id == int(kat))
+                .order_by(Koleksiyon.ad)
+            ).all()
+            return JsonResponse(
+                {"koleksiyonlar": [{"id": r.id, "ad": r.ad} for r in rows]})
+        if kol.isdigit():
+            data = []
+            for k in kombinasyon_listele(session, int(kol)):
+                t = hesapla_kombinasyon_toplam(k)
+                data.append({
+                    "id": k.id, "ad": k.ad,
+                    "toplam_liste": t["toplam_liste"],
+                    "toplam_perakende": t["toplam_perakende"],
+                })
+            return JsonResponse({"kombinasyonlar": data})
+        return JsonResponse(
+            {"hata": "kategori veya koleksiyon parametresi gerekli"}, status=400)
+    finally:
+        session.close()

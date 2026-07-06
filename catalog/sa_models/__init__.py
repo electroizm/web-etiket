@@ -9,6 +9,7 @@ from catalog.sa_models.kombinasyon import (
     Kombinasyon,
     KombinasyonUrun,
 )
+from catalog.sa_models.teshir import Teshir
 from catalog.sa_models.urun import Fiyat, Urun, urun_koleksiyon
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "Kombinasyon",
     "KombinasyonUrun",
     "KategoriKombinasyonKurali",
+    "Teshir",
 ]

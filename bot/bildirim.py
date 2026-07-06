@@ -77,7 +77,7 @@ def geri_arama_bildir(platform: str, kullanici: str, mesaj: str) -> None:
     govde = ("📞 GERİ ARAMA TALEBİ\n"
              f"Müşteri: {ad or 'İsimsiz'} — {_kimlik(platform, kullanici)}\n"
              f"Yazdığı: {mesaj}")
-    _yetkiliye_ilet("instALL bot — 📞 geri arama talebi", govde)
+    _yetkiliye_ilet("instALL ajan — 📞 geri arama talebi", govde)
 
 
 def memnuniyetsizlik_bildir(platform: str, kullanici: str,
@@ -88,4 +88,4 @@ def memnuniyetsizlik_bildir(platform: str, kullanici: str,
              f"Müşteri: {ad or 'İsimsiz'} — {_kimlik(platform, kullanici)}\n"
              f"Yazdığı: {mesaj}\n"
              f"(yakalanan ifade: \"{sinyal}\")")
-    _yetkiliye_ilet("instALL bot — ⚠️ memnuniyetsizlik sinyali", govde)
+    _yetkiliye_ilet("instALL ajan — ⚠️ memnuniyetsizlik sinyali", govde)

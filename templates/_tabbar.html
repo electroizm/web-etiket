@@ -20,6 +20,16 @@ aktif: ana | urunler | yazdir | bot | ayarlar (boş bırakılabilir)
     </svg>
     <span>Ürünler</span>
   </a>
+  <a href="{% url 'dashboard:teshir' %}"
+     class="tabbar__item{% if aktif == 'teshir' %} is-aktif{% endif %}"
+     {% if aktif == 'teshir' %}aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3"/>
+      <path d="M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v2H7v-2a2 2 0 0 0-4 0z"/>
+      <path d="M5 18v2M19 18v2"/>
+    </svg>
+    <span>Teşhir</span>
+  </a>
   <a href="{% url 'dashboard:etiket_yazdir' %}"
      class="tabbar__item{% if aktif == 'yazdir' %} is-aktif{% endif %}"
      {% if aktif == 'yazdir' %}aria-current="page"{% endif %}>
@@ -34,7 +44,7 @@ aktif: ana | urunler | yazdir | bot | ayarlar (boş bırakılabilir)
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M21 12a8 8 0 0 1-8 8H4l2.5-3A8 8 0 1 1 21 12z"/><path d="M9 11h.01M13 11h.01M17 11h.01"/>
     </svg>
-    <span>Bot</span>
+    <span>Ajan</span>
   </a>
   <a href="{% url 'dashboard:ayarlar' %}"
      class="tabbar__item{% if aktif == 'ayarlar' %} is-aktif{% endif %}"

@@ -14,16 +14,16 @@
   --text: #191c2e;
   --text-muted: #6c7288;
   --text-soft: #3e4459;
-  --brand: #5048e5;
-  --brand-2: #7c3aed;
-  --brand-soft: #eeedfc;
-  --brand-border: #cbc8f6;
-  --brand-grad: linear-gradient(135deg, #5048e5, #7c3aed);
+  --brand: #0284c7;
+  --brand-2: #38bdf8;
+  --brand-soft: #e0f2fe;
+  --brand-border: #bae6fd;
+  --brand-grad: linear-gradient(135deg, #0284c7, #38bdf8);
   --danger: #dc2626;
   --success: #0e9f6e;
-  --shadow-lg: 0 24px 60px -20px rgba(25, 28, 46, 0.18), 0 8px 24px -12px rgba(80, 72, 229, 0.12);
-  --shadow-brand: 0 6px 16px -6px rgba(80, 72, 229, 0.45);
-  --focus-ring: 0 0 0 4px rgba(80, 72, 229, 0.16);
+  --shadow-lg: 0 24px 60px -20px rgba(25, 28, 46, 0.18), 0 8px 24px -12px rgba(2, 132, 199, 0.12);
+  --shadow-brand: 0 6px 16px -6px rgba(2, 132, 199, 0.45);
+  --focus-ring: 0 0 0 4px rgba(2, 132, 199, 0.16);
   --radius-lg: 20px;
   --radius-md: 13px;
   --radius-sm: 9px;
@@ -48,8 +48,8 @@ html, body {
 body {
   min-height: 100dvh;
   background:
-    radial-gradient(1100px 520px at 12% -8%, rgba(80, 72, 229, 0.10), transparent 60%),
-    radial-gradient(800px 440px at 108% 12%, rgba(124, 58, 237, 0.08), transparent 60%),
+    radial-gradient(1100px 520px at 12% -8%, rgba(2, 132, 199, 0.10), transparent 60%),
+    radial-gradient(800px 440px at 108% 12%, rgba(56, 189, 248, 0.10), transparent 60%),
     var(--bg);
   overflow-x: hidden;
 }
@@ -78,12 +78,12 @@ body {
   will-change: transform;
 }
 .bg-orb--a { width: 360px; height: 360px; left: -80px;  top: -60px;
-  background: radial-gradient(circle at 30% 30%, #5048e5, transparent 62%); }
+  background: radial-gradient(circle at 30% 30%, #0284c7, transparent 62%); }
 .bg-orb--b { width: 320px; height: 320px; right: -80px; top: 30%;
-  background: radial-gradient(circle at 70% 30%, #7c3aed, transparent 62%);
+  background: radial-gradient(circle at 70% 30%, #38bdf8, transparent 62%);
   animation-delay: -4s; }
 .bg-orb--c { width: 280px; height: 280px; left: 30%; bottom: -120px;
-  background: radial-gradient(circle at 50% 50%, #a5b4fc, transparent 62%);
+  background: radial-gradient(circle at 50% 50%, #7dd3fc, transparent 62%);
   animation-delay: -8s; }
 
 .bg-grid {
@@ -175,7 +175,7 @@ body {
 }
 .status[data-type="error"]   { color: #b42323; background: #fdecec; border-color: #f3c5c5; }
 .status[data-type="success"] { color: #0b7d57; background: #e6f7f0; border-color: #bfe8d7; }
-.status[data-type="info"]    { color: #4038c7; background: var(--brand-soft); border-color: var(--brand-border); }
+.status[data-type="info"]    { color: #0369a1; background: var(--brand-soft); border-color: var(--brand-border); }
 
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-6px); }
@@ -325,7 +325,7 @@ body {
   font-weight: 600;
   transition: color var(--transition);
 }
-.link-strong:hover { color: var(--brand-2); text-decoration: underline; }
+.link-strong:hover { color: #0369a1; text-decoration: underline; }
 
 /* ============ Şifre gücü çubuğu ============ */
 .strength-bar {

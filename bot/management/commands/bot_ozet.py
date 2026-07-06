@@ -73,7 +73,7 @@ class Command(BaseCommand):
         gelen_sayisi = sum(1 for r in rows if r.yon == "gelen")
         simdi = datetime.now()
         satirlar = [
-            f"🤖 instALL bot — sabah özeti ({simdi:%d.%m.%Y %H:%M})",
+            f"🤖 instALL ajan — sabah özeti ({simdi:%d.%m.%Y %H:%M})",
             "",
             f"Konuşma: {len(konusmalar)} · Gelen mesaj: {gelen_sayisi}"
             f" · Geri arama talebi: {geri_arama}"
@@ -107,7 +107,7 @@ class Command(BaseCommand):
         if not eposta_aktif():
             self.stdout.write("E-posta yapılandırılmamış — özet gönderilemedi.")
             return
-        if eposta_gonder("instALL bot — sabah özeti", govde):
+        if eposta_gonder("instALL ajan — sabah özeti", govde):
             self.stdout.write(self.style.SUCCESS("Sabah özeti gönderildi."))
         else:
             self.stderr.write("Gönderim başarısız.")

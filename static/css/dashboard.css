@@ -16,12 +16,12 @@
   --text: #191c2e;
   --text-soft: #3e4459;
   --text-muted: #6c7288;
-  --brand: #5048e5;
-  --brand-strong: #4038c7;
-  --brand-2: #7c3aed;
-  --brand-soft: #eeedfc;
-  --brand-border: #cbc8f6;
-  --brand-grad: linear-gradient(135deg, #5048e5, #7c3aed);
+  --brand: #0284c7;
+  --brand-strong: #0369a1;
+  --brand-2: #38bdf8;
+  --brand-soft: #e0f2fe;
+  --brand-border: #bae6fd;
+  --brand-grad: linear-gradient(135deg, #0284c7, #38bdf8);
   --danger: #dc2626;
   --danger-text: #b42323;
   --danger-soft: #fdecec;
@@ -36,8 +36,8 @@
   --shadow-card: 0 1px 2px rgba(25, 28, 46, 0.05), 0 1px 3px rgba(25, 28, 46, 0.05);
   --shadow-lift: 0 8px 24px -10px rgba(25, 28, 46, 0.16);
   --shadow-pop: 0 20px 50px -16px rgba(25, 28, 46, 0.25);
-  --shadow-brand: 0 6px 16px -6px rgba(80, 72, 229, 0.45);
-  --focus-ring: 0 0 0 3px rgba(80, 72, 229, 0.16);
+  --shadow-brand: 0 6px 16px -6px rgba(2, 132, 199, 0.45);
+  --focus-ring: 0 0 0 3px rgba(2, 132, 199, 0.16);
   --transition: 180ms cubic-bezier(.2, .8, .2, 1);
 }
 
@@ -55,7 +55,7 @@ html, body {
 body {
   min-height: 100dvh;
   background:
-    radial-gradient(1000px 380px at 50% -220px, rgba(80, 72, 229, 0.06), transparent 70%),
+    radial-gradient(1000px 380px at 50% -220px, rgba(2, 132, 199, 0.06), transparent 70%),
     var(--bg);
 }
 
@@ -1746,7 +1746,7 @@ tr.kol-row:hover .edit-btn,
   background: var(--brand-soft);
 }
 .urun-ekle-row__btn:active {
-  background: #e3e1fa;
+  background: #d0eafc;
 }
 .urun-ekle-row__sku {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
@@ -2135,7 +2135,7 @@ tr.kol-row:hover .edit-btn,
   transition: background-color var(--transition);
 }
 .yazdir-group__head:hover {
-  background: #e3e1fa;
+  background: #d0eafc;
 }
 .yazdir-group__head td {
   padding: 12px 16px;

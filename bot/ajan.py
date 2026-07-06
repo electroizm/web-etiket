@@ -63,6 +63,11 @@ KURALLAR (kesin):
     hem Yatak Odası). koleksiyon_ara birden çok sonuç dönerse: müşterinin
     mesajından kategori belliyse onu seç; belli değilse fiyat vermeden önce
     hangi kategoriyi istediğini sor.
+11. Müşteri özellikle MAĞAZADAKİ / TEŞHİRDEKİ / SERGİDEKİ üründen bahsederse
+    ("mağazanızda gördüm", "teşhirdeki fiyatı ne", "vitrindeki takım") teshir_bilgi
+    aracını çağır; fiyatı ve içeriği ORADAN söyle, teşhir ürünü olduğunu belirt.
+    Müşteri özellikle sormadıysa teşhir fiyatını kendiliğinden açma — normal
+    fiyat sorularında her zamanki araçları kullan.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -146,6 +151,24 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "teshir_bilgi",
+            "description": "Mağazada sergilenen (teşhirdeki) ürünlerin listesi, "
+                           "içeriği ve mağaza fiyatları. YALNIZCA müşteri özellikle "
+                           "mağazadaki/teşhirdeki/sergideki üründen bahsederse çağır. "
+                           "koleksiyon_id verilirse o koleksiyonla sınırlar; vermezsen "
+                           "tüm teşhir listesi döner.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "koleksiyon_id": {"type": "integer",
+                                      "description": "Opsiyonel — koleksiyon_ara sonucundaki id"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fiyat_detay",
             "description": "Bir kombinasyonun fiyat detayını ve içindeki ürünleri verir. "
                            "Müşteriye fiyat söylemeden önce MUTLAKA bu (veya "
@@ -175,6 +198,14 @@ def _tool_calistir(ad: str, argumanlar: dict,
         return menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"]))
     if ad == "fiyat_detay":
         return menu_veri.kombinasyon(int(argumanlar["kombinasyon_id"]))
+    if ad == "teshir_bilgi":
+        from catalog.services import teshir as teshir_servis
+        kol = argumanlar.get("koleksiyon_id")
+        kayitlar = teshir_servis.ajan_icin(int(kol) if kol else None)
+        if kayitlar:
+            return {"teshir": kayitlar}
+        return {"bulunamadi": True,
+                "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
     if ad == "magaza_bilgi":
         soru = str(argumanlar.get("soru", ""))
         bilgiler = menu_veri.bilgi_ara(soru)

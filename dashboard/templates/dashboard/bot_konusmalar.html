@@ -49,16 +49,18 @@
     .wa-avatar--ig { background: linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); }
     .wa-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .wa-avatar img.kirik { display: none; }
-    .wa-item__mid { flex: 1; min-width: 0; }
-    .wa-item__ad { display: flex; align-items: center; gap: 6px;
-                   font-weight: 600; font-size: .95rem; }
+    /* Resmi WhatsApp düzeni: üst satır ad + saat (sağa yaslı), alt satır
+       önizleme (taşarsa …) + okunmamış rozeti. */
+    .wa-item__mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .wa-item__ust { display: flex; align-items: baseline; gap: 8px; }
+    .wa-item__ad { flex: 1; min-width: 0; font-weight: 600; font-size: .95rem;
+                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .wa-item__ad .cozuk { color: #00a884; font-size: .82rem; }
-    .wa-item__oz { opacity: .6; font-size: .82rem; white-space: nowrap;
-                   overflow: hidden; text-overflow: ellipsis; }
-    .wa-item__sag { display: flex; flex-direction: column; align-items: flex-end;
-                    gap: 5px; flex: none; }
-    .wa-item__saat { font-size: .72rem; opacity: .55; }
+    .wa-item__saat { flex: none; font-size: .72rem; opacity: .55; }
     .wa-item.yeni .wa-item__saat { color: #00a884; opacity: 1; font-weight: 700; }
+    .wa-item__altsatir { display: flex; align-items: center; gap: 8px; }
+    .wa-item__oz { flex: 1; min-width: 0; opacity: .6; font-size: .82rem;
+                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .wa-rozet { background: #00a884; color: #fff; border-radius: 999px; min-width: 20px;
                 height: 20px; padding: 0 6px; display: inline-flex; align-items: center;
                 justify-content: center; font-size: .72rem; font-weight: 800; }
@@ -162,7 +164,7 @@
       <aside class="wa-side">
         <div class="wa-side__head">
           <span class="wa-side__title">Sohbetler <small>· {{ toplam }} mesaj</small></span>
-          <a class="wa-bilgi" href="{% url 'dashboard:bot_bilgi' %}" title="Bot bilgi tabanı — mağaza bilgileri + cevapsız sorular">
+          <a class="wa-bilgi" href="{% url 'dashboard:bot_bilgi' %}" title="Ajan bilgi tabanı — mağaza bilgileri + cevapsız sorular">
             💡 Bilgi{% if acik_soru %} <span class="rozet">{{ acik_soru }}</span>{% endif %}
           </a>
         </div>
@@ -185,14 +187,14 @@
                 {% if k.platform == 'whatsapp' %}💬{% else %}📷{% endif %}
               </span>
               <span class="wa-item__mid">
-                <span class="wa-item__ad">{{ k.baslik|truncatechars:20 }}
-                  {% if k.cozuldu %}<span class="cozuk" title="Çözüldü">✔✔</span>{% endif %}
+                <span class="wa-item__ust">
+                  <span class="wa-item__ad">{{ k.baslik|truncatechars:28 }}{% if k.cozuldu %} <span class="cozuk" title="Çözüldü">✔✔</span>{% endif %}</span>
+                  <span class="wa-item__saat">{{ k.son|date:"d.m H:i" }}</span>
                 </span>
-                <span class="wa-item__oz">{{ k.onizleme }}</span>
-              </span>
-              <span class="wa-item__sag">
-                <span class="wa-item__saat">{{ k.son|date:"d.m H:i" }}</span>
-                {% if k.okunmamis %}<span class="wa-rozet">{{ k.okunmamis }}</span>{% endif %}
+                <span class="wa-item__altsatir">
+                  <span class="wa-item__oz">{{ k.onizleme }}</span>
+                  {% if k.okunmamis %}<span class="wa-rozet">{{ k.okunmamis }}</span>{% endif %}
+                </span>
               </span>
             </a>
           {% empty %}

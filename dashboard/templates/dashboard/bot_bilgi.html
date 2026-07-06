@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Bot Bilgi · Etiket Studio{% endblock %}
+{% block title %}Ajan Bilgi · Etiket Studio{% endblock %}
 
 {% block head_extra %}
   <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
@@ -62,11 +62,11 @@
 <div class="app-shell">
   <header class="topbar glass">
     <div class="topbar__brand">
-      <a href="{% url 'dashboard:bot_konusmalar' %}" class="btn-ghost" title="Bot Konuşmalarına dön">
+      <a href="{% url 'dashboard:bot_konusmalar' %}" class="btn-ghost" title="Ajan Konuşmalarına dön">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         <span>Konuşmalar</span>
       </a>
-      <span class="topbar__title">💡 Bot Bilgi</span>
+      <span class="topbar__title">💡 Ajan Bilgi</span>
     </div>
     <div class="topbar__user">
       <a href="{% url 'dashboard:home' %}" class="user-link">{{ request.supabase_user.display_name }}</a>
@@ -85,10 +85,10 @@
       {% endif %}
 
       <div class="bb-not">
-        🤖 Bot; adres, mesai, kargo, iade gibi mağaza bilgilerini <b>yalnızca buradaki
-        kayıtlardan</b> söyler — asla uydurmaz. Müşterinin sorusu burada yoksa bot
+        🤖 Ajan; adres, mesai, kargo, iade gibi mağaza bilgilerini <b>yalnızca buradaki
+        kayıtlardan</b> söyler — asla uydurmaz. Müşterinin sorusu burada yoksa ajan
         "yetkilimiz yardımcı olacak" der ve soru aşağıya <b>Cevapsız Sorular</b>'a düşer.
-        Cevabı eklediğin anda bot bir sonraki mesajda artık biliyor (deploy gerekmez).
+        Cevabı eklediğin anda ajan bir sonraki mesajda artık biliyor (deploy gerekmez).
       </div>
 
       <!-- ── Cevapsız sorular ── -->
@@ -118,9 +118,9 @@
               <input name="baslik" required maxlength="200" placeholder="örn. Kargo süresi">
               <label>Anahtar kelimeler (virgülle — müşteri hangi kelimelerle sorar?)</label>
               <input name="anahtar" required maxlength="500" placeholder="örn. kargo, teslimat, kaç günde">
-              <label>Botun vereceği cevap</label>
+              <label>Ajanın vereceği cevap</label>
               <textarea name="cevap" required maxlength="2000" placeholder="örn. Siparişleriniz 2-4 hafta içinde adresinize teslim edilir."></textarea>
-              <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Kaydet — bot artık bilsin</button>
+              <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Kaydet — ajan artık bilsin</button>
             </form>
           </div>
         {% endfor %}
@@ -139,7 +139,7 @@
           <input name="baslik" required maxlength="200" placeholder="örn. Adres">
           <label>Anahtar kelimeler (virgülle)</label>
           <input name="anahtar" required maxlength="500" placeholder="örn. adres, konum, nerede, yol tarifi">
-          <label>Botun vereceği cevap</label>
+          <label>Ajanın vereceği cevap</label>
           <textarea name="cevap" required maxlength="2000" placeholder="örn. Mağazamız: Doğtaş Çevreyolu — ... adresindedir. 📍 Konum: https://maps.app..."></textarea>
           <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Kaydet</button>
         </form>
@@ -160,7 +160,7 @@
               <input type="hidden" name="islem" value="sil">
               <input type="hidden" name="id" value="{{ b.id }}">
               <button type="submit" class="bb-btn bb-btn--kirmizi"
-                      onclick="return confirm('{{ b.baslik }} silinsin mi? Bot bu bilgiyi artık veremez.');">🗑️ Sil</button>
+                      onclick="return confirm('{{ b.baslik }} silinsin mi? Ajan bu bilgiyi artık veremez.');">🗑️ Sil</button>
             </form>
           </div>
           <form class="bb-form" id="duzenle{{ b.id }}" method="post">
@@ -171,7 +171,7 @@
             <input name="baslik" required maxlength="200" value="{{ b.baslik }}">
             <label>Anahtar kelimeler (virgülle)</label>
             <input name="anahtar" required maxlength="500" value="{{ b.anahtar }}">
-            <label>Botun vereceği cevap</label>
+            <label>Ajanın vereceği cevap</label>
             <textarea name="cevap" required maxlength="2000">{{ b.cevap }}</textarea>
             <button type="submit" class="bb-btn bb-btn--yesil bb-btn--tam">💾 Güncelle</button>
           </form>

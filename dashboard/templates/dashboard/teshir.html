@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Teşhir · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  <style>
+    /* Teşhir sayfasına özgü küçük parçalar — geri kalan her şey dashboard.css'ten. */
+    .teshir-form__grid {
+      display: grid; grid-template-columns: 1fr; gap: 12px; padding: 16px;
+    }
+    @media (min-width: 720px) {
+      .teshir-form__grid { grid-template-columns: 1fr 1fr; }
+      .teshir-form__grid .field--wide { grid-column: 1 / -1; }
+    }
+    .teshir-form__grid .field { display: flex; flex-direction: column; gap: 6px; }
+    .teshir-form__grid .field-label {
+      font-size: 13px; font-weight: 500; color: var(--text-soft);
+    }
+    .teshir-form__grid input, .teshir-form__grid textarea {
+      font: inherit; font-size: 15px; color: var(--text);
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); outline: none; padding: 0 14px; height: 44px;
+      transition: border-color var(--transition), box-shadow var(--transition),
+                  background-color var(--transition);
+    }
+    .teshir-form__grid textarea { min-height: 84px; padding: 10px 14px; resize: vertical; }
+    .teshir-form__grid input:focus, .teshir-form__grid textarea:focus {
+      background: var(--surface); border-color: var(--brand); box-shadow: var(--focus-ring);
+    }
+    .teshir-form__grid .select { height: 44px; font-size: 15px; width: 100%; }
+    .teshir-form__actions { display: flex; justify-content: flex-end; padding: 0 16px 16px; }
+
+    .teshir-kart { padding: 16px; border-radius: var(--radius-md); }
+    .teshir-kart + .teshir-kart { margin-top: 10px; }
+    .teshir-kart__ust { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .teshir-kart__baslik { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
+    .teshir-kart__yol { font-size: 12px; color: var(--text-muted); }
+    .teshir-kart__fiyat { display: flex; align-items: baseline; gap: 8px; margin-top: 8px;
+                          flex-wrap: wrap; }
+    .teshir-kart__eski { font-size: 13px; color: var(--text-muted); text-decoration: line-through; }
+    .teshir-kart__yeni { font-size: 18px; font-weight: 700; color: var(--text); }
+    .kaynak-chip {
+      font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .kaynak-chip--magaza { background: var(--brand-soft); color: var(--brand);
+                           border: 1px solid var(--brand-border); }
+    .kaynak-chip--web { background: var(--surface-2); color: var(--text-muted);
+                        border: 1px solid var(--border); }
+    .teshir-kart__icerik { margin: 8px 0 0; font-size: 13px; line-height: 1.5;
+                           color: var(--text-soft); white-space: pre-wrap; }
+    .teshir-kart__not { margin: 6px 0 0; font-size: 12px; color: var(--text-muted);
+                        font-style: italic; }
+    .teshir-kart__ops { display: flex; gap: 8px; margin-top: 12px; }
+    .teshir-duzenle { display: none; margin-top: 12px; border-top: 1px dashed var(--border);
+                      padding-top: 4px; }
+    .teshir-duzenle.acik { display: block; }
+    .teshir-duzenle .teshir-form__grid { padding: 12px 0; }
+    .teshir-duzenle .teshir-form__actions { padding: 0; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  {% include '_topbar.html' %}
+  {% include '_tabbar.html' with aktif='teshir' %}
+
+  <main class="content">
+    <section class="page-header">
+      <div>
+        <h1 class="page-title">Teşhir</h1>
+        <p class="page-subtitle">{{ kayitlar|length }} kayıt · mağazada sergilenen ürünler ve mağaza fiyatları</p>
+      </div>
+    </section>
+
+    {% if messages %}
+      <div class="messages" role="status" aria-live="polite">
+        {% for message in messages %}
+          <div class="message message--{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="message" style="background: var(--brand-soft); border-left: 3px solid var(--brand); color: var(--text-soft);">
+      🛋️ Boş bıraktığın fiyat/içerik alanları her zaman <b>güncel web verisini</b> takip eder;
+      doldurduklarında <b>senin yazdığın</b> geçerli olur. Ajan bu fiyatları yalnızca müşteri
+      özellikle <b>mağazadaki/teşhirdeki</b> üründen bahsederse söyler.
+    </div>
+
+    {# ── Yeni kayıt ── #}
+    <section class="glass" style="border-radius: var(--radius-md);">
+      <form method="post" id="teshir-ekle-form">
+        {% csrf_token %}
+        <input type="hidden" name="islem" value="ekle">
+        <div class="teshir-form__grid">
+          <label class="field">
+            <span class="field-label">Kategori</span>
+            <select class="select" id="ekle-kategori" aria-label="Kategori">
+              <option value="">Kategori seç…</option>
+              {% for k in kategoriler %}
+                <option value="{{ k.id }}">{{ k.ad }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Koleksiyon <span style="color: var(--danger);">*</span></span>
+            <select class="select" name="koleksiyon_id" id="ekle-koleksiyon" disabled required
+                    aria-label="Koleksiyon">
+              <option value="">Önce kategori seç</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Kombinasyon (opsiyonel — fiyat/içerik buradan gelir)</span>
+            <select class="select" name="kombinasyon_id" id="ekle-kombinasyon" disabled
+                    aria-label="Kombinasyon">
+              <option value="">Önce koleksiyon seç</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Görünen ad</span>
+            <input type="text" name="baslik" maxlength="200" placeholder="boş → koleksiyon adı">
+          </label>
+          <label class="field">
+            <span class="field-label">Liste fiyatı (TL)</span>
+            <input type="text" inputmode="numeric" name="liste_fiyat" id="ekle-liste"
+                   placeholder="boş → web fiyatı">
+          </label>
+          <label class="field">
+            <span class="field-label">Perakende fiyatı (TL)</span>
+            <input type="text" inputmode="numeric" name="perakende_fiyat" id="ekle-perakende"
+                   placeholder="boş → web fiyatı">
+          </label>
+          <label class="field field--wide">
+            <span class="field-label">Teşhirin içeriği</span>
+            <textarea name="icerik" maxlength="2000"
+                      placeholder="boş → kombinasyonun ürün listesi. Örn: Karyola + 2 komodin + gardırop + şifonyer"></textarea>
+          </label>
+          <label class="field field--wide">
+            <span class="field-label">İç not (ajana/müşteriye gitmez)</span>
+            <input type="text" name="notlar" maxlength="1000" placeholder="örn. pazarlık payı 5.000 TL">
+          </label>
+        </div>
+        <div class="teshir-form__actions">
+          <button type="submit" class="btn-primary btn-primary--compact">➕ Teşhire ekle</button>
+        </div>
+      </form>
+    </section>
+
+    {# ── Kayıt listesi ── #}
+    {% for t in kayitlar %}
+      <article class="teshir-kart glass">
+        <div class="teshir-kart__ust">
+          <h3 class="teshir-kart__baslik">{{ t.baslik }}</h3>
+          <span class="teshir-kart__yol">{{ t.kategori }} › {{ t.koleksiyon }}{% if t.kombinasyon %} › {{ t.kombinasyon }}{% endif %}</span>
+        </div>
+        <div class="teshir-kart__fiyat">
+          {% if t.liste_fiyat and t.perakende_fiyat and t.liste_fiyat != t.perakende_fiyat %}
+            <span class="teshir-kart__eski">{{ t.liste_fiyat }} TL</span>
+          {% endif %}
+          {% if t.perakende_fiyat %}
+            <span class="teshir-kart__yeni">{{ t.perakende_fiyat }} TL</span>
+          {% elif t.liste_fiyat %}
+            <span class="teshir-kart__yeni">{{ t.liste_fiyat }} TL</span>
+          {% else %}
+            <span class="cell-empty">fiyat belirtilmemiş</span>
+          {% endif %}
+          <span class="kaynak-chip kaynak-chip--{{ t.fiyat_kaynak }}">
+            {% if t.fiyat_kaynak == 'magaza' %}mağaza fiyatı{% else %}web fiyatı{% endif %}
+          </span>
+        </div>
+        {% if t.icerik %}
+          <p class="teshir-kart__icerik">{{ t.icerik }}</p>
+        {% endif %}
+        {% if t.notlar %}
+          <p class="teshir-kart__not">📝 {{ t.notlar }}</p>
+        {% endif %}
+
+        <div class="teshir-kart__ops">
+          <button type="button" class="btn-ghost btn-ghost--sm"
+                  onclick="document.getElementById('duzenle{{ t.id }}').classList.toggle('acik')">Düzenle</button>
+          <form method="post" style="display:inline;"
+                onsubmit="return confirm('{{ t.baslik|escapejs }} teşhirden silinsin mi?');">
+            {% csrf_token %}
+            <input type="hidden" name="islem" value="sil">
+            <input type="hidden" name="id" value="{{ t.id }}">
+            <button type="submit" class="btn-ghost btn-ghost--sm">🗑️ Sil</button>
+          </form>
+        </div>
+
+        <form method="post" class="teshir-duzenle" id="duzenle{{ t.id }}">
+          {% csrf_token %}
+          <input type="hidden" name="islem" value="guncelle">
+          <input type="hidden" name="id" value="{{ t.id }}">
+          <div class="teshir-form__grid">
+            <label class="field">
+              <span class="field-label">Görünen ad</span>
+              <input type="text" name="baslik" maxlength="200" value="{{ t.ham_baslik }}"
+                     placeholder="boş → koleksiyon adı">
+            </label>
+            <label class="field">
+              <span class="field-label">Liste fiyatı (TL)</span>
+              <input type="text" inputmode="numeric" name="liste_fiyat"
+                     value="{{ t.ham_liste|default_if_none:'' }}" placeholder="boş → web fiyatı">
+            </label>
+            <label class="field">
+              <span class="field-label">Perakende fiyatı (TL)</span>
+              <input type="text" inputmode="numeric" name="perakende_fiyat"
+                     value="{{ t.ham_perakende|default_if_none:'' }}" placeholder="boş → web fiyatı">
+            </label>
+            <label class="field">
+              <span class="field-label">İç not</span>
+              <input type="text" name="notlar" maxlength="1000" value="{{ t.notlar }}">
+            </label>
+            <label class="field field--wide">
+              <span class="field-label">Teşhirin içeriği</span>
+              <textarea name="icerik" maxlength="2000"
+                        placeholder="boş → kombinasyonun ürün listesi">{{ t.ham_icerik }}</textarea>
+            </label>
+          </div>
+          <div class="teshir-form__actions">
+            <button type="submit" class="btn-primary btn-primary--compact">💾 Kaydet</button>
+          </div>
+        </form>
+      </article>
+    {% empty %}
+      <section class="empty-state glass">
+        <div class="empty-state__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3"/>
+            <path d="M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v2H7v-2a2 2 0 0 0-4 0z"/>
+            <path d="M5 18v2M19 18v2"/>
+          </svg>
+        </div>
+        <h2>Henüz teşhir kaydı yok</h2>
+        <p>Yukarıdaki formdan mağazada sergilediğin ilk takımı ekle — kategori,
+           koleksiyon ve istersen kombinasyon seç, gerekiyorsa mağaza fiyatını yaz.</p>
+      </section>
+    {% endfor %}
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% include 'accounts/_supabase_init.html' %}
+  <script src="{% static 'js/auth-common.js' %}" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('logout-btn')?.addEventListener('click', () => window.EtiketAuth.logout());
+
+      // ── Kategori → Koleksiyon → Kombinasyon cascade ─────────────────────
+      const SECENEK_URL = "{% url 'dashboard:teshir_secenekler' %}";
+      const katSel   = document.getElementById('ekle-kategori');
+      const kolSel   = document.getElementById('ekle-koleksiyon');
+      const kombiSel = document.getElementById('ekle-kombinasyon');
+      const listeInp = document.getElementById('ekle-liste');
+      const perakInp = document.getElementById('ekle-perakende');
+
+      function doldur(sel, secenekler, bosMetin) {
+        sel.innerHTML = '';
+        const bos = document.createElement('option');
+        bos.value = ''; bos.textContent = bosMetin;
+        sel.appendChild(bos);
+        for (const s of secenekler) {
+          const o = document.createElement('option');
+          o.value = s.id; o.textContent = s.ad;
+          if (s.toplam_liste != null) o.dataset.liste = s.toplam_liste;
+          if (s.toplam_perakende != null) o.dataset.perakende = s.toplam_perakende;
+          sel.appendChild(o);
+        }
+        sel.disabled = secenekler.length === 0;
+      }
+
+      katSel?.addEventListener('change', async () => {
+        doldur(kolSel, [], 'Yükleniyor…'); kolSel.disabled = true;
+        doldur(kombiSel, [], 'Önce koleksiyon seç'); kombiSel.disabled = true;
+        if (!katSel.value) { doldur(kolSel, [], 'Önce kategori seç'); return; }
+        try {
+          const res = await fetch(`${SECENEK_URL}?kategori=${katSel.value}`,
+                                  { credentials: 'same-origin' });
+          const data = await res.json();
+          doldur(kolSel, data.koleksiyonlar || [], 'Koleksiyon seç…');
+        } catch (_) { doldur(kolSel, [], 'Yüklenemedi — tekrar dene'); }
+      });
+
+      kolSel?.addEventListener('change', async () => {
+        doldur(kombiSel, [], 'Yükleniyor…'); kombiSel.disabled = true;
+        listeInp.placeholder = 'boş → web fiyatı';
+        perakInp.placeholder = 'boş → web fiyatı';
+        if (!kolSel.value) { doldur(kombiSel, [], 'Önce koleksiyon seç'); return; }
+        try {
+          const res = await fetch(`${SECENEK_URL}?koleksiyon=${kolSel.value}`,
+                                  { credentials: 'same-origin' });
+          const data = await res.json();
+          const kombiler = data.kombinasyonlar || [];
+          doldur(kombiSel, kombiler.map(k => ({
+            ...k,
+            ad: k.toplam_perakende
+              ? `${k.ad} — ${Number(k.toplam_perakende).toLocaleString('tr-TR')} TL`
+              : k.ad,
+          })), kombiler.length ? 'Koleksiyon geneli (kombinasyonsuz)' : 'Kombinasyon yok');
+          kombiSel.disabled = false;
+        } catch (_) { doldur(kombiSel, [], 'Yüklenemedi — tekrar dene'); }
+      });
+
+      // Kombinasyon seçilince web fiyatını placeholder olarak göster —
+      // "boş bırakırsan bu geçerli" mesajı netleşir.
+      kombiSel?.addEventListener('change', () => {
+        const o = kombiSel.selectedOptions[0];
+        const liste = o?.dataset.liste, perakende = o?.dataset.perakende;
+        listeInp.placeholder = liste
+          ? `boş → web: ${Number(liste).toLocaleString('tr-TR')} TL` : 'boş → web fiyatı';
+        perakInp.placeholder = perakende
+          ? `boş → web: ${Number(perakende).toLocaleString('tr-TR')} TL` : 'boş → web fiyatı';
+      });
+    });
+  </script>
+{% endblock %}
