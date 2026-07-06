@@ -4,19 +4,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b1020" />
+  <meta name="theme-color" content="#f5f6fa" />
+  <meta name="color-scheme" content="light" />
   <meta name="description" content="Etiketlerinizi ve PDF'lerinizi hızlıca oluşturun." />
   <title>{% block title %}Etiket Studio{% endblock %}</title>
-
-  {# Tema'yı CSS yüklenmeden önce uygula → FOUC olmaz. #}
-  <script>
-    (function () {
-      try {
-        var t = localStorage.getItem('theme');
-        if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
-      } catch (_) {}
-    })();
-  </script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +17,6 @@
 </head>
 <body>
   {% block content %}{% endblock %}
-  <script src="{% static 'js/theme.js' %}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

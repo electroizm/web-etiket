@@ -1,53 +1,33 @@
 /* ================================================================
-   Etiket Studio · Login
-   Mobile-first, premium dark UI with glassmorphism
+   Etiket Studio · Login — v2 "Aydınlık"
+   Beyaz kart + indigo vurgu; yumuşak indigo orb'lu açık zemin.
+   Tek tema (dark yok — 2026-07-06 kararı). Sınıf sözleşmesi eski
+   dosya ile aynı; şablonlar/JS değişmedi.
    ================================================================ */
 
 :root {
-  --bg-0: #070912;
-  --bg-1: #0b1020;
-  --bg-2: #131a33;
-  --surface: rgba(255, 255, 255, 0.06);
-  --surface-strong: rgba(255, 255, 255, 0.10);
-  --border: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.22);
-  --text: #eef1ff;
-  --text-muted: #9aa3c7;
-  --text-soft: #c7cdf0;
-  --brand: #7c5cff;
-  --brand-2: #22d3ee;
-  --danger: #ff6b6b;
-  --success: #34d399;
-  --shadow-lg: 0 30px 80px -20px rgba(8, 12, 30, 0.8), 0 10px 30px -10px rgba(124, 92, 255, 0.25);
-  --radius-lg: 22px;
-  --radius-md: 14px;
-  --radius-sm: 10px;
-  --transition: 220ms cubic-bezier(.2, .8, .2, 1);
-  --input-autofill-bg: #161a2c;
-  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
-  --orb-a: rgba(124, 92, 255, 0.30);
-  --orb-b: rgba(34, 211, 238, 0.22);
-  --orb-c: rgba(167, 139, 250, 0.18);
-}
-
-/* ============ LIGHT TEMA — data-theme="light" override'ları ============ */
-:root[data-theme="light"] {
-  --bg-0: #f5f6fa;
-  --bg-1: #ffffff;
-  --bg-2: #eef0f5;
-  --surface: rgba(11, 16, 32, 0.04);
-  --surface-strong: rgba(11, 16, 32, 0.08);
-  --border: rgba(11, 16, 32, 0.10);
-  --border-strong: rgba(11, 16, 32, 0.18);
-  --text: #1a1f33;
-  --text-muted: #6b7280;
-  --text-soft: #4b5563;
-  --shadow-lg: 0 30px 80px -20px rgba(124, 92, 255, 0.20), 0 10px 30px -10px rgba(34, 211, 238, 0.15);
-  --input-autofill-bg: #ffffff;
-  --glass-bg: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(248,249,253,0.90));
-  --orb-a: rgba(124, 92, 255, 0.18);
-  --orb-b: rgba(34, 211, 238, 0.14);
-  --orb-c: rgba(167, 139, 250, 0.10);
+  --bg: #f5f6fa;
+  --surface: #ffffff;
+  --surface-2: #f2f3f9;
+  --border: #e4e6f0;
+  --border-strong: #c9cede;
+  --text: #191c2e;
+  --text-muted: #6c7288;
+  --text-soft: #3e4459;
+  --brand: #5048e5;
+  --brand-2: #7c3aed;
+  --brand-soft: #eeedfc;
+  --brand-border: #cbc8f6;
+  --brand-grad: linear-gradient(135deg, #5048e5, #7c3aed);
+  --danger: #dc2626;
+  --success: #0e9f6e;
+  --shadow-lg: 0 24px 60px -20px rgba(25, 28, 46, 0.18), 0 8px 24px -12px rgba(80, 72, 229, 0.12);
+  --shadow-brand: 0 6px 16px -6px rgba(80, 72, 229, 0.45);
+  --focus-ring: 0 0 0 4px rgba(80, 72, 229, 0.16);
+  --radius-lg: 20px;
+  --radius-md: 13px;
+  --radius-sm: 9px;
+  --transition: 200ms cubic-bezier(.2, .8, .2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -56,8 +36,9 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--bg-0);
+  background: var(--bg);
   color: var(--text);
+  color-scheme: light;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -67,9 +48,9 @@ html, body {
 body {
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(124, 92, 255, 0.25), transparent 60%),
-    radial-gradient(900px 500px at 110% 10%, rgba(34, 211, 238, 0.18), transparent 60%),
-    linear-gradient(180deg, var(--bg-1), var(--bg-0));
+    radial-gradient(1100px 520px at 12% -8%, rgba(80, 72, 229, 0.10), transparent 60%),
+    radial-gradient(800px 440px at 108% 12%, rgba(124, 58, 237, 0.08), transparent 60%),
+    var(--bg);
   overflow-x: hidden;
 }
 
@@ -86,23 +67,23 @@ body {
   isolation: isolate;
 }
 
-/* ============ Decorative background ============ */
+/* ============ Dekoratif arka plan ============ */
 .bg-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.55;
+  filter: blur(70px);
+  opacity: 0.22;
   z-index: -1;
-  animation: float 14s ease-in-out infinite;
+  animation: float 16s ease-in-out infinite;
   will-change: transform;
 }
 .bg-orb--a { width: 360px; height: 360px; left: -80px;  top: -60px;
-  background: radial-gradient(circle at 30% 30%, #7c5cff, transparent 60%); }
+  background: radial-gradient(circle at 30% 30%, #5048e5, transparent 62%); }
 .bg-orb--b { width: 320px; height: 320px; right: -80px; top: 30%;
-  background: radial-gradient(circle at 70% 30%, #22d3ee, transparent 60%);
+  background: radial-gradient(circle at 70% 30%, #7c3aed, transparent 62%);
   animation-delay: -4s; }
 .bg-orb--c { width: 280px; height: 280px; left: 30%; bottom: -120px;
-  background: radial-gradient(circle at 50% 50%, #ff6bd6, transparent 60%);
+  background: radial-gradient(circle at 50% 50%, #a5b4fc, transparent 62%);
   animation-delay: -8s; }
 
 .bg-grid {
@@ -110,37 +91,20 @@ body {
   inset: 0;
   z-index: -1;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(25, 28, 46, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(25, 28, 46, 0.045) 1px, transparent 1px);
   background-size: 36px 36px;
   mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
   -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
   opacity: 0.5;
 }
-:root[data-theme="light"] .bg-grid {
-  background-image:
-    linear-gradient(rgba(11, 16, 32, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(11, 16, 32, 0.06) 1px, transparent 1px);
-}
-:root[data-theme="light"] .bg-orb { opacity: 0.30; }
-:root[data-theme="light"] .auth-title {
-  background: linear-gradient(180deg, #1a1f33, #4b5563);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-:root[data-theme="light"] .input-wrap {
-  background: rgba(11, 16, 32, 0.03);
-}
-:root[data-theme="light"] .input-wrap:focus-within {
-  background: rgba(11, 16, 32, 0.05);
-}
-:root[data-theme="light"] .input-wrap input::placeholder { color: rgba(75, 85, 99, 0.55); }
 
 @keyframes float {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
   50%      { transform: translate3d(0, -28px, 0) scale(1.04); }
 }
 
-/* ============ Card / Glass ============ */
+/* ============ Kart ============ */
 .auth-card {
   width: 100%;
   max-width: 440px;
@@ -151,10 +115,8 @@ body {
 }
 
 .glass {
-  background: var(--glass-bg);
+  background: var(--surface);
   border: 1px solid var(--border);
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
 }
 
 @keyframes rise {
@@ -162,7 +124,7 @@ body {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ============ Header / Brand ============ */
+/* ============ Başlık / Marka ============ */
 .auth-header {
   display: flex;
   flex-direction: column;
@@ -178,9 +140,9 @@ body {
   display: grid;
   place-items: center;
   border-radius: 18px;
-  background: linear-gradient(160deg, rgba(124,92,255,0.25), rgba(34,211,238,0.15));
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 8px 24px -8px rgba(124, 92, 255, 0.55);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-border);
+  box-shadow: var(--shadow-brand);
 }
 .brand-mark svg { width: 40px; height: 40px; }
 
@@ -189,10 +151,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0;
-  background: linear-gradient(180deg, #ffffff, #c7cdf0);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text);
 }
 
 .auth-subtitle {
@@ -201,7 +160,7 @@ body {
   margin: 0;
 }
 
-/* ============ Status (error/success) ============ */
+/* ============ Status (hata/başarı) ============ */
 .status {
   margin: 0 0 16px 0;
   padding: 12px 14px;
@@ -214,9 +173,9 @@ body {
   gap: 10px;
   animation: slide-in 280ms ease both;
 }
-.status[data-type="error"]   { color: #ffd1d1; background: rgba(255, 107, 107, 0.10); border-color: rgba(255, 107, 107, 0.35); }
-.status[data-type="success"] { color: #c7ffe0; background: rgba(52, 211, 153, 0.10); border-color: rgba(52, 211, 153, 0.35); }
-.status[data-type="info"]    { color: #d6e0ff; background: rgba(124, 92, 255, 0.10); border-color: rgba(124, 92, 255, 0.35); }
+.status[data-type="error"]   { color: #b42323; background: #fdecec; border-color: #f3c5c5; }
+.status[data-type="success"] { color: #0b7d57; background: #e6f7f0; border-color: #bfe8d7; }
+.status[data-type="info"]    { color: #4038c7; background: var(--brand-soft); border-color: var(--brand-border); }
 
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-6px); }
@@ -246,16 +205,16 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   transition: border-color var(--transition), background-color var(--transition), box-shadow var(--transition);
 }
 
 .input-wrap:focus-within {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(124, 92, 255, 0.6);
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.18);
+  background: var(--surface);
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
 }
 
 .input-icon {
@@ -281,16 +240,15 @@ body {
   letter-spacing: 0.01em;
 }
 
-.input-wrap input::placeholder { color: rgba(154, 163, 199, 0.65); }
+.input-wrap input::placeholder { color: var(--text-muted); opacity: 0.7; }
 
-/* Chrome autofill — input arka planı lavantaya dönmesin (göz ikonu/metin
-   görünür kalsın). Solid bg + 99999s transition ile autofill efekti pasif. */
+/* Chrome autofill — açık zeminde beyaz kalsın */
 .input-wrap input:-webkit-autofill,
 .input-wrap input:-webkit-autofill:hover,
 .input-wrap input:-webkit-autofill:focus,
 .input-wrap input:-webkit-autofill:active {
   -webkit-text-fill-color: var(--text);
-  -webkit-box-shadow: 0 0 0 1000px var(--input-autofill-bg, #161a2c) inset;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
   caret-color: var(--text);
   transition: background-color 99999s ease-in-out 0s;
 }
@@ -302,20 +260,16 @@ body {
   place-items: center;
   background: transparent;
   border: none;
-  /* Hem koyu input arka planında hem de chrome autofill'in lavanta arka planında
-     görünür olsun diye explicit mid-grey. */
-  color: #6b7280;
+  color: var(--text-muted);
   cursor: pointer;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   transition: color var(--transition), background-color var(--transition);
 }
 .toggle-eye:hover, .toggle-eye:focus-visible {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--brand-soft);
   outline: none;
 }
-/* Tek SVG: göz çizgisi (slash) varsayılanda gizli, .is-revealed sınıfı
-   eklenince yumuşak şekilde belirir. */
 .eye-icon__slash {
   opacity: 0;
   transform-origin: center;
@@ -325,7 +279,7 @@ body {
   opacity: 1;
 }
 
-/* ============ Remember + Links ============ */
+/* ============ Beni hatırla + linkler ============ */
 .remember {
   display: flex;
   align-items: center;
@@ -341,13 +295,13 @@ body {
   width: 18px; height: 18px;
   border: 1.5px solid var(--border-strong);
   border-radius: 5px;
-  background: rgba(255,255,255,0.04);
+  background: var(--surface);
   display: grid; place-items: center;
   cursor: pointer;
   transition: all var(--transition);
 }
 .remember input:checked {
-  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  background: var(--brand-grad);
   border-color: transparent;
 }
 .remember input:checked::after {
@@ -363,22 +317,22 @@ body {
   font-weight: 500;
   transition: color var(--transition);
 }
-.link-muted:hover { color: var(--text); }
+.link-muted:hover { color: var(--brand); }
 
 .link-strong {
-  color: var(--brand-2);
+  color: var(--brand);
   text-decoration: none;
   font-weight: 600;
   transition: color var(--transition);
 }
-.link-strong:hover { color: #67e8f9; text-decoration: underline; }
+.link-strong:hover { color: var(--brand-2); text-decoration: underline; }
 
-/* ============ Password strength bar ============ */
+/* ============ Şifre gücü çubuğu ============ */
 .strength-bar {
   height: 4px;
   margin-top: 4px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-2);
   overflow: hidden;
 }
 .strength-bar__fill {
@@ -389,10 +343,10 @@ body {
   transition: width 240ms ease, background-color 240ms ease;
 }
 .strength-bar__fill[data-level="2"] { background: #f59e0b; }
-.strength-bar__fill[data-level="3"] { background: #facc15; }
+.strength-bar__fill[data-level="3"] { background: #eab308; }
 .strength-bar__fill[data-level="4"] { background: var(--success); }
 
-/* ============ Primary button ============ */
+/* ============ Ana buton ============ */
 .btn-primary {
   position: relative;
   margin-top: 8px;
@@ -405,33 +359,29 @@ body {
   font-weight: 600;
   letter-spacing: 0.01em;
   color: white;
-  background: linear-gradient(135deg, #7c5cff 0%, #5b8cff 50%, #22d3ee 100%);
-  background-size: 200% 100%;
-  background-position: 0% 50%;
-  box-shadow:
-    0 12px 28px -8px rgba(124, 92, 255, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: var(--brand-grad);
+  box-shadow: var(--shadow-brand);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   overflow: hidden;
-  transition: transform var(--transition), background-position 480ms ease, box-shadow var(--transition), opacity var(--transition);
+  transition: transform var(--transition), filter var(--transition), box-shadow var(--transition), opacity var(--transition);
 }
 .btn-primary::after {
   content: '';
   position: absolute; inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%);
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.22) 50%, transparent 70%);
   transform: translateX(-120%);
   transition: transform 700ms ease;
   pointer-events: none;
 }
-.btn-primary:hover { background-position: 100% 50%; transform: translateY(-1px); }
+.btn-primary:hover { filter: brightness(1.07); transform: translateY(-1px); }
 .btn-primary:hover::after { transform: translateX(120%); }
 .btn-primary:active { transform: translateY(0) scale(0.99); }
 .btn-primary:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.35), 0 12px 28px -8px rgba(124, 92, 255, 0.55);
+  box-shadow: var(--focus-ring), var(--shadow-brand);
 }
 .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
 
@@ -441,7 +391,7 @@ body {
 .btn-spinner {
   width: 18px; height: 18px;
   border-radius: 50%;
-  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border: 2.5px solid rgba(255, 255, 255, 0.4);
   border-top-color: #fff;
   display: none;
   animation: spin 700ms linear infinite;
@@ -452,7 +402,7 @@ body {
 .btn-primary[data-loading="true"] .btn-arrow { display: none; }
 .btn-primary[data-loading="true"] .btn-spinner { display: inline-block; }
 
-/* ============ Footer / Hint ============ */
+/* ============ Footer / İpucu ============ */
 .signup-hint {
   margin: 4px 0 0 0;
   text-align: center;
@@ -473,7 +423,7 @@ body {
 }
 .auth-footer .dot { opacity: 0.5; }
 
-/* ============ Responsive tweaks ============ */
+/* ============ Responsive ============ */
 @media (min-width: 480px) {
   .auth-card { padding: 36px; }
   .auth-header { gap: 18px; margin-bottom: 26px; }
@@ -486,15 +436,9 @@ body {
   .input-wrap input { font-size: 15.5px; }
 }
 
-/* ============ Accessibility ============ */
+/* ============ Erişilebilirlik ============ */
 @media (prefers-reduced-motion: reduce) {
   .bg-orb { animation: none; }
   .auth-card { animation: none; }
   * { transition-duration: 0.001ms !important; }
-}
-
-/* ============ Light theme override (optional, by user pref) ============ */
-@media (prefers-color-scheme: light) {
-  /* Tasarım dark için optimize; light mode istersen ileride genişletilebilir.
-     Şu anki marka kimliğini korumak adına dark sabit tutuluyor. */
 }

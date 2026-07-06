@@ -1,0 +1,48 @@
+{% comment %}
+Ana gezinme — mobilde sabit alt tab bar, geniş ekranda üstte yatay şerit.
+Kullanım: include + with aktif='urunler'
+aktif: ana | urunler | yazdir | bot | ayarlar (boş bırakılabilir)
+{% endcomment %}
+<nav class="tabbar" aria-label="Ana gezinme">
+  <a href="{% url 'dashboard:home' %}"
+     class="tabbar__item{% if aktif == 'ana' %} is-aktif{% endif %}"
+     {% if aktif == 'ana' %}aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>
+    </svg>
+    <span>Ana Sayfa</span>
+  </a>
+  <a href="{% url 'dashboard:urunler_list' %}"
+     class="tabbar__item{% if aktif == 'urunler' %} is-aktif{% endif %}"
+     {% if aktif == 'urunler' %}aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>
+    </svg>
+    <span>Ürünler</span>
+  </a>
+  <a href="{% url 'dashboard:etiket_yazdir' %}"
+     class="tabbar__item{% if aktif == 'yazdir' %} is-aktif{% endif %}"
+     {% if aktif == 'yazdir' %}aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M7 8V3h10v5"/><path d="M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7" rx="1"/>
+    </svg>
+    <span>Yazdır</span>
+  </a>
+  <a href="{% url 'dashboard:bot_konusmalar' %}"
+     class="tabbar__item{% if aktif == 'bot' %} is-aktif{% endif %}"
+     {% if aktif == 'bot' %}aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 12a8 8 0 0 1-8 8H4l2.5-3A8 8 0 1 1 21 12z"/><path d="M9 11h.01M13 11h.01M17 11h.01"/>
+    </svg>
+    <span>Bot</span>
+  </a>
+  <a href="{% url 'dashboard:ayarlar' %}"
+     class="tabbar__item{% if aktif == 'ayarlar' %} is-aktif{% endif %}"
+     {% if aktif == 'ayarlar' %}aria-current="page"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+    <span>Ayarlar</span>
+  </a>
+</nav>
