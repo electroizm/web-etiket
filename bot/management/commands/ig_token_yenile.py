@@ -113,7 +113,17 @@ class Command(BaseCommand):
             f"IG token yenilendi ✅  ~{gun} gün geçerli (bitiş {expires_iso})."))
 
     def _basarisiz(self, opts, ayrinti: str) -> None:
-        """Yenileme başarısız — logla; --kuru değilse İsmail'e uyarı gönder."""
+        """Yenileme başarısız — logla; --kuru değilse İsmail'e uyarı gönder.
+
+        --tohum ile çağrıldıysa alarm YOK: taze token Meta kuralı gereği 24 saat
+        dolmadan yenilenemez (bu beklenen durum), tohum zaten DB'ye yazıldı ve
+        bot onunla çalışıyor — ilk gerçek yenilemeyi haftalık görev yapar."""
+        if opts.get("tohum"):
+            self.stdout.write(self.style.WARNING(
+                f"Yenileme şimdilik yapılamadı ({ayrinti[:120]}...) — NORMAL: "
+                "taze token 24 saat dolmadan yenilenemez. Tohum DB'de, bot çalışır; "
+                "haftalık görev yenilemeyi kendisi yapacak."))
+            return
         mesaj = ("⚠️ IG TOKEN YENİLENEMEDİ\n"
                  f"{ayrinti}\n"
                  "Instagram botu token dolunca sessizce durur — token'ı elle "
