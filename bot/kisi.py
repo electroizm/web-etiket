@@ -78,6 +78,28 @@ def guncelle_ig(kullanici: str) -> None:
         log.exception("bot_kisi IG güncellenemedi (%s)", kullanici)
 
 
+def konusma_yeniden_ac(platform: str, kullanici: str) -> None:
+    """Yeni müşteri mesajı geldi → panelin 'çözüldü' damgasını kaldır.
+
+    İsmail bir konuşmayı 'çözüldü' işaretlese de müşteri tekrar yazınca konu
+    yeniden açık sayılmalı (bizden bilgi bekliyor olabilir). Yalnızca gerçekten
+    çözülü olan kaydı değiştirir (gereksiz yazma yok). Hata akışı bozmaz."""
+    try:
+        session = SessionLocal()
+        try:
+            kisi = session.scalar(
+                select(BotKisi).where(BotKisi.platform == platform,
+                                      BotKisi.kullanici == kullanici)
+            )
+            if kisi is not None and kisi.cozuldu:
+                kisi.cozuldu = False
+                session.commit()
+        finally:
+            session.close()
+    except Exception:
+        log.exception("konuşma yeniden açılamadı (%s/%s)", platform, kullanici)
+
+
 def profil_haritasi() -> dict[tuple[str, str], dict]:
     """(platform, kullanici) → {ad, kullanici_adi, foto_url}. Dashboard için."""
     try:

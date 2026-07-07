@@ -244,6 +244,9 @@ def _olaylari_isle(govde: dict) -> None:
                 kisi.guncelle_wa(olay.gonderen, olay.gonderen_ad)
             else:
                 kisi.guncelle_ig(olay.gonderen)
+            # Panelde "çözüldü" işaretli bir konuşmaya yeni mesaj geldiyse damgayı
+            # kaldır — müşteri tekrar yazdıysa konu yeniden açık (bizden bilgi bekler).
+            kisi.konusma_yeniden_ac(olay.platform, olay.gonderen)
             # ⚠️ Memnuniyetsizlik radarı: şikâyet sinyali varsa İsmail'e anında
             # bildirim (müşteri akışını değiştirmez, paralel gider).
             if olay.metin and not olay.secim:

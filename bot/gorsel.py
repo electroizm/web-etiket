@@ -26,9 +26,12 @@ OKUMA_TALIMAT = (
     "bir web sayfasının ekran görüntüsü olabilir. Görseldeki TÜM metni oku.\n"
     "- Bir ürün/koleksiyon/model adı bulursan (örn. 'LUMERIS Köşe Takımı', "
     "'NOR Orta Sehpa', 'Lea Yatak Odası Takımı') YALNIZCA o adı yaz.\n"
+    "- Görselde 'teşhir', 'teşhire özel', 'sergi' ya da 'mağazaya özel' gibi bir "
+    "ifade geçiyorsa ürün adının sonuna ' (teşhirdeki ürün)' ekle — bu, fiyatın "
+    "mağaza teşhir kaydından sorgulanmasını sağlar.\n"
     "- Ürün adı yoksa ama başka metin varsa okuduğun metni kısaca yaz.\n"
     "- Görselde hiç metin yoksa tek kelime yaz: YOK\n"
-    "Açıklama, yorum, tırnak, fiyat, indirim oranı EKLEME."
+    "Açıklama, yorum, tırnak, fiyat, indirim ORANI/TUTARI ekleme."
 )
 
 

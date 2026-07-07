@@ -70,11 +70,18 @@ KURALLAR (kesin):
     hem Yatak Odası). koleksiyon_ara birden çok sonuç dönerse: müşterinin
     mesajından kategori belliyse onu seç; belli değilse fiyat vermeden önce
     hangi kategoriyi istediğini sor.
-11. Müşteri özellikle MAĞAZADAKİ / TEŞHİRDEKİ / SERGİDEKİ üründen bahsederse
-    ("mağazanızda gördüm", "teşhirdeki fiyatı ne", "vitrindeki takım") teshir_bilgi
-    aracını çağır; fiyatı ve içeriği ORADAN söyle, teşhir ürünü olduğunu belirt.
-    Müşteri özellikle sormadıysa teşhir fiyatını kendiliğinden açma — normal
-    fiyat sorularında her zamanki araçları kullan.
+11. TEŞHİR (mağazada sergilenen ürünler). teshir_bilgi aracını ŞU üç durumda çağır:
+    (a) Müşteri özellikle mağazadaki/teşhirdeki/sergideki üründen bahsederse
+        ("mağazanızda gördüm", "teşhirdeki fiyatı ne", "vitrindeki takım").
+    (b) Mesajda "(teşhirdeki ürün)" ipucu geçiyorsa (görselden okunmuş demektir).
+    (c) SON ÇARE: müşterinin sorduğu ürünü normal katalogda BULAMAZSAN ya da
+        bulduğun ürün müşterinin belirttiği KATEGORİYLE UYUŞMUYORSA (örn. müşteri
+        "Lea yatak odası" diyor ama koleksiyon_ara Lea'yı yalnız Oturma Grubu'nda
+        buluyor) → "bulamadım/yanlış kategori" demeden ÖNCE teshir_bilgi'ye bak;
+        ürün teşhirde olabilir. Teşhirde varsa fiyatı oradan ver.
+    Bu üç durumda fiyatı ve içeriği teşhir kaydından söyle, teşhir ürünü olduğunu
+    belirt. Bunların DIŞINDA (müşteri sormadı, ipucu yok, ürün normal katalogda
+    temiz bulundu) teşhir fiyatını kendiliğinden açma — her zamanki araçları kullan.
 12. PAZARLIK (yalnız teşhir ürünlerinde): teshir_bilgi sonucunda
     "pazarlik_taban_fiyat" alanı VARSA ve müşteri pazarlık ederse ("indirim olur
     mu", "son fiyat ne", "kaça bırakırsın") indirim yapabilirsin. Kurallar:
@@ -176,10 +183,13 @@ TOOLS = [
         "function": {
             "name": "teshir_bilgi",
             "description": "Mağazada sergilenen (teşhirdeki) ürünlerin listesi, "
-                           "içeriği ve mağaza fiyatları. YALNIZCA müşteri özellikle "
-                           "mağazadaki/teşhirdeki/sergideki üründen bahsederse çağır. "
-                           "koleksiyon_id verilirse o koleksiyonla sınırlar; vermezsen "
-                           "tüm teşhir listesi döner.",
+                           "içeriği ve mağaza fiyatları. Çağır: (a) müşteri "
+                           "mağazadaki/teşhirdeki üründen bahsederse; (b) mesajda "
+                           "'(teşhirdeki ürün)' ipucu varsa; (c) SON ÇARE — ürünü "
+                           "normal katalogda bulamayınca ya da kategori uyuşmayınca, "
+                           "pes etmeden önce teşhirde var mı diye bak. koleksiyon_id "
+                           "verilirse o koleksiyonla sınırlar; vermezsen tüm teşhir "
+                           "listesi döner (adı kendin eşleştirebilirsin).",
             "parameters": {
                 "type": "object",
                 "properties": {
