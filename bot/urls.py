@@ -11,6 +11,7 @@ app_name = 'bot'
 
 urlpatterns = [
     path('webhook', views.webhook, name='webhook'),
+    path('webhook/ham', views.webhook_ham, name='webhook_ham'),  # geçici teşhis (token korumalı)
     path('saglik', views.saglik, name='saglik'),
     path('saglik/wa', views.saglik_wa, name='saglik_wa'),   # WA numara durumu (teşhis)
     path('ara', views.ara, name='ara'),   # 📞 Sesli arama butonu → tel: yönlendirme

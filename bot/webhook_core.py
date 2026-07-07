@@ -32,6 +32,11 @@ class GelenOlay:
     # Sesli mesaj: WA → {"tip":"wa","media_id":...}; IG → {"tip":"ig","url":...}.
     # views transkripte çevirip metin'e yazar (bot/ses.py); çözülmezse özür mesajı.
     ses: dict | None = None
+    # Görsel: WA → {"tip":"wa","media_id":...};
+    # IG doğrudan resim → {"tip":"ig","url":...};
+    # IG story-reply → {"tip":"ig_story","url":...} (story'nin GÖRSELİ, mesaj değil).
+    # views OCR'lar, okunan metni müşteri metnine ekler (bot/gorsel.py).
+    gorsel: dict | None = None
 
     @property
     def tetik(self) -> str:
