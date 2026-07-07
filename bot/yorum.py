@@ -32,7 +32,14 @@ TETIK_KELIMELER = (
 )
 
 SAATLIK_LIMIT = 200
-_ISARET = "[yorum-dm]"   # giden kayıtta bu önekle işaretlenir (throttle/dedup sorgusu bunu arar)
+# Giden yorumdan-DM kaydının öneki. Dedup GÖNDERİ BAŞINA (İsmail kararı 2026-07-08):
+# aynı kişi FARKLI gönderiye yorum yaparsa yeni DM alır, aynı gönderiye defalarca
+# yazınca tek DM. Bu yüzden önek media_id taşır: "[yorum-dm:<media_id>] ...".
+_ISARET_PREFIX = "[yorum-dm"        # saatlik toplam sayımı (eski "[yorum-dm]" + yeni format)
+
+
+def _isaret(media_id: str) -> str:
+    return f"[yorum-dm:{media_id or '?'}]"
 
 
 def tetikleyici_mi(metin: str) -> bool:
@@ -40,8 +47,8 @@ def tetikleyici_mi(metin: str) -> bool:
     return any(_duzle(k) in d for k in TETIK_KELIMELER)
 
 
-def _daha_once_tetiklendi_mi(igsid: str) -> bool:
-    """Bu kişiye daha önce yorumdan-DM private reply atıldı mı? (kişi başı tek tetikleme)"""
+def _daha_once_tetiklendi_mi(igsid: str, media_id: str) -> bool:
+    """Bu kişiye BU GÖNDERİDEN daha önce yorumdan-DM atıldı mı? (gönderi başına tek)"""
     try:
         from sqlalchemy import select
         from catalog.database import SessionLocal
@@ -53,7 +60,7 @@ def _daha_once_tetiklendi_mi(igsid: str) -> bool:
                 .where(BotMesaj.platform == "instagram",
                        BotMesaj.kullanici == igsid,
                        BotMesaj.yon == "giden",
-                       BotMesaj.metin.like(f"{_ISARET}%"))
+                       BotMesaj.metin.like(f"{_isaret(media_id)}%"))
                 .limit(1)
             )
             return var is not None
@@ -76,7 +83,7 @@ def _saatlik_limit_asildi_mi() -> bool:
                 select(func.count(BotMesaj.id))
                 .where(BotMesaj.platform == "instagram",
                        BotMesaj.yon == "giden",
-                       BotMesaj.metin.like(f"{_ISARET}%"),
+                       BotMesaj.metin.like(f"{_ISARET_PREFIX}%"),
                        BotMesaj.olusturma >= bir_saat_once)
             )
             return (sayi or 0) >= SAATLIK_LIMIT
@@ -91,8 +98,9 @@ def isle(yorum: GelenYorum) -> None:
     """Bir GelenYorum'u değerlendir: tetik + throttle geçerse private reply gönderir."""
     if not tetikleyici_mi(yorum.metin):
         return
-    if _daha_once_tetiklendi_mi(yorum.yorumcu_id):
-        log.info("yorumdan-DM: %s zaten tetiklemiş, atlandı", yorum.yorumcu_id)
+    if _daha_once_tetiklendi_mi(yorum.yorumcu_id, yorum.media_id):
+        log.info("yorumdan-DM: %s bu gönderiden (%s) zaten tetiklemiş, atlandı",
+                 yorum.yorumcu_id, yorum.media_id)
         return
     if _saatlik_limit_asildi_mi():
         log.warning("yorumdan-DM: saatlik limit (%d) doldu, yorum atlandı", SAATLIK_LIMIT)
@@ -118,7 +126,8 @@ def isle(yorum: GelenYorum) -> None:
             # Private reply yorum başına yalnız bir kez kullanılır; devam
             # mesajları artık açık olan normal DM kanalından gider.
             meta_client.gonder_instagram(yorum.yorumcu_id, mesaj)
-        kaydet("instagram", yorum.yorumcu_id, "giden", f"{_ISARET} " + ozet_giden(mesaj))
+        kaydet("instagram", yorum.yorumcu_id, "giden",
+               f"{_isaret(yorum.media_id)} " + ozet_giden(mesaj))
 
     if ilk_basarili:
         kaydet("instagram", yorum.yorumcu_id, "gelen", f"[yorum] {yorum.metin}")

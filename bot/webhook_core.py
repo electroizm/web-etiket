@@ -123,6 +123,7 @@ class GelenYorum:
     yorumcu_id: str      # yorumu yapan kullanıcının IGSID (from.id)
     comment_id: str      # private reply hedefi (yorum başına yalnızca bir kez kullanılır)
     metin: str
+    media_id: str = ""   # yorumun yapıldığı gönderi/reels id — "gönderi başına 1 DM" dedup'ı için
     yorumcu_ad: str | None = None
 
 
@@ -149,6 +150,7 @@ def extract_yorumlar(govde: dict) -> list[GelenYorum]:
                 yorumcu_id=yorumcu,
                 comment_id=comment_id,
                 metin=metin,
+                media_id=(value.get("media") or {}).get("id", ""),
                 yorumcu_ad=(value.get("from") or {}).get("username"),
             ))
     return yorumlar
