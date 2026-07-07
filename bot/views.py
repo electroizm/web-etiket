@@ -38,12 +38,40 @@ def saglik(request):
         "ajan_son_hata": _ajan_son_hata(),
         "ses_son_hata": _ses_son_hata(),
         "webhook_son_hata": WEBHOOK_SON_HATA,
+        "ig_token": _ig_token_bilgi(),
     })
 
 
 def _ajan_son_hata():
     from bot import ajan
     return ajan.SON_HATA
+
+
+def _ig_token_bilgi():
+    """IG token'ının son yenilenme + bitiş tarihi (app_ayarlari'ndan). Oto-yenileme
+    çalışıyor mu ve token ne zaman doluyor — Render loguna bakmadan teşhis için."""
+    from datetime import datetime, timezone
+    try:
+        from catalog.database import SessionLocal
+        from catalog.services.ayarlar import get_ayar
+        session = SessionLocal()
+        try:
+            yenilenme = get_ayar(session, "ig_token_yenilenme")
+            expires = get_ayar(session, "ig_token_expires")
+        finally:
+            session.close()
+    except Exception:
+        return None
+    if not yenilenme and not expires:
+        return "henüz oto-yenileme yapılmadı (env token kullanılıyor)"
+    kalan = None
+    try:
+        if expires and expires != "bilinmiyor":
+            fark = datetime.fromisoformat(expires) - datetime.now(timezone.utc)
+            kalan = f"{fark.days} gün"
+    except Exception:
+        pass
+    return {"yenilenme": yenilenme, "bitis": expires, "kalan": kalan}
 
 
 def _ses_son_hata():

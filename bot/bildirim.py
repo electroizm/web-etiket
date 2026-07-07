@@ -80,6 +80,13 @@ def geri_arama_bildir(platform: str, kullanici: str, mesaj: str) -> None:
     _yetkiliye_ilet("instALL ajan — 📞 geri arama talebi", govde)
 
 
+def sistem_uyari(konu: str, govde: str) -> None:
+    """Operasyonel sistem uyarısı (ör. IG token yenileme hatası) → yetkiliye ilet.
+
+    Müşteri akışıyla ilgisi yok; altyapı sessizce ölmesin diye İsmail haberdar olur."""
+    _yetkiliye_ilet(konu, govde)
+
+
 def memnuniyetsizlik_bildir(platform: str, kullanici: str,
                             mesaj: str, sinyal: str) -> None:
     """Şikâyet sinyali alarmı: müşteri daha hattayken İsmail haberdar olsun."""

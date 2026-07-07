@@ -8,12 +8,47 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 import requests
 
 from django.conf import settings
 
 log = logging.getLogger("bot.meta")
+
+# Canlı IG token önbelleği (yenileme app_ayarlari'na yazar; her gönderimde DB'ye
+# gitmemek için kısa TTL). Eski token'ı ~5 dk tutmak zararsız — 60 gün geçerli.
+_ig_token_cache: tuple[float, str] | None = None
+_IG_TOKEN_TTL = 300  # saniye
+
+
+def aktif_ig_token() -> str:
+    """Kullanılacak IG token'ı: önce DB (app_ayarlari.ig_token — oto-yenileme
+    buraya yazar), yoksa env (settings.IG_TOKEN, ilk tohum). DB erişilemezse env.
+
+    Token 60 günde dolar; `manage.py ig_token_yenile` DB'yi tazeler, Render bu
+    fonksiyonla yeni token'ı okur (env değişkeni elle güncellenmese de)."""
+    global _ig_token_cache
+    now = time.monotonic()
+    if _ig_token_cache and now - _ig_token_cache[0] < _IG_TOKEN_TTL:
+        return _ig_token_cache[1]
+
+    token = settings.IG_TOKEN
+    try:
+        from catalog.database import SessionLocal
+        from catalog.services.ayarlar import get_ayar
+        session = SessionLocal()
+        try:
+            deger = get_ayar(session, "ig_token")
+            if deger:
+                token = deger
+        finally:
+            session.close()
+    except Exception:
+        log.warning("aktif_ig_token: DB okunamadı, env token'a düşülüyor", exc_info=True)
+
+    _ig_token_cache = (now, token)
+    return token
 
 
 def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
@@ -29,7 +64,7 @@ def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
            f"/{settings.IG_ID}/messages")
     try:
         r = requests.post(url,
-                          headers={"Authorization": f"Bearer {settings.IG_TOKEN}"},
+                          headers={"Authorization": f"Bearer {aktif_ig_token()}"},
                           json=govde, timeout=10)
         if r.status_code == 200:
             return True
@@ -51,7 +86,7 @@ def profil_instagram(igsid: str) -> dict | None:
     try:
         r = requests.get(url,
                          params={"fields": "name,username,profile_pic"},
-                         headers={"Authorization": f"Bearer {settings.IG_TOKEN}"},
+                         headers={"Authorization": f"Bearer {aktif_ig_token()}"},
                          timeout=10)
         if r.status_code == 200:
             return r.json()
