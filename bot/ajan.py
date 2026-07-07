@@ -347,12 +347,17 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
     return mesajlar[-settings.AJAN_GECMIS_LIMIT:]
 
 
-def cevapla(metin: str, platform: str, kullanici: str) -> str | None:
+def cevapla(metin: str, platform: str, kullanici: str,
+            gecmissiz: bool = False) -> str | None:
     """Serbest metne AI cevabı üret. Ajan kapalıysa/hata olursa None (→ menüye düş).
 
     Model zinciri: settings.AJAN_MODELLER soldan denenir. Kota (429) ya da başka
     hata alan model atlanır, sıradaki denenir — her Gemini modelinin ücretsiz
     kotası ayrı sayıldığı için zincir kota direncini katlar.
+
+    gecmissiz=True: konuşma geçmişini bağlama ALMA (yorumdan-DM gibi, tetiğin
+    kendisi tek başına yeterli bağlamı taşıdığı durumlar için — eski konuşma
+    yanlış ürünü ele geçirmesin).
     """
     global SON_HATA
     if not settings.AJAN_AKTIF:
@@ -360,7 +365,7 @@ def cevapla(metin: str, platform: str, kullanici: str) -> str | None:
     from datetime import datetime
     for model in settings.AJAN_MODELLER:
         try:
-            return _cevapla(metin, platform, kullanici, model)
+            return _cevapla(metin, platform, kullanici, model, gecmissiz=gecmissiz)
         except Exception as e:
             SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
             log.warning("ajan: %s başarısız (%s), sıradaki model deneniyor",
@@ -369,14 +374,16 @@ def cevapla(metin: str, platform: str, kullanici: str) -> str | None:
     return None
 
 
-def _cevapla(metin: str, platform: str, kullanici: str, model: str) -> str | None:
+def _cevapla(metin: str, platform: str, kullanici: str, model: str,
+             gecmissiz: bool = False) -> str | None:
     import litellm
     litellm.suppress_debug_info = True
 
     kategoriler = ", ".join(f"{k['ad']} (id:{k['id']})" for k in menu_veri.kategoriler())
+    gecmis = [] if gecmissiz else _gecmis(platform, kullanici, metin)
     mesajlar = [
         {"role": "system", "content": SISTEM_PROMPTU.format(kategoriler=kategoriler)},
-        *_gecmis(platform, kullanici, metin),
+        *gecmis,
         {"role": "user", "content": metin[:1000]},
     ]
 

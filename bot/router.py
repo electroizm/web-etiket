@@ -290,7 +290,7 @@ def _koleksiyon_bul(tetik: str, veri, kategori_id: int | None = None) -> list[di
 
 
 def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
-               platform: str = "", kullanici: str = "") -> dict:
+               platform: str = "", kullanici: str = "", gecmissiz: bool = False) -> dict:
     """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret.
 
     Payload'lar sayfa taşıyabilir: 'KAT:48:2' = 48 no'lu kategorinin 2. sayfası,
@@ -346,7 +346,7 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     # 2) Net ürün/fiyat sorusu → AI (başarısızsa aşağı, menüye düşer)
     if platform and kullanici and _ai_gerekli_mi(tetik):
         from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
-        cevap = ajan.cevapla(tetik, platform, kullanici)
+        cevap = ajan.cevapla(tetik, platform, kullanici, gecmissiz=gecmissiz)
         if cevap:
             return P.metin_mesaji(cevap)
 

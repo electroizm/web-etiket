@@ -133,6 +133,34 @@ def profil_instagram(igsid: str) -> dict | None:
     return None
 
 
+def gonderi_bilgi(media_id: str) -> dict | None:
+    """Bir gönderinin/reels'in başlığı (caption) + OCR'lanacak görseli.
+
+    Yorumdan-DM'de kullanılır: yorum "fiyat" der ama hangi ürün olduğunu
+    söylemez — gönderinin kendisi (görsel üstündeki ürün adı + başlık) bağlamı
+    verir. IMAGE'da media_url görseldir; VIDEO/REELS'te thumbnail_url görsel,
+    media_url videodur (OCR için thumbnail tercih edilir)."""
+    if not media_id or settings.BOT_DRY_RUN_IG:
+        return None
+    url = f"https://graph.instagram.com/{settings.GRAPH_API_VERSION}/{media_id}"
+    try:
+        r = requests.get(
+            url,
+            params={"fields": "caption,media_type,media_url,thumbnail_url"},
+            headers={"Authorization": f"Bearer {aktif_ig_token()}"}, timeout=10)
+        if r.status_code != 200:
+            log.warning("gönderi bilgisi alınamadı %s: %s", r.status_code, r.text[:200])
+            return None
+        d = r.json()
+        gorsel_url = (d.get("media_url") if d.get("media_type") == "IMAGE"
+                      else d.get("thumbnail_url") or d.get("media_url"))
+        return {"caption": d.get("caption"), "gorsel_url": gorsel_url,
+                "media_type": d.get("media_type")}
+    except requests.RequestException as e:
+        log.warning("gönderi bilgisi istisnası: %s", e)
+        return None
+
+
 def gonder_whatsapp(alici_id: str, mesaj: dict) -> bool:
     """WhatsApp mesajı gönder (Cloud API /{PHONE_NUMBER_ID}/messages).
 

@@ -94,6 +94,24 @@ def _saatlik_limit_asildi_mi() -> bool:
         return True
 
 
+def _gonderi_baglami(media_id: str) -> str | None:
+    """Yorumun yapıldığı gönderinin ürün bağlamı: görsel OCR + başlık (caption).
+
+    Yorum "fiyat" der ama ürün adı taşımaz; gönderinin kendisi bağlamı verir.
+    Görsel üstündeki ürün adı (OCR) önceliklidir; OCR boşsa başlık kullanılır."""
+    from bot import gorsel, meta_client
+    bilgi = meta_client.gonderi_bilgi(media_id)
+    if not bilgi:
+        return None
+    okunan = None
+    if bilgi.get("gorsel_url"):
+        okunan = gorsel.coz({"tip": "ig", "url": bilgi["gorsel_url"]})
+    if okunan:
+        return okunan
+    caption = (bilgi.get("caption") or "").strip()
+    return caption[:200] or None
+
+
 def isle(yorum: GelenYorum) -> None:
     """Bir GelenYorum'u değerlendir: tetik + throttle geçerse private reply gönderir."""
     if not tetikleyici_mi(yorum.metin):
@@ -110,8 +128,13 @@ def isle(yorum: GelenYorum) -> None:
     from bot.kayit import kaydet, ozet_giden
     from bot.router import yanit_uret
 
-    cevap = yanit_uret(yorum.metin, P=ig_presenter,
-                       platform="instagram", kullanici=yorum.yorumcu_id)
+    # Gönderinin ürün bağlamını yorumla birleştir ("Massimo Köşe Takımı" + "fiyat").
+    baglam = _gonderi_baglami(yorum.media_id)
+    metin = f"{baglam} {yorum.metin}".strip() if baglam else yorum.metin
+    # gecmissiz=True: yorum, o gönderi hakkında YENİ bir niyet — müşterinin eski DM
+    # geçmişi ürünü ele geçirmemeli (Toscana gönderisine Lea cevabı bugu bundandı).
+    cevap = yanit_uret(metin, P=ig_presenter, platform="instagram",
+                       kullanici=yorum.yorumcu_id, gecmissiz=True)
     mesajlar = [cevap] if isinstance(cevap, dict) else cevap
 
     ilk_basarili = False
@@ -130,7 +153,9 @@ def isle(yorum: GelenYorum) -> None:
                f"{_isaret(yorum.media_id)} " + ozet_giden(mesaj))
 
     if ilk_basarili:
-        kaydet("instagram", yorum.yorumcu_id, "gelen", f"[yorum] {yorum.metin}")
+        # Panelde botun ne anladığı görünsün: çözülen ürün bağlamıyla birlikte
+        # ("[yorum] Massimo Köşe Takımı fiyat"); bağlam yoksa ham yorum.
+        kaydet("instagram", yorum.yorumcu_id, "gelen", f"[yorum] {metin}")
         try:
             from bot import kisi
             kisi.guncelle_ig(yorum.yorumcu_id)   # artık mesaj alıcısı sayılır, profil çekilebilir
