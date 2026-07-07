@@ -24,9 +24,12 @@ log = logging.getLogger("bot")
 
 # Son webhook hatası — Render loguna erişim olmadan /saglik'tan teşhis için.
 WEBHOOK_SON_HATA: str | None = None
-# Son webhook POST'unun HAM gövdesi (ayrıştırma başarısız/olay 0 çıksa bile).
-# Geçici teşhis amaçlı — customer içeriği taşıyabileceği için VERIFY_TOKEN ile korunur.
-WEBHOOK_SON_GOVDE: str | None = None
+# Son N webhook POST'unun HAM gövdesi (ayrıştırma başarısız/olay 0 çıksa bile).
+# Tek slot WA durum bildirimleriyle (sık gelir) hemen ezilebiliyordu — halka
+# tampon (ring buffer) son birkaç isteği tutar. Geçici teşhis amaçlı —
+# customer içeriği taşıyabileceği için VERIFY_TOKEN ile korunur.
+WEBHOOK_SON_GOVDELER: list[str] = []
+_WEBHOOK_GOVDE_MAKS = 8
 
 
 @require_http_methods(["GET"])
@@ -43,7 +46,8 @@ def saglik(request):
         "webhook_son_hata": WEBHOOK_SON_HATA,
         # İçerik yok (KVKK) — sadece "en son ne zaman bir webhook POST'u geldi" saati.
         # Uzun süre güncellenmiyorsa Meta bize hiç istek atmıyor demektir (kod değil, ayar sorunu).
-        "webhook_son_govde_saat": (WEBHOOK_SON_GOVDE or "").split(" ", 1)[0] or None,
+        "webhook_son_govde_saat": (WEBHOOK_SON_GOVDELER[-1].split(" ", 1)[0]
+                                   if WEBHOOK_SON_GOVDELER else None),
         "ig_token": _ig_token_bilgi(),
     })
 
@@ -150,12 +154,14 @@ def webhook(request):
     # ── POST: gelen olayları işle ──
     # Meta 200 dışında her yanıtı "başarısız" sayıp olayı TEKRAR gönderir; bu yüzden
     # NE OLURSA OLSUN 200 döneriz (senkron yolda beklenmedik hata bile olsa).
-    global WEBHOOK_SON_HATA, WEBHOOK_SON_GOVDE
+    global WEBHOOK_SON_HATA
     from datetime import datetime
     raw = request.body or b"{}"
     # Ayrıştırma başarısız olsa/olay 0 çıksa bile HAM veriyi sakla — Meta'nın
     # gerçekten ne gönderdiğini görmeden ayrıştırma kodunu doğru yazamayız.
-    WEBHOOK_SON_GOVDE = f"{datetime.now():%H:%M:%S} " + raw.decode("utf-8", errors="replace")[:4000]
+    WEBHOOK_SON_GOVDELER.append(
+        f"{datetime.now():%H:%M:%S} " + raw.decode("utf-8", errors="replace")[:2000])
+    del WEBHOOK_SON_GOVDELER[:-_WEBHOOK_GOVDE_MAKS]
     try:
         govde = json.loads(raw)
         # AI ajan cevabı 5-25 sn sürebilir → işleme arka plan thread'inde, 200 hemen döner.
@@ -170,14 +176,20 @@ def webhook(request):
 
 @require_http_methods(["GET"])
 def webhook_ham(request):
-    """Son webhook POST'unun ham gövdesi — geçici teşhis ucu.
+    """Son birkaç webhook POST'unun ham gövdesi — geçici teşhis ucu.
 
     Müşteri mesaj içeriği taşıyabileceği için VERIFY_TOKEN ile korunur
-    (?token=... aynı gizli kelime, Meta'ya zaten veriyoruz)."""
+    (?token=... aynı gizli kelime, Meta'ya zaten veriyoruz).
+    ?platform=instagram|whatsapp ile filtrelenebilir (object alanına bakar)."""
     if request.GET.get("token") != settings.VERIFY_TOKEN:
         return HttpResponse(status=403)
-    return HttpResponse(WEBHOOK_SON_GOVDE or "(henüz webhook POST'u gelmedi)",
-                        content_type="text/plain; charset=utf-8")
+    govdeler = WEBHOOK_SON_GOVDELER
+    platform = request.GET.get("platform")
+    if platform:
+        anahtar = "instagram" if platform == "instagram" else "whatsapp"
+        govdeler = [g for g in govdeler if anahtar in g]
+    metin = "\n\n---\n\n".join(reversed(govdeler)) or "(henüz webhook POST'u gelmedi)"
+    return HttpResponse(metin, content_type="text/plain; charset=utf-8")
 
 
 def _olaylari_isle(govde: dict) -> None:
