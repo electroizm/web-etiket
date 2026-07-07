@@ -44,6 +44,7 @@ def saglik(request):
         "ajan_son_hata": _ajan_son_hata(),
         "ses_son_hata": _ses_son_hata(),
         "webhook_son_hata": WEBHOOK_SON_HATA,
+        "ig_gonderim_son_hata": meta_client.IG_SON_GONDERIM_HATA,
         # İçerik yok (KVKK) — sadece "en son ne zaman bir webhook POST'u geldi" saati.
         # Uzun süre güncellenmiyorsa Meta bize hiç istek atmıyor demektir (kod değil, ayar sorunu).
         "webhook_son_govde_saat": (WEBHOOK_SON_GOVDELER[-1].split(" ", 1)[0]

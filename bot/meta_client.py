@@ -16,6 +16,11 @@ from django.conf import settings
 
 log = logging.getLogger("bot.meta")
 
+# Son IG gönderim hatası — Render loguna erişim olmadan /saglik'tan teşhis için.
+# (2026-07-07 arızası: bot cevap üretiyor + kaydediyordu ama müşteriye ulaşmıyordu;
+#  hata yalnız log.error'daydı, göremiyorduk.)
+IG_SON_GONDERIM_HATA: str | None = None
+
 # Canlı IG token önbelleği (yenileme app_ayarlari'na yazar; her gönderimde DB'ye
 # gitmemek için kısa TTL). Eski token'ı ~5 dk tutmak zararsız — 60 gün geçerli.
 _ig_token_cache: tuple[float, str] | None = None
@@ -60,6 +65,8 @@ def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
         log.info("[DRY_RUN] IG → %s: %s", alici_id, json.dumps(mesaj, ensure_ascii=False))
         return True
 
+    global IG_SON_GONDERIM_HATA
+    from datetime import datetime
     url = (f"https://graph.instagram.com/{settings.GRAPH_API_VERSION}"
            f"/{settings.IG_ID}/messages")
     try:
@@ -68,8 +75,10 @@ def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
                           json=govde, timeout=10)
         if r.status_code == 200:
             return True
+        IG_SON_GONDERIM_HATA = f"{datetime.now():%H:%M:%S} HTTP {r.status_code}: {r.text[:300]}"
         log.error("IG gönderim hatası %s: %s", r.status_code, r.text)
     except requests.RequestException as e:
+        IG_SON_GONDERIM_HATA = f"{datetime.now():%H:%M:%S} {type(e).__name__}: {str(e)[:200]}"
         log.error("IG gönderim istisnası: %s", e)
     return False
 
