@@ -48,13 +48,13 @@ def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
 
 
 def _tam_adlar_eki(metin: str, secenekler: list[tuple[str, str]]) -> str:
-    """Quick reply başlığı 20 karakterde kırpılır (platform sınırı, açıklama alanı yok).
-    Kırpılan adların tamamını mesaj gövdesine ekle — hiçbir ad kaybolmasın."""
-    uzunlar = [(b or "").strip() for b, _ in secenekler
-               if len((b or "").strip()) > QR_BASLIK_LIMIT]
-    if not uzunlar:
-        return metin
-    return metin + "\n\nTam adlar:\n" + "\n".join(f"• {a}" for a in uzunlar)
+    """Quick reply başlığı 20 karakterde kırpılır (platform sınırı).
+
+    Eskiden kırpılan adların tam hali "Tam adlar:" bölümüyle gövdeye eklenirdi;
+    İsmail kaldırttı (2026-07-07): mesajı kalabalıklaştırıyor, kırpılmış buton
+    başlığı zaten yeterince anlaşılır. Çağrı yerleri korunarak no-op yapıldı —
+    fikir değişirse eski davranış tek fonksiyonda geri gelir."""
+    return metin
 
 
 def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:

@@ -43,6 +43,7 @@ def saglik(request):
         "ajan": settings.AJAN_MODEL if settings.AJAN_AKTIF else "kapalı",
         "ajan_son_hata": _ajan_son_hata(),
         "ses_son_hata": _ses_son_hata(),
+        "gorsel_son_hata": _gorsel_son_hata(),
         "webhook_son_hata": WEBHOOK_SON_HATA,
         "ig_gonderim_son_hata": meta_client.IG_SON_GONDERIM_HATA,
         # İçerik yok (KVKK) — sadece "en son ne zaman bir webhook POST'u geldi" saati.
@@ -56,6 +57,11 @@ def saglik(request):
 def _ajan_son_hata():
     from bot import ajan
     return ajan.SON_HATA
+
+
+def _gorsel_son_hata():
+    from bot import gorsel
+    return gorsel.SON_HATA
 
 
 def _ig_token_bilgi():
@@ -223,6 +229,15 @@ def _olaylari_isle(govde: dict) -> None:
             if olay.ses and not olay.metin and not olay.secim:
                 from bot import ses as ses_modul
                 olay.metin = ses_modul.coz(olay.ses)
+            # 🖼️ Görsel / story yanıtı → görseldeki metin (ürün adı) okunur,
+            # müşterinin yazdığıyla birleştirilir: story'de "LUMERIS Köşe Takımı"
+            # + müşteri "fiyat" → "LUMERIS Köşe Takımı fiyat" → normal akış.
+            if olay.gorsel and not olay.secim:
+                from bot import gorsel as gorsel_modul
+                okunan = gorsel_modul.coz(olay.gorsel)
+                if okunan:
+                    olay.metin = (f"{okunan} {olay.metin}".strip()
+                                  if olay.metin else okunan)
             kaydet(olay.platform, olay.gonderen, "gelen", ozet_gelen(olay))
             # Profil bilgisini güncelle (id yerine isim/foto göstermek için).
             if olay.platform == "whatsapp":
@@ -241,6 +256,16 @@ def _olaylari_isle(govde: dict) -> None:
                           else meta_client.gonder_whatsapp)
                 mesaj = P.metin_mesaji("🎙️ Ses kaydınızı çözemedim, kusura bakmayın. "
                                        "Yazarak sorabilir misiniz?")
+                gonder(olay.gonderen, mesaj)
+                kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
+                continue
+            if olay.gorsel and not olay.metin and not olay.secim:
+                # Görsel okunamadı (metin de yok) → menü yerine dürüst cevap.
+                P = ig_presenter if olay.platform == "instagram" else wa_presenter
+                gonder = (meta_client.gonder_instagram if olay.platform == "instagram"
+                          else meta_client.gonder_whatsapp)
+                mesaj = P.metin_mesaji("🖼️ Görseldeki ürünü tanıyamadım, kusura "
+                                       "bakmayın. Ürünün adını yazar mısınız?")
                 gonder(olay.gonderen, mesaj)
                 kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
                 continue

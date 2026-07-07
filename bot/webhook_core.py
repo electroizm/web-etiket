@@ -69,12 +69,23 @@ def extract_events(govde: dict) -> list[GelenOlay]:
                     continue
                 qr = (msg.get("quick_reply") or {}).get("payload")
                 ses = None
+                gorsel = None
                 for ek in (msg.get("attachments") or []):
-                    if ek.get("type") == "audio" and (ek.get("payload") or {}).get("url"):
-                        ses = {"tip": "ig", "url": ek["payload"]["url"]}
-                        break
+                    url = (ek.get("payload") or {}).get("url")
+                    if not url:
+                        continue
+                    if ek.get("type") == "audio" and ses is None:
+                        ses = {"tip": "ig", "url": url}
+                    elif ek.get("type") == "image" and gorsel is None:
+                        gorsel = {"tip": "ig", "url": url}
+                # Story'ye verilen yanıt: story görselinin CDN URL'i reply_to.story'de
+                # gelir — müşteri "fiyat" yazsa da HANGİ ürün olduğu ancak story
+                # görselinden okunabilir (bot/gorsel.py OCR'lar).
+                story = (msg.get("reply_to") or {}).get("story") or {}
+                if gorsel is None and story.get("url"):
+                    gorsel = {"tip": "ig_story", "url": story["url"]}
                 olaylar.append(GelenOlay("instagram", gonderen, qr, msg.get("text"),
-                                         ses=ses))
+                                         ses=ses, gorsel=gorsel))
 
         # ── WhatsApp Cloud API formatı ──
         for ch in entry.get("changes", []):
@@ -94,11 +105,15 @@ def extract_events(govde: dict) -> list[GelenOlay]:
                     secim = (inter.get("button_reply") or {}).get("id")
                 elif inter.get("type") == "list_reply":
                     secim = (inter.get("list_reply") or {}).get("id")
-                metin = (msg.get("text") or {}).get("body")
                 audio = msg.get("audio") or {}   # sesli mesaj da type="audio" gelir
                 ses = {"tip": "wa", "media_id": audio["id"]} if audio.get("id") else None
+                image = msg.get("image") or {}   # resim mesajı (altyazı taşıyabilir)
+                gorsel = {"tip": "wa", "media_id": image["id"]} if image.get("id") else None
+                # Resimle birlikte yazılan altyazı (caption) müşteri metni sayılır.
+                metin = (msg.get("text") or {}).get("body") or image.get("caption")
                 olaylar.append(GelenOlay("whatsapp", gonderen, secim, metin,
-                                         gonderen_ad=adlar.get(gonderen), ses=ses))
+                                         gonderen_ad=adlar.get(gonderen), ses=ses,
+                                         gorsel=gorsel))
     return olaylar
 
 

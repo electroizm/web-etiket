@@ -38,6 +38,9 @@ def ozet_gelen(olay) -> str:
     if getattr(olay, "ses", None):
         # Sesli mesaj: metin = transkript (views doldurur); çözülmediyse işaret kalsın.
         return f"[ses] {metin}" if metin else "[ses — çözülemedi]"
+    if getattr(olay, "gorsel", None):
+        # Görsel/story: metin = OCR + müşteri metni (views birleştirir).
+        return f"[görsel] {metin}" if metin else "[görsel — çözülemedi]"
     return metin or "[sohbeti başlattı]"
 
 

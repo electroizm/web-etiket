@@ -326,10 +326,12 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
         metin = (r.metin or "").strip()
         if not metin or metin.startswith("[buton]") or "[menü]" in metin \
                 or metin.startswith("[kart") or metin.startswith("[sohbeti") \
-                or metin.startswith("[ses —"):
+                or metin.startswith("[ses —") or metin.startswith("[görsel —"):
             continue
         if metin.startswith("[ses] "):     # transkript: işareti at, içeriği kullan
             metin = metin[len("[ses] "):]
+        if metin.startswith("[görsel] "):  # OCR sonucu: işareti at, içeriği kullan
+            metin = metin[len("[görsel] "):]
         rol = "user" if r.yon == "gelen" else "assistant"
         mesajlar.append({"role": rol, "content": metin[:400]})
     return mesajlar[-settings.AJAN_GECMIS_LIMIT:]
