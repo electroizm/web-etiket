@@ -97,6 +97,43 @@ def extract_events(govde: dict) -> list[GelenOlay]:
     return olaylar
 
 
+@dataclass
+class GelenYorum:
+    """Bir Instagram gönderisine yapılan yorum (yorumdan-DM tetikleyicisi)."""
+    yorumcu_id: str      # yorumu yapan kullanıcının IGSID (from.id)
+    comment_id: str      # private reply hedefi (yorum başına yalnızca bir kez kullanılır)
+    metin: str
+    yorumcu_ad: str | None = None
+
+
+def extract_yorumlar(govde: dict) -> list[GelenYorum]:
+    """Instagram yorum webhook'undan (comment-to-DM tetikleyicisi) olayları çıkar.
+
+    Format: entry[].changes[] with field == "comments":
+      value: {from: {id, username}, id: <comment_id>, text, media: {...}}
+    Bot hiçbir zaman genel (public) yorum ATMAZ — yalnız private reply — bu
+    yüzden botun kendi cevabının webhook'tan geri gelip döngü yaratma riski yok.
+    """
+    yorumlar: list[GelenYorum] = []
+    for entry in govde.get("entry", []):
+        for ch in entry.get("changes", []):
+            if ch.get("field") != "comments":
+                continue
+            value = ch.get("value") or {}
+            metin = (value.get("text") or "").strip()
+            yorumcu = (value.get("from") or {}).get("id", "")
+            comment_id = value.get("id", "")
+            if not (metin and yorumcu and comment_id):
+                continue
+            yorumlar.append(GelenYorum(
+                yorumcu_id=yorumcu,
+                comment_id=comment_id,
+                metin=metin,
+                yorumcu_ad=(value.get("from") or {}).get("username"),
+            ))
+    return yorumlar
+
+
 def parse_secim(tetik: str) -> tuple[str, str | None]:
     """'KAT:48' → ('KAT', '48'); 'START' → ('START', None)."""
     if ":" in tetik:

@@ -74,6 +74,34 @@ def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
     return False
 
 
+def gonder_instagram_private_reply(comment_id: str, mesaj: dict) -> dict | None:
+    """Bir yoruma ÖZEL (private) DM cevabı gönder (yorumdan-DM tetikleyicisi).
+
+    Meta kısıtı: yorum başına yalnızca BİR kez kullanılabilir, yorumdan sonraki
+    7 gün içinde. Başarılı yanıt {"recipient_id": <igsid>, ...} döner — o andan
+    sonra kişiyle normal gonder_instagram(igsid, ...) ile konuşulur.
+    """
+    govde = {"recipient": {"comment_id": comment_id}, "message": mesaj}
+
+    if settings.BOT_DRY_RUN_IG:
+        log.info("[DRY_RUN] IG private-reply → yorum %s: %s", comment_id,
+                 json.dumps(mesaj, ensure_ascii=False))
+        return {"recipient_id": "DRY_RUN"}
+
+    url = (f"https://graph.instagram.com/{settings.GRAPH_API_VERSION}"
+           f"/{settings.IG_ID}/messages")
+    try:
+        r = requests.post(url,
+                          headers={"Authorization": f"Bearer {aktif_ig_token()}"},
+                          json=govde, timeout=10)
+        if r.status_code == 200:
+            return r.json()
+        log.error("IG private-reply hatası %s: %s", r.status_code, r.text)
+    except requests.RequestException as e:
+        log.error("IG private-reply istisnası: %s", e)
+    return None
+
+
 def profil_instagram(igsid: str) -> dict | None:
     """Bize mesaj atan IG kullanıcısının profilini çek (ad, kullanıcı adı, foto).
 

@@ -18,7 +18,7 @@ from django.views.decorators.http import require_http_methods
 from bot import ig_presenter, kisi, meta_client, wa_presenter
 from bot.kayit import kaydet, ozet_gelen, ozet_giden
 from bot.router import yanit_uret
-from bot.webhook_core import extract_events, verify_challenge
+from bot.webhook_core import extract_events, extract_yorumlar, verify_challenge
 
 log = logging.getLogger("bot")
 
@@ -163,11 +163,23 @@ def _olaylari_isle(govde: dict) -> None:
     global WEBHOOK_SON_HATA
     try:
         olaylar = extract_events(govde)
+        yorumlar = extract_yorumlar(govde)
     except Exception as e:
         from datetime import datetime
         WEBHOOK_SON_HATA = f"{datetime.now():%H:%M:%S} extract_events {type(e).__name__}: {e}"
         log.exception("webhook: extract_events hatası")
         return
+
+    # 🏷️ Yorumdan-DM: tetikleyici kelime içeren yorumlara private reply.
+    for y in yorumlar:
+        try:
+            from bot import yorum as yorum_modul
+            yorum_modul.isle(y)
+        except Exception as e:
+            from datetime import datetime
+            WEBHOOK_SON_HATA = f"{datetime.now():%H:%M:%S} yorum işleme {type(e).__name__}: {e}"
+            log.exception("yorum işlenemedi: %s", y)
+
     for olay in olaylar:
         try:
             # 🎙️ Sesli mesaj → transkript (Gemini). Başarılıysa serbest metin gibi
