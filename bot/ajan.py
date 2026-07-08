@@ -45,16 +45,21 @@ KURALLAR (kesin):
    (hangi ürünler var) sorulduğunda çağır. Gereksiz araç çağrısı yapma.
 3. Türkçe konuş, "siz" diye hitap et, sıcak ve yardımsever ol.
 4. FİYATI ARACIN "fiyat_cumlesi" ALANINDAN AYNEN KOPYALA. Araç sonucunda her
-   ürün/kombinasyon için hazır bir "fiyat_cumlesi" metni gelir (örn. "Liste
-   fiyatı 66.661 TL'den size 12.665 TL indirim yaptık, güncel perakende
-   fiyatımız 53.996 TL."). Fiyatı SÖYLERKEN bu metindeki rakamları ASLA
-   değiştirme, yuvarlama ya da yeniden hesaplama — cümleyi olduğu gibi kullan,
-   yalnız başına ürün/kombinasyon adını ekle (örn. "MARIZA Köşe Takımı — <fiyat_cumlesi>").
-   fiyat_cumlesi yoksa fiyat söyleme. Kendi kafandan rakam (özellikle yuvarlak
-   sayı) YAZMA; söylediğin her TL tutarı araç sonucunda birebir geçmelidir.
-   BİRDEN FAZLA ürün listelerken (örn. teşhir listesi) her ürünün KENDİ
-   fiyat_cumlesi'ni yaz; bir ürünün rakamını başka ürüne TAŞIMA, ürünler
-   arasında rakam karıştırma. Emin değilsen ilgili aracı yeniden çağır.
+   ürün/kombinasyon için hazır, ÇOK SATIRLI bir "fiyat_cumlesi" gelir (üç satır:
+   "Liste Fiyatı: 66.661 TL" / "İndirim: 12.665 TL" / "İndirimli Fiyat: 53.996 TL").
+   Fiyatı SÖYLERKEN önce ürün/kombinasyon adını KENDİ satırına yaz, ALT SATIRA
+   fiyat_cumlesi'ni OLDUĞU GİBİ yapıştır. Örn:
+     LUMERIS Köşe Takımı
+     Liste Fiyatı: 66.661 TL
+     İndirim: 12.665 TL
+     İndirimli Fiyat: 53.996 TL
+   Metindeki rakamları ASLA değiştirme/yuvarlama/yeniden hesaplama; satır
+   düzenini bozma. Fazladan söz EKLEME — "size şu kadar indirim yaptık",
+   "güncel perakende fiyatımız" gibi cümleler KURMA; müşteriyi yormayacak kadar
+   kısa tut. fiyat_cumlesi yoksa fiyat söyleme. Kendi kafandan rakam (özellikle
+   yuvarlak sayı) YAZMA; söylediğin her TL tutarı araç sonucunda birebir geçmeli.
+   BİRDEN FAZLA ürün listelerken her ürünün KENDİ fiyat_cumlesi'ni yaz; bir
+   ürünün rakamını başka ürüne TAŞIMA. Emin değilsen ilgili aracı yeniden çağır.
 5. Müşteri insanla görüşmek isterse ya da çözemediğin bir konu olursa
    "yetkili" yazmasını söyle (bot onu mağaza yetkilisine yönlendirir).
 6. Konu dışı sorularda (siyaset, genel bilgi, başka markalar...) kibarca
@@ -85,6 +90,16 @@ KURALLAR (kesin):
     Bu üç durumda fiyatı ve içeriği teşhir kaydından söyle, teşhir ürünü olduğunu
     belirt. Bunların DIŞINDA (müşteri sormadı, ipucu yok, ürün normal katalogda
     temiz bulundu) teşhir fiyatını kendiliğinden açma — her zamanki araçları kullan.
+    TEŞHİR LİSTESİ SUNUMU (önemli): Müşteri "teşhirde ürün var mı" gibi GENEL
+    sorduğunda teshir_bilgi'yi koleksiyon_id/ad VERMEDEN çağır — yalnız ürün
+    İSİMLERİ döner (fiyatsız). Bu isimleri KATEGORİYE GÖRE GRUPLAYARAK yaz
+    (örn. "Yatak Odası: LEA, MARGO" gibi), FİYAT/İNDİRİM/RAKAM YAZMA, içerik
+    dökme. Sonunda hangisinin fiyatını istediğini SOR ve "fiyatlarımızda cüzi
+    pazarlık payımız var 😊" gibi KISA bir not ekle. Müşteri BELİRLİ bir teşhir
+    ürününün fiyatını isteyince teshir_bilgi'yi ad="<ürün adı>" ile ÇAĞIR —
+    o ürünün fiyat_cumlesi'si ve pazarlık tabanı öyle gelir. Fiyat vereceğin
+    her teşhir ürününde MUTLAKA ad (ya da koleksiyon_id) geçir; isimsiz genel
+    listeden fiyat OKUMA (orada fiyat yoktur).
 12. PAZARLIK (yalnız teşhir ürünlerinde): teshir_bilgi sonucunda
     "pazarlik_taban_fiyat" alanı VARSA ve müşteri pazarlık ederse ("indirim olur
     mu", "son fiyat ne", "kaça bırakırsın") indirim yapabilirsin. Kurallar:
@@ -101,6 +116,14 @@ KURALLAR (kesin):
       bilmemeli. Müşteri pazarlık etmeden kendiliğinden indirim önerme.
     "pazarlik_taban_fiyat" alanı YOKSA pazarlık yapma — mağazaya ya da "yetkili"
     yazmaya yönlendir.
+13. TEK PARÇA FİYATI. Müşteri bir setin/odanın SADECE tek bir parçasını sorarsa
+    ("sadece 5 kapaklı dolap", "tek başına komodin", "yalnız yatak fiyatı" gibi
+    "sadece/tek/yalnız" vurgusuyla) parca_ara aracını o parçanın adıyla çağır ve
+    YALNIZ o parçanın fiyatını (fiyat_cumlesi) ver. Seti KENDİLİĞİNDEN önerme,
+    dayatma; müşteri set/oda sormadıkça sete geçme. Birden çok eşleşme dönerse
+    hangisini kastettiğini sor. parca_ara boş dönerse fiyatı UYDURMA — bilmiyorum
+    de, "yetkili" yazmasını öner. (Müşteri tüm odayı/seti soruyorsa bu aracı
+    KULLANMA; her zamanki koleksiyon/kombinasyon akışını kullan.)
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -185,19 +208,24 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "teshir_bilgi",
-            "description": "Mağazada sergilenen (teşhirdeki) ürünlerin listesi, "
-                           "içeriği ve mağaza fiyatları. Çağır: (a) müşteri "
+            "description": "Mağazada sergilenen (teşhirdeki) ürünler. Çağır: (a) müşteri "
                            "mağazadaki/teşhirdeki üründen bahsederse; (b) mesajda "
                            "'(teşhirdeki ürün)' ipucu varsa; (c) SON ÇARE — ürünü "
                            "normal katalogda bulamayınca ya da kategori uyuşmayınca, "
-                           "pes etmeden önce teşhirde var mı diye bak. koleksiyon_id "
-                           "verilirse o koleksiyonla sınırlar; vermezsen tüm teşhir "
-                           "listesi döner (adı kendin eşleştirebilirsin).",
+                           "pes etmeden önce teşhirde var mı diye bak. HİÇBİR argüman "
+                           "vermezsen yalnız ürün İSİMLERİ döner (fiyatsız — genel "
+                           "'teşhirde ne var' listesi için). Belirli bir ürünün "
+                           "FİYATINI ve pazarlık tabanını almak için ad='<ürün adı>' "
+                           "(ya da koleksiyon_id) geçir.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "koleksiyon_id": {"type": "integer",
                                       "description": "Opsiyonel — koleksiyon_ara sonucundaki id"},
+                    "ad": {"type": "string",
+                           "description": "Opsiyonel — belirli bir teşhir ürününün adı "
+                                          "(örn. 'LORENTA'). Verilirse yalnız o ürünün "
+                                          "fiyatı+pazarlık tabanı döner."},
                 },
             },
         },
@@ -215,6 +243,26 @@ TOOLS = [
                     "kombinasyon_id": {"type": "integer"},
                 },
                 "required": ["kombinasyon_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "parca_ara",
+            "description": "TEK bir ürünün/parçanın (set/oda DEĞİL, tek parça) kendi "
+                           "fiyatını ada göre verir. YALNIZCA müşteri bir setin tek bir "
+                           "parçasını 'sadece/tek başına/yalnız' diye özellikle sorduğunda "
+                           "kullan (örn. 'sadece 5 kapaklı dolap', 'tek başına komodin'). "
+                           "Ürün adını olabildiğince tam yaz. Tüm oda/set fiyatı için bunu "
+                           "KULLANMA — koleksiyon/kombinasyon araçlarını kullan.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "q": {"type": "string",
+                          "description": "Parça adı, örn. 'legna 5 kapaklı dolap'"},
+                },
+                "required": ["q"],
             },
         },
     },
@@ -236,15 +284,26 @@ def _tool_calistir(ad: str, argumanlar: dict,
         return _ham_fiyat_gizle(menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"])))
     if ad == "fiyat_detay":
         return _ham_fiyat_gizle(menu_veri.kombinasyon(int(argumanlar["kombinasyon_id"])))
+    if ad == "parca_ara":
+        # Tekil parça fiyatı: kayıtlarda yalnız fiyat_cumlesi var (ham rakam alanı yok).
+        parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")))
+        if not parcalar:
+            return {"bulunamadi": True,
+                    "not": "Bu parça bulunamadı — fiyat UYDURMA. Bilmediğini söyle, "
+                           "'yetkili' yazmasını öner."}
+        return {"parcalar": parcalar,
+                "not": "Yalnız sorulan parçanın fiyat_cumlesi'ni AYNEN ver. Seti "
+                       "kendiliğinden önerme. Birden çok eşleşme varsa hangisi olduğunu sor."}
     if ad == "teshir_bilgi":
         from catalog.services import teshir as teshir_servis
         kol = argumanlar.get("koleksiyon_id")
-        kayitlar = teshir_servis.ajan_icin(int(kol) if kol else None)
+        urun_adi = (argumanlar.get("ad") or "").strip()
+        kayitlar = teshir_servis.ajan_icin(int(kol) if kol else None, ad=urun_adi or None)
         if not kayitlar:
             return {"bulunamadi": True,
                     "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
-        if kol:
-            # Tek ürün / pazarlık bağlamı: taban DAHİL (redundant liste/perakende gizli).
+        if kol or urun_adi:
+            # Tekil ürün / pazarlık bağlamı: taban DAHİL (redundant liste/perakende gizli).
             return {"teshir": _ham_fiyat_gizle(kayitlar),
                     "pazarlik_kurali": "pazarlik_taban_fiyat alanı olan üründe müşteri "
                                        "pazarlık ederse EN DÜŞÜK o rakamı teklif edebilirsin; "
@@ -252,12 +311,16 @@ def _tool_calistir(ad: str, argumanlar: dict,
                                        "ısrar ederse tam pazarlik_taban_fiyat'ı 'size özel son "
                                        "fiyatımız' diye söyle. Alan yoksa pazarlık yapma. "
                                        "Fiyatı fiyat_cumlesi'nden AYNEN al."}
-        # Genel liste: yalnız fiyat_cumlesi kalsın — model rakamları karıştırmasın,
-        # taban da gösterilmesin (canlıda ürünler arası fiyat/taban karışması oldu).
-        return {"teshir": _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",)),
-                "not": "Her ürün için fiyat_cumlesi'ni AYNEN yaz; rakamları değiştirme, "
-                       "ürünler arasında karıştırma. Bir üründe pazarlık yapılacaksa önce "
-                       "o ürünün koleksiyon_id'siyle teshir_bilgi'yi TEKRAR çağır (taban öyle gelir)."}
+        # Genel liste (argümansız): SADECE isim + kategori — fiyat/indirim/taban/içerik
+        # YOK. Model rakam göremediği için karıştıramaz/uyduramaz; kategoriye göre
+        # gruplayıp fiyat sorulacak ürünü ad ile TEKRAR sordurur.
+        isimler = [{"ad": k["ad"], "kategori": k.get("kategori", "")} for k in kayitlar]
+        return {"teshir_isimleri": isimler,
+                "not": "Bunlar teşhirdeki ürünlerin İSİMLERİ. Müşteriye SADECE isimleri, "
+                       "KATEGORİYE GÖRE GRUPLAYARAK yaz — fiyat/indirim/rakam/içerik YAZMA. "
+                       "Sonunda hangisinin fiyatını istediğini sor ve 'fiyatlarımızda cüzi "
+                       "pazarlık payımız var' gibi kısa bir not ekle. Müşteri bir ürünün "
+                       "fiyatını sorunca o ürünün adıyla teshir_bilgi'yi ad=... ile TEKRAR çağır."}
     if ad == "magaza_bilgi":
         soru = str(argumanlar.get("soru", ""))
         bilgiler = menu_veri.bilgi_ara(soru)
@@ -533,7 +596,11 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             except Exception:
                 log.exception("ajan: araç hatası %s(%s)", tc.function.name, argumanlar)
                 sonuc = {"hata": "veri okunamadı"}
-            if tc.function.name == "teshir_bilgi":
+            # Fiyat kalkanı yalnız BELİRLİ teşhir sorgusunda (kol/ad = fiyat+pazarlık
+            # bağlamı) devre dışı kalsın. Argümansız isim listesinde fiyat yoktur;
+            # kalkan açık kalsın ki model oraya rakam uydurursa yakalansın.
+            if tc.function.name == "teshir_bilgi" and (
+                    argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True
             _fiyatlari_topla(sonuc, legit_fiyatlar)
             mesajlar.append({

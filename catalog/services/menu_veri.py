@@ -9,11 +9,13 @@ alan adlarına bağlı). Bulunamayan kayıt için None döner; çağıran nazik 
 """
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from catalog.database import SessionLocal
-from catalog.sa_models import Kategori, Koleksiyon, Kombinasyon, KombinasyonUrun
+from catalog.sa_models import Kategori, Koleksiyon, Kombinasyon, KombinasyonUrun, Urun
 from catalog.services.kombinasyon import hesapla_kombinasyon_toplam, kombinasyon_listele
 
 
@@ -22,21 +24,23 @@ def _tl(n) -> str:
 
 
 def fiyat_cumlesi(liste, perakende) -> str:
-    """Modelin AYNEN kopyalayacağı hazır fiyat cümlesi.
+    """Modelin AYNEN kopyalayacağı hazır, çok satırlı fiyat metni.
 
     Model ayrı ayrı sayı alanlarını cümleye çevirirken rakamları bozabiliyor
     (canlıda görüldü: 66.661 / 53.996 → 70.000 / 70.000). Rakamları tek bir
-    bitişik metin olarak vermek bu transkripsiyon hatasını büyük ölçüde önler.
-    İfade Rule 4 standardıyla aynı: perakende asıl fiyattır, indirim liste
-    üzerinden vurgulanır. Uydurma indirim yok — yalnız gerçek liste>perakende.
+    hazır metin olarak vermek bu transkripsiyon hatasını büyük ölçüde önler.
+    Biçim (İsmail kararı 2026-07-09): kısa, etiketli üç satır; süslü söz yok
+    ("size şu kadar indirim yaptık" DEĞİL). Sıra sabit: Liste → İndirim →
+    İndirimli. Uydurma indirim yok — yalnız gerçek liste>perakende'de indirim satırı.
     """
     if perakende is None:
         return ""
     if liste and liste > perakende:
         fark = round(liste) - round(perakende)
-        return (f"Liste fiyatı {_tl(liste)}'den size {_tl(fark)} indirim yaptık, "
-                f"güncel perakende fiyatımız {_tl(perakende)}.")
-    return f"Perakende fiyatımız {_tl(perakende)}."
+        return (f"Liste Fiyatı: {_tl(liste)}\n"
+                f"İndirim: {_tl(fark)}\n"
+                f"İndirimli Fiyat: {_tl(perakende)}")
+    return f"Fiyatı: {_tl(perakende)}"
 
 
 def _toplam_ozet(kombi) -> dict:
@@ -151,6 +155,49 @@ _TR_DUZLE = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosucgiosu")
 def _duz(s: str) -> str:
     s = (s or "").strip().translate(_TR_DUZLE).lower().translate(_TR_DUZLE)
     return s.replace("̇", "")   # İ.lower() birleşik noktası (U+0307)
+
+
+def urun_ara(q: str) -> list[dict]:
+    """Tek bir ürünün/parçanın (SET DEĞİL, tek SKU) fiyatını ad ile bul.
+
+    Müşteri "sadece 5 kapaklı dolap" gibi TEK parça fiyatı sorduğunda kullanılır;
+    ürünün kendi son_liste/son_perakende fiyatını döner. Kombinasyon toplamı değil.
+
+    Türkçe i/ı sorunu: Postgres lower() 'KAPAKLI'yı 'kapakli'ye çevirir ama
+    kullanıcı 'kapaklı' (dotless ı) yazar → ilike eşleşmez. Bu yüzden SQL'i
+    yalnız ASCII-güvenli token'larla daraltır, kesin çok-kelimeli eşleşmeyi
+    Python'da _duz ile yaparız (bilgi_ara ile aynı sadeleştirme). Fiyatı
+    olmayan ürünler elenir; en fazla 10 sonuç.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    tokens = [t for t in re.split(r"\s+", q) if len(t) >= 2 or t.isdigit()]
+    if not tokens:
+        return []
+    ascii_tokens = [t for t in tokens if t == t.encode("ascii", "ignore").decode()]
+    session = SessionLocal()
+    try:
+        stmt = select(Urun).where(Urun.son_perakende_fiyat.isnot(None))
+        for t in (ascii_tokens or tokens[:1]):
+            stmt = stmt.where(Urun.urun_adi_tam.ilike(f"%{t}%"))
+        rows = session.scalars(stmt.order_by(Urun.urun_adi_tam).limit(80)).all()
+        istek = [_duz(t) for t in tokens]
+        sonuc = []
+        for u in rows:
+            ad_duz = _duz(u.urun_adi_tam)
+            if all(t in ad_duz for t in istek):
+                sonuc.append({
+                    "sku": u.sku,
+                    "ad": u.urun_adi_tam,
+                    "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat, u.son_perakende_fiyat),
+                    "para_birimi": "TL",
+                })
+                if len(sonuc) >= 10:
+                    break
+        return sonuc
+    finally:
+        session.close()
 
 
 def bilgi_ara(soru: str) -> list[dict]:

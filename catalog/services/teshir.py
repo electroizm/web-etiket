@@ -92,13 +92,20 @@ def listele() -> list[dict]:
         session.close()
 
 
-def ajan_icin(koleksiyon_id: int | None = None) -> list[dict]:
+def ajan_icin(koleksiyon_id: int | None = None,
+              ad: str | None = None) -> list[dict]:
     """AI ajanın teshir_bilgi aracı için sade görünüm.
 
     Yalnızca müşteriye söylenebilecek alanlar döner (iç notlar HARİÇ).
     pazarlik_taban_fiyat: müşteri pazarlık ederse ajanın inebileceği EN DÜŞÜK
     fiyat (perakende − pazarlık payı). Payın kendisi ajana verilmez.
+
+    ad verilirse (belirli bir teşhir ürününün fiyatı sorulduğunda) sonuç, adı ya
+    da koleksiyonu bu metni içeren kayıtlarla sınırlanır. Manuel (koleksiyona
+    bağlı olmayan) teşhir kayıtları da böyle bulunabilir — koleksiyon_id yoktur.
+    Eşleşme Türkçe-duyarsız (_duz) ve çok-kelimelidir ("legna 5 kapaklı" gibi).
     """
+    from catalog.services import menu_veri
     session = SessionLocal()
     try:
         sorgu = select(Teshir)
@@ -117,13 +124,19 @@ def ajan_icin(koleksiyon_id: int | None = None) -> list[dict]:
                 "perakende_fiyat": d["perakende_fiyat"],
                 "para_birimi": "TL",
             }
-            from catalog.services import menu_veri
             cumle = menu_veri.fiyat_cumlesi(d["liste_fiyat"], d["perakende_fiyat"])
             if cumle:
                 kayit["fiyat_cumlesi"] = cumle
             if d["pazarlik_taban"]:
                 kayit["pazarlik_taban_fiyat"] = d["pazarlik_taban"]
             sonuc.append(kayit)
+        if ad and ad.strip():
+            istek = [menu_veri._duz(t) for t in ad.split() if t.strip()]
+            if istek:
+                sonuc = [
+                    k for k in sonuc
+                    if all(t in menu_veri._duz(f"{k['ad']} {k['koleksiyon']}") for t in istek)
+                ]
         return sonuc
     finally:
         session.close()
