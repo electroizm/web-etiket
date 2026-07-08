@@ -131,12 +131,26 @@ def ajan_icin(koleksiyon_id: int | None = None,
                 kayit["pazarlik_taban_fiyat"] = d["pazarlik_taban"]
             sonuc.append(kayit)
         if ad and ad.strip():
-            istek = [menu_veri._duz(t) for t in ad.split() if t.strip()]
+            istek = [t for t in (menu_veri._duz(x) for x in ad.split()) if t]
             if istek:
-                sonuc = [
-                    k for k in sonuc
-                    if all(t in menu_veri._duz(f"{k['ad']} {k['koleksiyon']}") for t in istek)
-                ]
+                istek_kume = set(istek)
+                secilen = []
+                for k in sonuc:
+                    ad_alani = menu_veri._duz(f"{k['ad']} {k['koleksiyon']}")
+                    # (a) İleri: müşterinin her kelimesi kayıt adında geçiyor
+                    #     (kısa/tam sorgu: "melori", "melori koltuk").
+                    ileri = all(t in ad_alani for t in istek)
+                    # (b) Geri: kaydın KENDİ adı(baslik) müşteri cümlesinde geçiyor
+                    #     — müşteri/story fazladan kelime eklediğinde ("Melori Koltuk
+                    #     Takımı" ama baslik yalnız "MELORI"). Jenerik/kısa token
+                    #     kaçağını önlemek için ≥3 harfli en az bir ad token'ı şart.
+                    ad_tokenlari = [t for t in menu_veri._duz(k["ad"]).split() if t]
+                    geri = (ad_tokenlari
+                            and all(t in istek_kume for t in ad_tokenlari)
+                            and any(len(t) >= 3 for t in ad_tokenlari))
+                    if ileri or geri:
+                        secilen.append(k)
+                sonuc = secilen
         return sonuc
     finally:
         session.close()
