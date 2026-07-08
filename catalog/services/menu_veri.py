@@ -17,6 +17,28 @@ from catalog.sa_models import Kategori, Koleksiyon, Kombinasyon, KombinasyonUrun
 from catalog.services.kombinasyon import hesapla_kombinasyon_toplam, kombinasyon_listele
 
 
+def _tl(n) -> str:
+    return f"{round(n):,}".replace(",", ".") + " TL"
+
+
+def fiyat_cumlesi(liste, perakende) -> str:
+    """Modelin AYNEN kopyalayacağı hazır fiyat cümlesi.
+
+    Model ayrı ayrı sayı alanlarını cümleye çevirirken rakamları bozabiliyor
+    (canlıda görüldü: 66.661 / 53.996 → 70.000 / 70.000). Rakamları tek bir
+    bitişik metin olarak vermek bu transkripsiyon hatasını büyük ölçüde önler.
+    İfade Rule 4 standardıyla aynı: perakende asıl fiyattır, indirim liste
+    üzerinden vurgulanır. Uydurma indirim yok — yalnız gerçek liste>perakende.
+    """
+    if perakende is None:
+        return ""
+    if liste and liste > perakende:
+        fark = round(liste) - round(perakende)
+        return (f"Liste fiyatı {_tl(liste)}'den size {_tl(fark)} indirim yaptık, "
+                f"güncel perakende fiyatımız {_tl(perakende)}.")
+    return f"Perakende fiyatımız {_tl(perakende)}."
+
+
 def _toplam_ozet(kombi) -> dict:
     t = hesapla_kombinasyon_toplam(kombi)
     return {
@@ -25,6 +47,7 @@ def _toplam_ozet(kombi) -> dict:
         "toplam_liste": t["toplam_liste"],
         "toplam_perakende": t["toplam_perakende"],
         "indirim_yuzde": t["indirim_yuzde"],
+        "fiyat_cumlesi": fiyat_cumlesi(t["toplam_liste"], t["toplam_perakende"]),
     }
 
 

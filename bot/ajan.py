@@ -44,14 +44,14 @@ KURALLAR (kesin):
    fiyat sorusu için o yeterli; fiyat_detay'ı yalnızca TEK bir kombinasyonun içeriği
    (hangi ürünler var) sorulduğunda çağır. Gereksiz araç çağrısı yapma.
 3. Türkçe konuş, "siz" diye hitap et, sıcak ve yardımsever ol.
-4. Fiyat verirken ürün/kombinasyon adını da yaz (örn. "MARIZA Köşe Takımı: 85.000 TL").
-   Söylediğin fiyat HER ZAMAN toplam_perakende (asıl satış fiyatımız) olmalı —
-   bunu ASLA "liste fiyatı" diye sunma. Araç sonucunda toplam_liste VE
-   indirim_yuzde de varsa (gerçek indirim var demektir): önce liste fiyatını
-   belirt, sonra "size X TL indirim yaptık" cümlesiyle vurgula — örn. "Liste
-   fiyatı 75.000 TL'den size 8.339 TL indirim yaptık, fiyatımız 66.661 TL."
-   indirim_yuzde YOKSA liste fiyatından hiç bahsetme, sadece perakende fiyatı
-   ver — indirim UYDURMA.
+4. FİYATI ARACIN "fiyat_cumlesi" ALANINDAN AYNEN KOPYALA. Araç sonucunda her
+   ürün/kombinasyon için hazır bir "fiyat_cumlesi" metni gelir (örn. "Liste
+   fiyatı 66.661 TL'den size 12.665 TL indirim yaptık, güncel perakende
+   fiyatımız 53.996 TL."). Fiyatı SÖYLERKEN bu metindeki rakamları ASLA
+   değiştirme, yuvarlama ya da yeniden hesaplama — cümleyi olduğu gibi kullan,
+   yalnız başına ürün/kombinasyon adını ekle (örn. "MARIZA Köşe Takımı — <fiyat_cumlesi>").
+   fiyat_cumlesi yoksa fiyat söyleme. Kendi kafandan rakam (özellikle yuvarlak
+   sayı) YAZMA; söylediğin her TL tutarı araç sonucunda birebir geçmelidir.
 5. Müşteri insanla görüşmek isterse ya da çözemediğin bir konu olursa
    "yetkili" yazmasını söyle (bot onu mağaza yetkilisine yönlendirir).
 6. Konu dışı sorularda (siyaset, genel bilgi, başka markalar...) kibarca
@@ -266,17 +266,18 @@ _PAZARLIK_IPUCLARI = ("son fiyat", "özel fiyat", "indirim", "pazarlık", "pazar
 _TL_KALIBI = re.compile(r"\b(\d{1,3}(?:[.\s]\d{3})+|\d{4,6})\s*TL\b", re.IGNORECASE)
 
 
-def _pazarlik_kalkani(cevap: str, mesajlar: list[dict]) -> str:
+def _pazarlik_kalkani(cevap: str, teshir_baglami: bool) -> str:
     """Teşhir pazarlığı bağlamında taban altı fiyat teklifini tabana çek.
 
-    Yalnız konuşmada teşhir geçiyorsa VE cevap pazarlık dili içeriyorsa devreye
-    girer; normal fiyat cevaplarına dokunmaz. Taban altı ama tabanın %60'ından
-    büyük TL tutarları (fiyat teklifi görünümlü) ilgili tabana yükseltilir —
-    "5.000 TL indirim" gibi küçük tutarlar etkilenmez.
+    YALNIZ bu turda teshir_bilgi aracı çağrıldıysa (gerçek pazarlık bağlamı)
+    devreye girer. ÖNEMLİ: bağlam tespiti için mesaj metnini TARAMAZ — sistem
+    promptu "TEŞHİR" kelimesini içerdiği için o yöntem normal katalog fiyat
+    cevaplarında da tetikleniyor ve gerçek fiyatları (66.661/53.996) teşhir
+    tabanına (70.000) yükseltip bozuyordu (canlıda görüldü). Sinyal artık
+    aracın çağrılıp çağrılmadığı. Taban altı ama tabanın %60'ından büyük TL
+    tutarları ilgili tabana yükseltilir; küçük tutarlar ("5.000 TL indirim") etkilenmez.
     """
-    baglam = cevap + " " + " ".join(str(m.get("content", "")) for m in mesajlar)
-    baglam = baglam.lower()
-    if "teşhir" not in baglam and "teshir" not in baglam:
+    if not teshir_baglami:
         return cevap
     if not any(i in cevap.lower() for i in _PAZARLIK_IPUCLARI):
         return cevap
@@ -302,6 +303,47 @@ def _pazarlik_kalkani(cevap: str, mesajlar: list[dict]) -> str:
         return m.group(0)
 
     return _TL_KALIBI.sub(duzelt, cevap)
+
+
+# ─── Fiyat kalkanı — uydurma fiyat koruması ──────────────────────────────────
+# Model, araçtan gelen gerçek fiyatı cümleye çevirirken rakamı bozabiliyor
+# (canlıda görüldü: 66.661/53.996 → 70.000/70.000). fiyat_cumlesi verbatim
+# kopyalama bunu büyük ölçüde önler; bu kalkan son emniyet: cevaptaki her TL
+# tutarı bu turda araçların döndürdüğü GERÇEK fiyatlardan biri değilse uydurma
+# var demektir → bir kez düzelttir, yine uyduruyorsa menüye düş (yasal risk:
+# müşteriye asla sahte fiyat/indirim gönderme). Teşhir pazarlığında ara fiyat
+# meşru olduğundan bu kalkan devre dışı — orada _pazarlik_kalkani taban korur.
+_FIYAT_KALIBI = re.compile(r"(\d{1,3}(?:[.\s]\d{3})+|\d{4,7})\s*TL", re.IGNORECASE)
+_FIYAT_ANAHTARLARI = ("toplam_liste", "toplam_perakende", "liste_fiyat",
+                      "perakende_fiyat", "pazarlik_taban_fiyat", "fiyat")
+
+
+def _fiyatlari_topla(sonuc, kume: set[int]) -> None:
+    """Araç sonucundaki gerçek fiyat tutarlarını (+ liste−perakende farkını) topla."""
+    if isinstance(sonuc, dict):
+        for anahtar in _FIYAT_ANAHTARLARI:
+            v = sonuc.get(anahtar)
+            if isinstance(v, (int, float)):
+                kume.add(round(v))
+        liste = sonuc.get("toplam_liste") or sonuc.get("liste_fiyat")
+        perakende = sonuc.get("toplam_perakende") or sonuc.get("perakende_fiyat")
+        if isinstance(liste, (int, float)) and isinstance(perakende, (int, float)):
+            kume.add(round(liste) - round(perakende))
+            kume.add(round(liste - perakende))
+        for v in sonuc.values():
+            _fiyatlari_topla(v, kume)
+    elif isinstance(sonuc, list):
+        for v in sonuc:
+            _fiyatlari_topla(v, kume)
+
+
+def _fiyat_uydurma_var_mi(cevap: str, legit: set[int]) -> bool:
+    """Cevaptaki bir TL tutarı gerçek fiyat kümesiyle (±1 yuvarlama payı) eşleşmiyorsa True."""
+    for m in _FIYAT_KALIBI.finditer(cevap):
+        deger = int(re.sub(r"[.\s]", "", m.group(1)))
+        if not any(abs(deger - g) <= 1 for g in legit):
+            return True
+    return False
 
 
 def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
@@ -376,7 +418,9 @@ def cevapla(metin: str, platform: str, kullanici: str,
 
 def _cevapla(metin: str, platform: str, kullanici: str, model: str,
              gecmissiz: bool = False) -> str | None:
+    global SON_HATA
     import litellm
+    from datetime import datetime
     litellm.suppress_debug_info = True
 
     kategoriler = ", ".join(f"{k['ad']} (id:{k['id']})" for k in menu_veri.kategoriler())
@@ -386,6 +430,10 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
         *gecmis,
         {"role": "user", "content": metin[:1000]},
     ]
+
+    legit_fiyatlar: set[int] = set()   # bu turda araçların döndürdüğü gerçek TL tutarları
+    teshir_cagrildi = False            # teşhir/pazarlık turunda fiyat kalkanı devre dışı
+    duzeltme_denendi = False           # uydurma fiyat için tek düzeltme hakkı
 
     for _ in range(MAKS_TOOL_TURU):
         yanit = litellm.completion(
@@ -400,7 +448,24 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
         if not getattr(secim, "tool_calls", None):
             cevap = (secim.content or "").strip()
             if cevap:
-                cevap = _pazarlik_kalkani(cevap, mesajlar)
+                cevap = _pazarlik_kalkani(cevap, teshir_cagrildi)
+            # Fiyat kalkanı: normal (teşhir dışı) fiyat cevabında uydurma tutar
+            # varsa bir kez düzelttir; yine uyduruyorsa menüye düş.
+            if (cevap and legit_fiyatlar and not teshir_cagrildi
+                    and _fiyat_uydurma_var_mi(cevap, legit_fiyatlar)):
+                if not duzeltme_denendi:
+                    duzeltme_denendi = True
+                    mesajlar.append({"role": "assistant", "content": cevap})
+                    mesajlar.append({"role": "user", "content":
+                        "DUR: Yazdığın fiyat rakamları araç sonucundaki gerçek "
+                        "fiyatlarla uyuşmuyor. Fiyatı SADECE araç sonucundaki "
+                        "fiyat_cumlesi alanından, içindeki rakamları hiç "
+                        "değiştirmeden/yuvarlamadan AYNEN yaz."})
+                    continue
+                SON_HATA = (f"{datetime.now():%H:%M:%S} FiyatUydurma: "
+                            f"model gerçek fiyatı yazmadı")
+                log.warning("ajan: fiyat kalkanı — uydurma fiyat, menüye düşülüyor")
+                return None
             return cevap[:MAKS_CEVAP_KR] if cevap else None
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
@@ -416,14 +481,15 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             except Exception:
                 log.exception("ajan: araç hatası %s(%s)", tc.function.name, argumanlar)
                 sonuc = {"hata": "veri okunamadı"}
+            if tc.function.name == "teshir_bilgi":
+                teshir_cagrildi = True
+            _fiyatlari_topla(sonuc, legit_fiyatlar)
             mesajlar.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
                 "content": json.dumps(sonuc, ensure_ascii=False, default=str)[:6000],
             })
 
-    global SON_HATA
-    from datetime import datetime
     SON_HATA = f"{datetime.now():%H:%M:%S} ToolTuruAsildi: {MAKS_TOOL_TURU} tur yetmedi"
     log.warning("ajan: %s tool turu aşıldı, menüye düşülüyor", MAKS_TOOL_TURU)
     return None

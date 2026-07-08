@@ -117,6 +117,10 @@ def ajan_icin(koleksiyon_id: int | None = None) -> list[dict]:
                 "perakende_fiyat": d["perakende_fiyat"],
                 "para_birimi": "TL",
             }
+            from catalog.services import menu_veri
+            cumle = menu_veri.fiyat_cumlesi(d["liste_fiyat"], d["perakende_fiyat"])
+            if cumle:
+                kayit["fiyat_cumlesi"] = cumle
             if d["pazarlik_taban"]:
                 kayit["pazarlik_taban_fiyat"] = d["pazarlik_taban"]
             sonuc.append(kayit)
