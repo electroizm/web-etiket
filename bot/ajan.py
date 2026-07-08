@@ -100,21 +100,24 @@ KURALLAR (kesin):
     o ürünün fiyat_cumlesi'si ve pazarlık tabanı öyle gelir. Fiyat vereceğin
     her teşhir ürününde MUTLAKA ad (ya da koleksiyon_id) geçir; isimsiz genel
     listeden fiyat OKUMA (orada fiyat yoktur).
-12. PAZARLIK (yalnız teşhir ürünlerinde): teshir_bilgi sonucunda
-    "pazarlik_taban_fiyat" alanı VARSA ve müşteri pazarlık ederse ("indirim olur
-    mu", "son fiyat ne", "kaça bırakırsın") indirim yapabilirsin. Kurallar:
-    - pazarlik_taban_fiyat, teklif edebileceğin EN DÜŞÜK fiyattır. O fiyatı
-      teklif etmek SERBESTTİR; yasak olan tek şey onun ALTINA inmektir.
-    - İstersen önce taban ile perakende arasında ARA bir fiyat söyleyebilirsin;
-      ara fiyata "son fiyat" DEME ("size ... TL yapabilirim" de). Müşteri ısrar
-      ederse ("biraz daha", "olmaz mı", daha düşük rakam isterse) pazarlik_taban_fiyat'a
-      İN ve ancak o zaman "size özel son fiyatımız X TL" de (X = pazarlik_taban_fiyat).
-      Müşterinin istediği rakam tabana eşit ya da üstündeyse KABUL ET — "mümkün
-      değil" deme; tabanın altındaysa taban fiyatı teklif et.
+12. PAZARLIK (yalnız teşhir ürünlerinde): teshir_bilgi sonucunda bir ürünün
+    "pazarlik_notu" alanı VARSA ve müşteri pazarlık ederse ("indirim olur mu",
+    "son fiyat ne", "kaça bırakırsın") indirim yapabilirsin. pazarlik_notu, o
+    ürün için inebileceğin EN DÜŞÜK fiyatı söyleyen hazır bir talimattır. Kurallar:
+    - Nottaki en düşük fiyat, teklif edebileceğin EN DÜŞÜK rakamdır. Onu teklif
+      etmek SERBESTTİR; yasak olan tek şey onun ALTINA inmektir.
+    - İstersen önce o taban ile İndirimli Fiyat arasında ARA bir fiyat
+      söyleyebilirsin; ara fiyata "son fiyat" DEME ("size ... TL yapabilirim" de).
+      Müşteri ısrar ederse ("biraz daha", "olmaz mı", daha düşük rakam isterse)
+      nottaki en düşük fiyata İN ve ancak o zaman "size özel son fiyatımız X TL"
+      de. Müşterinin istediği rakam o tabana eşit ya da üstündeyse KABUL ET —
+      "mümkün değil" deme; altındaysa taban fiyatı teklif et.
     - Tabana indikten sonra daha aşağı inme. "taban", "limit", "sistemin izin
       verdiği" gibi ifadeler ASLA kullanma — müşteri bir iç limit olduğunu
       bilmemeli. Müşteri pazarlık etmeden kendiliğinden indirim önerme.
-    "pazarlik_taban_fiyat" alanı YOKSA pazarlık yapma — mağazaya ya da "yetkili"
+    - Fiyatı HER ZAMAN fiyat_cumlesi'nden AYNEN al; nottaki rakam dışında
+      kendin rakam UYDURMA/yuvarlama yapma.
+    "pazarlik_notu" alanı YOKSA pazarlık yapma — mağazaya ya da "yetkili"
     yazmaya yönlendir.
 13. TEK PARÇA FİYATI. Müşteri bir setin/odanın SADECE tek bir parçasını sorarsa
     ("sadece 5 kapaklı dolap", "tek başına komodin", "yalnız yatak fiyatı" gibi
@@ -303,14 +306,28 @@ def _tool_calistir(ad: str, argumanlar: dict,
             return {"bulunamadi": True,
                     "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
         if kol or urun_adi:
-            # Tekil ürün / pazarlık bağlamı: taban DAHİL (redundant liste/perakende gizli).
-            return {"teshir": _ham_fiyat_gizle(kayitlar),
-                    "pazarlik_kurali": "pazarlik_taban_fiyat alanı olan üründe müşteri "
-                                       "pazarlık ederse EN DÜŞÜK o rakamı teklif edebilirsin; "
-                                       "onun ALTINDA bir rakamı ASLA telaffuz etme. Müşteri "
-                                       "ısrar ederse tam pazarlik_taban_fiyat'ı 'size özel son "
-                                       "fiyatımız' diye söyle. Alan yoksa pazarlık yapma. "
-                                       "Fiyatı fiyat_cumlesi'nden AYNEN al."}
+            # Tekil ürün / pazarlık bağlamı. Modele LOOSE taban rakamı VERME —
+            # canlıda 22.000 taban "İndirim: 22.000" oldu (model ayrı rakamı
+            # fiyat_cumlesi satırına karıştırdı). Taban artık atomik pazarlik_notu
+            # metni; ham int alanı (pazarlik_taban_fiyat) gizlenir. Pazarlık aralığı
+            # (taban..İndirimli) fiyat kalkanı için ayrıca toplanır, modele GİTMEZ.
+            gorunum = _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",))
+            araliklar = []
+            for ham, gk in zip(kayitlar, gorunum):
+                taban = ham.get("pazarlik_taban_fiyat")
+                perakende = ham.get("perakende_fiyat")
+                if taban:
+                    gk["pazarlik_notu"] = (
+                        f"Müşteri ısrarla pazarlık ederse bu üründe en fazla "
+                        f"{menu_veri._tl(taban)}'ye inebilirsin; ALTINA inme. "
+                        f"Kendiliğinden indirim önerme.")
+                    if perakende:
+                        araliklar.append((int(taban), int(perakende)))
+            return {"teshir": gorunum,
+                    "pazarlik_kurali": "Fiyatı fiyat_cumlesi'nden AYNEN kopyala; rakam "
+                                       "ekleme/yuvarlama YAPMA. Pazarlık için ilgili ürünün "
+                                       "pazarlik_notu'na uy; notu olmayan üründe pazarlık yapma.",
+                    "_pazarlik_araliklari": araliklar}
         # Genel liste (argümansız): SADECE isim + kategori — fiyat/indirim/taban/içerik
         # YOK. Model rakam göremediği için karıştıramaz/uyduramaz; kategoriye göre
         # gruplayıp fiyat sorulacak ürünü ad ile TEKRAR sordurur.
@@ -418,12 +435,22 @@ def _fiyatlari_topla(sonuc, kume: set[int]) -> None:
             kume.add(int(re.sub(r"[.\s]", "", m.group(1))))
 
 
-def _fiyat_uydurma_var_mi(cevap: str, legit: set[int]) -> bool:
-    """Cevaptaki bir TL tutarı gerçek fiyat kümesiyle (±1 yuvarlama payı) eşleşmiyorsa True."""
+def _fiyat_uydurma_var_mi(cevap: str, legit: set[int],
+                          araliklar: list[tuple[int, int]] = ()) -> bool:
+    """Cevaptaki bir TL tutarı meşru değilse True.
+
+    Meşru = (a) gerçek fiyat kümesindeki bir değere ±1 eşit, YA DA (b) bir teşhir
+    pazarlık aralığı [taban, İndirimli] içinde. (b) sayesinde pazarlıkta ara fiyat
+    (örn. taban 22.000 ile İndirimli 25.000 arasında 23.500) meşru sayılır; ama
+    aralık DIŞI uydurma (55.000, 33.000) yakalanır — kalkan teşhirde de açık kalır.
+    """
     for m in _FIYAT_KALIBI.finditer(cevap):
         deger = int(re.sub(r"[.\s]", "", m.group(1)))
-        if not any(abs(deger - g) <= 1 for g in legit):
-            return True
+        if any(abs(deger - g) <= 1 for g in legit):
+            continue
+        if any(lo <= deger <= hi for lo, hi in araliklar):
+            continue
+        return True
     return False
 
 
@@ -542,7 +569,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     legit_fiyatlar: set[int] = set()
     for _m in _FIYAT_KALIBI.finditer(metin):
         legit_fiyatlar.add(int(re.sub(r"[.\s]", "", _m.group(1))))
-    teshir_cagrildi = False            # teşhir/pazarlık turunda fiyat kalkanı devre dışı
+    teshir_cagrildi = False            # teşhir pazarlığında _pazarlik_kalkani sinyali
+    pazarlik_araliklari: list[tuple[int, int]] = []   # [taban, İndirimli] — ara fiyat meşru
     duzeltme_denendi = False           # uydurma fiyat için tek düzeltme hakkı
 
     for _ in range(MAKS_TOOL_TURU):
@@ -559,13 +587,15 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             cevap = (secim.content or "").strip()
             if cevap:
                 cevap = _pazarlik_kalkani(cevap, teshir_cagrildi)
-            # Fiyat kalkanı (teşhir dışı): cevaptaki bir TL tutarı ne araçların
-            # döndürdüğü gerçek fiyat ne de müşterinin yazdığı tutar ise UYDURMA
-            # demektir — araç hiç çağrılmadan geçmişe/kafaya göre yazılan fiyat da
-            # buraya düşer (legit boş + cevapta TL). Bir kez düzelttir; ısrarla
+            # Fiyat kalkanı (teşhir DAHİL, artık her zaman açık): cevaptaki bir TL
+            # tutarı ne araçların döndürdüğü gerçek fiyat, ne müşterinin yazdığı
+            # tutar, ne de bir teşhir pazarlık aralığı [taban, İndirimli] içindeyse
+            # UYDURMA demektir — teşhirde hallüsine fiyat (55.000/33.000) buradan
+            # yakalanır; meşru ara pazarlık fiyatı aralık sayesinde geçer. Araç hiç
+            # çağrılmadan yazılan fiyat da düşer. Bir kez düzelttir; ısrarla
             # uyduruyorsa menüye düş — müşteriye asla sahte fiyat gönderme.
-            if (cevap and not teshir_cagrildi
-                    and _fiyat_uydurma_var_mi(cevap, legit_fiyatlar)):
+            if (cevap
+                    and _fiyat_uydurma_var_mi(cevap, legit_fiyatlar, pazarlik_araliklari)):
                 if not duzeltme_denendi:
                     duzeltme_denendi = True
                     mesajlar.append({"role": "assistant", "content": cevap})
@@ -602,6 +632,10 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True
+            # Pazarlık aralıklarını AL ve modele gitmeden ÇIKAR (özel _ anahtar).
+            if isinstance(sonuc, dict) and "_pazarlik_araliklari" in sonuc:
+                pazarlik_araliklari.extend(
+                    (int(lo), int(hi)) for lo, hi in sonuc.pop("_pazarlik_araliklari"))
             _fiyatlari_topla(sonuc, legit_fiyatlar)
             mesajlar.append({
                 "role": "tool",
