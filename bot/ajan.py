@@ -335,6 +335,10 @@ def _fiyatlari_topla(sonuc, kume: set[int]) -> None:
     elif isinstance(sonuc, list):
         for v in sonuc:
             _fiyatlari_topla(v, kume)
+    elif isinstance(sonuc, str):
+        # Metin alanlarındaki TL tutarları da meşru (örn. magaza_bilgi: "kargo 500 TL").
+        for m in _FIYAT_KALIBI.finditer(sonuc):
+            kume.add(int(re.sub(r"[.\s]", "", m.group(1))))
 
 
 def _fiyat_uydurma_var_mi(cevap: str, legit: set[int]) -> bool:
@@ -385,6 +389,12 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
         if metin.startswith("[görsel] "):  # OCR sonucu: işareti at, içeriği kullan
             metin = metin[len("[görsel] "):]
         rol = "user" if r.yon == "gelen" else "assistant"
+        if rol == "assistant":
+            # Geçmişteki fiyat rakamlarını RedAKTe et: eski/yanlış bir fiyat
+            # (canlıda görüldü: bozuk 70.000) sonraki turda modeli yanıltıp
+            # tekrar ettiriyordu. Rakamı silince model fiyatı aracı yeniden
+            # çağırarak taze almak zorunda kalır — poison zinciri kırılır.
+            metin = _FIYAT_KALIBI.sub("(güncel fiyat)", metin)
         mesajlar.append({"role": rol, "content": metin[:400]})
     return mesajlar[-settings.AJAN_GECMIS_LIMIT:]
 
@@ -431,7 +441,11 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
         {"role": "user", "content": metin[:1000]},
     ]
 
-    legit_fiyatlar: set[int] = set()   # bu turda araçların döndürdüğü gerçek TL tutarları
+    # Bu turda meşru sayılan TL tutarları: araçların döndürdüğü fiyatlar +
+    # müşterinin KENDİ yazdığı tutarlar (kendi bütçesini tekrar etmek uydurma değil).
+    legit_fiyatlar: set[int] = set()
+    for _m in _FIYAT_KALIBI.finditer(metin):
+        legit_fiyatlar.add(int(re.sub(r"[.\s]", "", _m.group(1))))
     teshir_cagrildi = False            # teşhir/pazarlık turunda fiyat kalkanı devre dışı
     duzeltme_denendi = False           # uydurma fiyat için tek düzeltme hakkı
 
@@ -449,18 +463,23 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             cevap = (secim.content or "").strip()
             if cevap:
                 cevap = _pazarlik_kalkani(cevap, teshir_cagrildi)
-            # Fiyat kalkanı: normal (teşhir dışı) fiyat cevabında uydurma tutar
-            # varsa bir kez düzelttir; yine uyduruyorsa menüye düş.
-            if (cevap and legit_fiyatlar and not teshir_cagrildi
+            # Fiyat kalkanı (teşhir dışı): cevaptaki bir TL tutarı ne araçların
+            # döndürdüğü gerçek fiyat ne de müşterinin yazdığı tutar ise UYDURMA
+            # demektir — araç hiç çağrılmadan geçmişe/kafaya göre yazılan fiyat da
+            # buraya düşer (legit boş + cevapta TL). Bir kez düzelttir; ısrarla
+            # uyduruyorsa menüye düş — müşteriye asla sahte fiyat gönderme.
+            if (cevap and not teshir_cagrildi
                     and _fiyat_uydurma_var_mi(cevap, legit_fiyatlar)):
                 if not duzeltme_denendi:
                     duzeltme_denendi = True
                     mesajlar.append({"role": "assistant", "content": cevap})
                     mesajlar.append({"role": "user", "content":
-                        "DUR: Yazdığın fiyat rakamları araç sonucundaki gerçek "
-                        "fiyatlarla uyuşmuyor. Fiyatı SADECE araç sonucundaki "
-                        "fiyat_cumlesi alanından, içindeki rakamları hiç "
-                        "değiştirmeden/yuvarlamadan AYNEN yaz."})
+                        "DUR: Cevabındaki fiyat/tutar araç sonucundaki gerçek "
+                        "verilerle uyuşmuyor (ya da hiç araç çağırmadan rakam "
+                        "yazdın). Fiyatı YALNIZCA ilgili aracı çağırıp araç "
+                        "sonucundaki fiyat_cumlesi'nden, rakamları hiç "
+                        "değiştirmeden AYNEN al. Geçmişe ya da kafana göre rakam "
+                        "YAZMA. Şimdi doğru aracı çağırıp gerçek fiyatı ver."})
                     continue
                 SON_HATA = (f"{datetime.now():%H:%M:%S} FiyatUydurma: "
                             f"model gerçek fiyatı yazmadı")
