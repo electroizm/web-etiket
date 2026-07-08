@@ -52,6 +52,9 @@ KURALLAR (kesin):
    yalnız başına ürün/kombinasyon adını ekle (örn. "MARIZA Köşe Takımı — <fiyat_cumlesi>").
    fiyat_cumlesi yoksa fiyat söyleme. Kendi kafandan rakam (özellikle yuvarlak
    sayı) YAZMA; söylediğin her TL tutarı araç sonucunda birebir geçmelidir.
+   BİRDEN FAZLA ürün listelerken (örn. teşhir listesi) her ürünün KENDİ
+   fiyat_cumlesi'ni yaz; bir ürünün rakamını başka ürüne TAŞIMA, ürünler
+   arasında rakam karıştırma. Emin değilsen ilgili aracı yeniden çağır.
 5. Müşteri insanla görüşmek isterse ya da çözemediğin bir konu olursa
    "yetkili" yazmasını söyle (bot onu mağaza yetkilisine yönlendirir).
 6. Konu dışı sorularda (siyaset, genel bilgi, başka markalar...) kibarca
@@ -228,22 +231,33 @@ def _tool_calistir(ad: str, argumanlar: dict,
     if ad == "koleksiyonlari_listele":
         return menu_veri.koleksiyonlar(int(argumanlar["kategori_id"]))
     if ad == "kombinasyonlari_listele":
-        return menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"]))
+        # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
+        # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
+        return _ham_fiyat_gizle(menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"])))
     if ad == "fiyat_detay":
-        return menu_veri.kombinasyon(int(argumanlar["kombinasyon_id"]))
+        return _ham_fiyat_gizle(menu_veri.kombinasyon(int(argumanlar["kombinasyon_id"])))
     if ad == "teshir_bilgi":
         from catalog.services import teshir as teshir_servis
         kol = argumanlar.get("koleksiyon_id")
         kayitlar = teshir_servis.ajan_icin(int(kol) if kol else None)
-        if kayitlar:
-            return {"teshir": kayitlar,
+        if not kayitlar:
+            return {"bulunamadi": True,
+                    "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
+        if kol:
+            # Tek ürün / pazarlık bağlamı: taban DAHİL (redundant liste/perakende gizli).
+            return {"teshir": _ham_fiyat_gizle(kayitlar),
                     "pazarlik_kurali": "pazarlik_taban_fiyat alanı olan üründe müşteri "
                                        "pazarlık ederse EN DÜŞÜK o rakamı teklif edebilirsin; "
                                        "onun ALTINDA bir rakamı ASLA telaffuz etme. Müşteri "
                                        "ısrar ederse tam pazarlik_taban_fiyat'ı 'size özel son "
-                                       "fiyatımız' diye söyle. Alan yoksa pazarlık yapma."}
-        return {"bulunamadi": True,
-                "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
+                                       "fiyatımız' diye söyle. Alan yoksa pazarlık yapma. "
+                                       "Fiyatı fiyat_cumlesi'nden AYNEN al."}
+        # Genel liste: yalnız fiyat_cumlesi kalsın — model rakamları karıştırmasın,
+        # taban da gösterilmesin (canlıda ürünler arası fiyat/taban karışması oldu).
+        return {"teshir": _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",)),
+                "not": "Her ürün için fiyat_cumlesi'ni AYNEN yaz; rakamları değiştirme, "
+                       "ürünler arasında karıştırma. Bir üründe pazarlık yapılacaksa önce "
+                       "o ürünün koleksiyon_id'siyle teshir_bilgi'yi TEKRAR çağır (taban öyle gelir)."}
     if ad == "magaza_bilgi":
         soru = str(argumanlar.get("soru", ""))
         bilgiler = menu_veri.bilgi_ara(soru)
@@ -348,6 +362,25 @@ def _fiyat_uydurma_var_mi(cevap: str, legit: set[int]) -> bool:
         if not any(abs(deger - g) <= 1 for g in legit):
             return True
     return False
+
+
+# Modele giden görünümden çıkarılan ham fiyat alanları. Model bu ayrı rakamları
+# (liste/perakende/indirim/taban) yeniden cümleye çevirirken — özellikle çok
+# ürünlü teşhir listesinde — birbirine karıştırıyor (canlıda görüldü: 9 üründe
+# fiyatlar ve tabanlar birbirine geçti). Yalnız atomik fiyat_cumlesi bırakınca
+# modelin kopyalamaktan başka seçeneği kalmaz; şablona rakam sokamaz.
+_HAM_FIYAT_ALANLARI = ("toplam_liste", "toplam_perakende", "indirim_yuzde",
+                       "liste_fiyat", "perakende_fiyat")
+
+
+def _ham_fiyat_gizle(obj, ekstra: tuple = ()):
+    """obj içindeki ham fiyat rakamı alanlarını (fiyat_cumlesi HARİÇ) recursive çıkar."""
+    gizli = set(_HAM_FIYAT_ALANLARI) | set(ekstra)
+    if isinstance(obj, dict):
+        return {k: _ham_fiyat_gizle(v, ekstra) for k, v in obj.items() if k not in gizli}
+    if isinstance(obj, list):
+        return [_ham_fiyat_gizle(v, ekstra) for v in obj]
+    return obj
 
 
 def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
