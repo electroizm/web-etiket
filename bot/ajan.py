@@ -32,6 +32,31 @@ MAKS_CEVAP_KR = 900     # WA/IG'de rahat okunur üst sınır (tek mesaj)
 # Son ajan hatası — Render loguna erişim olmadan teşhis için /saglik'ta gösterilir.
 SON_HATA: str | None = None
 
+# ── Model zinciri izleme (Gemini kota/yedek teşhisi) ─────────────────────────
+# Süreç içi sayaçlar — /saglik'ta gösterilir. Render restart'ında sıfırlanır
+# (baslangic damgası o yüzden var); günlük eğilim için yeterli. Alanlar:
+#   basari = model cevap üretti;  bos = model döndü ama kalkan/tur limiti
+#   cevabı düşürdü (menüye düşüldü);  kota = 429/RateLimit (Gemini ücretsiz
+#   kota doldu → zincir sıradakine geçti);  hata = diğer istisnalar.
+MODEL_SAYAC: dict[str, dict[str, int]] = {}
+SAYAC_BASLANGIC: str | None = None
+
+
+def _sayac(model: str, alan: str) -> None:
+    global SAYAC_BASLANGIC
+    from datetime import datetime
+    if SAYAC_BASLANGIC is None:
+        SAYAC_BASLANGIC = f"{datetime.now():%d.%m %H:%M}"
+    MODEL_SAYAC.setdefault(
+        model, {"basari": 0, "bos": 0, "kota": 0, "hata": 0})[alan] += 1
+
+
+def _kota_mu(e: Exception) -> bool:
+    """İstisna Gemini kota aşımı mı? (LiteLLM RateLimitError / 429 / quota)"""
+    metin = str(e).lower()
+    return ("RateLimit" in type(e).__name__ or "429" in str(e)
+            or "quota" in metin or "resource_exhausted" in metin)
+
 # ─── Sistem promptu ──────────────────────────────────────────────────────────
 SISTEM_PROMPTU = """Sen Doğtaş Çevreyolu mobilya mağazasının WhatsApp/Instagram asistanısın.
 Görevin: müşteriye ürün ve fiyat konusunda yardımcı olmak, kısa ve samimi sohbet etmek.
@@ -538,13 +563,25 @@ def cevapla(metin: str, platform: str, kullanici: str,
     if not settings.AJAN_AKTIF:
         return None
     from datetime import datetime
+    from time import monotonic
     for model in settings.AJAN_MODELLER:
+        basla = monotonic()
         try:
-            return _cevapla(metin, platform, kullanici, model, gecmissiz=gecmissiz)
+            cevap = _cevapla(metin, platform, kullanici, model, gecmissiz=gecmissiz)
         except Exception as e:
+            _sayac(model, "kota" if _kota_mu(e) else "hata")
             SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
-            log.warning("ajan: %s başarısız (%s), sıradaki model deneniyor",
-                        model, type(e).__name__)
+            log.warning("ajan: %s başarısız (%s%s), sıradaki model deneniyor",
+                        model, type(e).__name__, " — KOTA" if _kota_mu(e) else "")
+            continue
+        _sayac(model, "basari" if cevap else "bos")
+        if model != settings.AJAN_MODELLER[0]:
+            # Yedek model devrede = birincil Gemini kotası dolmuş/hatalı demek;
+            # sıklaşırsa /saglik'taki ajan_model_sayac ile teyit et.
+            log.warning("ajan: YEDEK model %s cevapladı (birincil düştü)", model)
+        log.info("ajan: %s %.1fs'de %s (%s)", model, monotonic() - basla,
+                 "cevapladı" if cevap else "boş döndü (kalkan/tur limiti)", platform)
+        return cevap
     log.error("ajan: tüm modeller başarısız, menüye düşülüyor")
     return None
 

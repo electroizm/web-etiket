@@ -62,22 +62,20 @@ def _beniara_mi(tur: str, tetik: str) -> bool:
     return any(k in low for k in BENIARA_KELIMELER)
 
 
-def _ara_bekleniyor_mu(platform: str, kullanici: str) -> bool:
-    """Bota gönderilen SON mesaj 'Beni arayın' sorusu mu?
+_DB_HATA = object()   # _son_giden: "okunamadı" (hata) ile "hiç mesaj yok" (None) ayrımı
 
-    Öyleyse müşterinin şimdiki serbest metni numara+saat cevabıdır.
-    Müşteri soru yerine bir butona basarsa akış normal menüden sürer ve
-    bir sonraki giden mesaj soruyu ezer → bekleme kendiliğinden düşer.
-    """
+
+def _son_giden(platform: str, kullanici: str):
+    """Bota ait SON giden mesaj kaydı; hiç yoksa None, DB hatasında _DB_HATA."""
     if not (platform and kullanici):
-        return False
+        return _DB_HATA
     try:
         from catalog.database import SessionLocal   # geç import: testte DB yok
         from catalog.sa_models import BotMesaj
         from sqlalchemy import select
         session = SessionLocal()
         try:
-            son = session.scalar(
+            return session.scalar(
                 select(BotMesaj)
                 .where(BotMesaj.platform == platform,
                        BotMesaj.kullanici == kullanici,
@@ -88,8 +86,29 @@ def _ara_bekleniyor_mu(platform: str, kullanici: str) -> bool:
         finally:
             session.close()
     except Exception:
-        return False
-    return son is not None and (son.metin or "").startswith(ARA_SORU_ISARET)
+        return _DB_HATA
+
+
+def _ara_bekleniyor_mu(platform: str, kullanici: str) -> bool:
+    """Bota gönderilen SON mesaj 'Beni arayın' sorusu mu?
+
+    Öyleyse müşterinin şimdiki serbest metni numara+saat cevabıdır.
+    Müşteri soru yerine bir butona basarsa akış normal menüden sürer ve
+    bir sonraki giden mesaj soruyu ezer → bekleme kendiliğinden düşer.
+    """
+    son = _son_giden(platform, kullanici)
+    return son is not None and son is not _DB_HATA \
+        and (son.metin or "").startswith(ARA_SORU_ISARET)
+
+
+def _ilk_temas_mi(platform: str, kullanici: str) -> bool:
+    """Bot bu müşteriye daha önce HİÇ mesaj göndermemiş mi? (yeni konuşma)
+
+    AI cevabının ardından karşılama+menünün yalnız İLK temasta eklenmesi için;
+    süren sohbette (örn. pazarlık) her cevaba menü yapıştırmak gürültü olur.
+    DB hatasında False — emin değilsek fazladan karşılama gönderme.
+    """
+    return _son_giden(platform, kullanici) is None
 
 
 def _ara_talebi_isle(platform: str, kullanici: str, metin: str) -> None:
@@ -123,10 +142,13 @@ def _yetkili_mi(tur: str, tetik: str) -> bool:
     return any(k in low for k in YETKILI_KELIMELER)
 
 
-# ── AI yönlendirme (Faz 5, menü-öncelikli mod) ───────────────────────────────
-# Menü varsayılan yoldur (bedava, güvenilir, günlük 1500 Gemini kotasını harcamaz).
-# AI YALNIZCA aşağıdaki net ürün/fiyat sorusu sinyallerinde devreye girer; selam
-# ve belirsiz mesajlar doğrudan kategori menüsüne düşer.
+# ── AI yönlendirme (Faz 5, soru-cevap öncelikli hibrit) ──────────────────────
+# İlke (İsmail, 2026-07-11): müşterinin sorusu ASLA cevapsız menüye düşmesin —
+# önce sorunun cevabı, menü sonra. Sinyalli net sorular AI'ya ÖNCE gider (yazarak
+# menü navigasyonundan bile önce); sinyalsiz serbest metin önce bedava yollara
+# (selam şablonu, kategori/koleksiyon adı) bakar, hiçbiri tutmazsa YİNE AI'ya
+# gider (eskiden burada doğrudan menüye düşülüyordu — "alakasız menü" şikâyeti).
+# Menü artık yalnız AI kapalı/kota dolu/hatalıyken son emniyet ağıdır.
 AI_SINYAL_KELIMELER = (
     # fiyat niyeti
     "fiyat", "ne kadar", "kaç para", "kaça", "kaç lira", "kaç tl", "ücret",
@@ -145,10 +167,11 @@ AI_SINYAL_KELIMELER = (
 
 
 def _ai_gerekli_mi(tetik: str) -> bool:
-    """Serbest metin AI'ya mı gitsin (net ürün/fiyat sorusu), yoksa menüye mi?
+    """Serbest metin NET ürün/fiyat sorusu mu? (AI'ya ÖNCELİKLİ gitsin)
 
-    Muhafazakâr: emin değilsek MENÜ (bedava + güvenilir). Böylece selam/kısa
-    mesajlar kotayı harcamaz, sadece gerçek sorular AI'ya gider.
+    True → AI, yazarak menü navigasyonundan önce denenir ("vermont ne kadar").
+    False → önce bedava yollar (kategori/koleksiyon adı) denenir; onlar da
+    tutmazsa metin yine AI'ya düşer (yanit_uret 5. adım) — soru cevapsız kalmaz.
     """
     metin = (tetik or "").strip()
     low = " " + metin.lower() + " "
@@ -289,6 +312,26 @@ def _koleksiyon_bul(tetik: str, veri, kategori_id: int | None = None) -> list[di
     return sonuc
 
 
+def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
+               veri, P) -> dict | list | None:
+    """AI'dan cevap iste; üretemezse None (çağıran menüye düşer).
+
+    İLK temasta (bot müşteriye daha önce hiç yazmamışsa) cevabın ardına
+    karşılama + kategori menüsü eklenir: önce sorunun cevabı, sonra
+    "Merhaba, hoş geldiniz…" (İsmail'in istediği sıra). Süren sohbette
+    yalnız cevap gider — pazarlık ortasında menü yapıştırılmaz.
+    """
+    from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
+    cevap = ajan.cevapla(tetik, platform, kullanici, gecmissiz=gecmissiz)
+    if not cevap:
+        return None
+    if _ilk_temas_mi(platform, kullanici):
+        return [P.metin_mesaji(cevap),
+                P.metin_mesaji(selam_metni()),
+                P.kategoriler_mesaji(veri.kategoriler())]
+    return P.metin_mesaji(cevap)
+
+
 def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
                platform: str = "", kullanici: str = "", gecmissiz: bool = False) -> dict:
     """Tetik token'ından (START / KAT:.. / KOL:.. / KOM:.. / YETKILI) mesaj üret.
@@ -296,14 +339,17 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     Payload'lar sayfa taşıyabilir: 'KAT:48:2' = 48 no'lu kategorinin 2. sayfası,
     'START:2' = kategori menüsünün 2. sayfası (bkz. presenter sayfalama).
 
-    Faz 5 hibrit akış: buton payload'ları menü mantığında kalır. Serbest metin için:
+    Hibrit akış (soru-cevap öncelikli): buton payload'ları menü mantığında kalır.
+    Serbest metin için:
       1. Selam → sıcak karşılama metni + kategori menüsü (ikisi de bedava, şablon).
-      2. Net ürün/fiyat sorusu (fiyat, ne kadar, "?"…) → AI (_ai_gerekli_mi).
+      2. Net ürün/fiyat sorusu (fiyat, ne kadar, "?"…) → AI; ilk temasta cevabın
+         ardına karşılama + menü eklenir (_ai_cevabi).
       3. Yazılan kategori adı → o kategorinin ürün grupları (yazarak menü navigasyonu).
       4. Yazılan koleksiyon/ürün adı → o grubun kombinasyonları.
-      5. Aksi halde → kategori menüsü.
-    Menü ve yazarak ilerleme her adımda birlikte çalışır; AI kapalı/kota dolu ise
-    de akış menüyle sürer (müşteri asla cevapsız kalmaz).
+      5. Hiçbiri tutmayan serbest metin → YİNE AI: soru/sohbet cevapsız kalmasın
+         (eskiden doğrudan menüye düşerdi — müşteri "alakasız menü" görüyordu).
+      6. AI kapalı/kota dolu/hatalı → kategori menüsü (son emniyet ağı;
+         müşteri asla cevapsız kalmaz).
     """
     tur, deger = parse_secim(tetik)
 
@@ -343,12 +389,11 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
         return [P.metin_mesaji(selam_metni()),
                 P.kategoriler_mesaji(veri.kategoriler())]
 
-    # 2) Net ürün/fiyat sorusu → AI (başarısızsa aşağı, menüye düşer)
+    # 2) Net ürün/fiyat sorusu → AI önce (başarısızsa aşağı, menüye düşer)
     if platform and kullanici and _ai_gerekli_mi(tetik):
-        from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
-        cevap = ajan.cevapla(tetik, platform, kullanici, gecmissiz=gecmissiz)
-        if cevap:
-            return P.metin_mesaji(cevap)
+        cevap = _ai_cevabi(tetik, platform, kullanici, gecmissiz, veri, P)
+        if cevap is not None:
+            return cevap
 
     # 3) Yazarak menü navigasyonu (bedava): kategori adı → ürün grupları
     kat = _kategori_bul(tetik, veri)
@@ -364,5 +409,13 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     if len(kols) > 1:
         return P.koleksiyon_secim_mesaji(kols)
 
-    # 5) Varsayılan → kategori menüsü
+    # 5) Menü ögesine uymayan serbest metin → yine AI: soru cevapsız kalmasın.
+    #    (Sinyalliler 2. adımda zaten denendi — AI o an düştüyse burada tekrar
+    #    denemek aynı hatayı bekletip yaşatır, o yüzden yalnız sinyalsizler.)
+    if platform and kullanici and not _ai_gerekli_mi(tetik):
+        cevap = _ai_cevabi(tetik, platform, kullanici, gecmissiz, veri, P)
+        if cevap is not None:
+            return cevap
+
+    # 6) Son emniyet ağı (AI kapalı/kota/hata) → kategori menüsü
     return P.kategoriler_mesaji(veri.kategoriler())

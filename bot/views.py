@@ -42,6 +42,9 @@ def saglik(request):
         "dry_run_ig": settings.BOT_DRY_RUN_IG,
         "ajan": settings.AJAN_MODEL if settings.AJAN_AKTIF else "kapalı",
         "ajan_son_hata": _ajan_son_hata(),
+        # Model zinciri sayaçları (süreç başından beri): hangi model kaç kez
+        # cevapladı, kaç kez kotaya takıldı — Gemini kota/yedek izleme.
+        "ajan_model_sayac": _ajan_model_sayac(),
         "ses_son_hata": _ses_son_hata(),
         "gorsel_son_hata": _gorsel_son_hata(),
         "webhook_son_hata": WEBHOOK_SON_HATA,
@@ -57,6 +60,13 @@ def saglik(request):
 def _ajan_son_hata():
     from bot import ajan
     return ajan.SON_HATA
+
+
+def _ajan_model_sayac():
+    from bot import ajan
+    if not ajan.MODEL_SAYAC:
+        return None
+    return {"baslangic": ajan.SAYAC_BASLANGIC, "modeller": ajan.MODEL_SAYAC}
 
 
 def _gorsel_son_hata():
