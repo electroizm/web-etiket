@@ -173,7 +173,10 @@ KURALLAR (kesin):
     pazarlık, konuşmada EN SON fiyat verilen ürün üzerinedir — müşteri
     açıkça başka ürün adı yazmadıkça ürün DEĞİŞTİRME, başka ürünün
     fiyatını ARAMA; merdiven bitince de başka ürüne atlama, aynı ürünün
-    son fiyatını kibarca tekrarla. pazarlik_notu'nda "DİKKAT" uyarısı
+    son fiyatını kibarca tekrarla. kombinasyon_id'yi TAHMİN ETME: pazarlık
+    hangi kombinasyona fiyat verdiysen ONUN id'siyle sürer — aynı serinin
+    BAŞKA kombinasyonuna (başka kategoriye) geçme; id'den emin değilsen
+    fiyat verdiğin kombinasyonu kombinasyonlari_listele ile bulup doğrula. pazarlik_notu'nda "DİKKAT" uyarısı
     varsa fiyat verme — önce hangi ürünü kastettiğini sor. pazarlik_notu
     YOKSA o üründe pazarlık yapma — kibarca "yetkili" yazmasını öner.
     Kendiliğinden indirimli teklif verme; merdiven ancak müşteri pazarlık
@@ -623,22 +626,23 @@ def _adim_notu(merdiven: list[int], gidenler: list[str]) -> str:
 
 
 def _urun_konusuldu_mu(kayit: dict, konusma_duz: str) -> bool:
-    """Pazarlık edilen ürün son konuşmalarda hiç geçti mi?
+    """Pazarlık edilen ürün/kombinasyon son konuşmalarda gerçekten geçti mi?
 
-    Model çıplak "indirim olur mu" mesajında alakasız ürüne atlayabiliyor
-    (canlıda iki kez görüldü: Milena pazarlığı LEGNA fiyatına sıçradı).
-    Seri adı (koleksiyon adı ya da ürün adının ilk kelimesi) son konuşma
-    metinlerinde aranır; yoksa nota DİKKAT uyarısı düşülür — model fiyat
-    vermek yerine ürünü netleştirmek zorunda kalır.
+    Model çıplak "indirim olur mu" mesajında alakasız kayda atlayabiliyor
+    (canlıda üç kez görüldü: Milena pazarlığı LEGNA'ya, sonra AYNI serinin
+    başka kombinasyonuna — 6 Kapaklı Baza pazarlığı "Dörtlü, Üçlü, Kiera"
+    oturma grubuna — sıçradı; fiyat 89.400'den 112.100'e "yükseldi").
+    Yalnız seri adına bakmak yetmedi; artık koleksiyon adı + kayıt adının
+    anlamlı kelimeleri aranır ve ÇOĞUNLUĞU konuşmada geçmelidir. Geçmiyorsa
+    nota DİKKAT düşülür — model fiyat vermek yerine ürünü netleştirir.
     """
-    seri = (kayit.get("koleksiyon") or {}).get("ad") or ""
-    if not seri:
-        kelimeler = (kayit.get("ad") or "").split()
-        seri = kelimeler[0] if kelimeler else ""
-    seri = menu_veri._duz(seri)
-    if len(seri) < 3:      # ayırt edici değil ("2li" gibi) — kontrolü atla
+    tam_ad = f"{(kayit.get('koleksiyon') or {}).get('ad') or ''} {kayit.get('ad') or ''}"
+    kelimeler = [k for k in re.split(r"[^0-9a-zçğıöşü]+", menu_veri._duz(tam_ad))
+                 if len(k) >= 3 or (k.isdigit() and len(k) >= 2)]
+    if not kelimeler:      # ayırt edici kelime yok — kontrolü atla
         return True
-    return seri in konusma_duz
+    bulunan = sum(1 for k in kelimeler if k in konusma_duz)
+    return bulunan * 2 >= len(kelimeler)   # en az yarısı konuşmada geçmeli
 
 
 def _merdiven_isle(sonuc, gidenler: list[str], konusma_duz: str) -> None:
