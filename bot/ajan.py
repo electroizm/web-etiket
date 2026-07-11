@@ -70,10 +70,11 @@ KURALLAR (kesin):
    (hangi ürünler var) sorulduğunda çağır. Gereksiz araç çağrısı yapma.
 3. Türkçe konuş, "siz" diye hitap et, sıcak ve yardımsever ol.
 4. FİYATI ARACIN "fiyat_cumlesi" ALANINDAN AYNEN KOPYALA. Araç sonucunda her
-   ürün/kombinasyon için hazır, ÇOK SATIRLI bir "fiyat_cumlesi" gelir (üç satır:
-   "Liste Fiyatı: 66.661 TL" / "İndirim: 12.665 TL" / "İndirimli Fiyat: 53.996 TL").
-   Fiyatı SÖYLERKEN önce ürün/kombinasyon adını KENDİ satırına yaz, ALT SATIRA
-   fiyat_cumlesi'ni OLDUĞU GİBİ yapıştır. Örn:
+   ürün/kombinasyon için hazır, ÇOK SATIRLI bir "fiyat_cumlesi" gelir (örn. üç satır:
+   "Liste Fiyatı: 66.661 TL" / "İndirim: 12.665 TL" / "İndirimli Fiyat: 53.996 TL" —
+   bazen EK SATIR da içerebilir). Fiyatı SÖYLERKEN önce ürün/kombinasyon adını KENDİ
+   satırına yaz, ALT SATIRA fiyat_cumlesi'ni OLDUĞU GİBİ, KAÇ SATIRSA O KADAR
+   SATIRIYLA yapıştır — satır ATLAMA, satır EKLEME. Örn:
      LUMERIS Köşe Takımı
      Liste Fiyatı: 66.661 TL
      İndirim: 12.665 TL
@@ -493,6 +494,27 @@ def _fiyat_uydurma_var_mi(cevap: str, legit: set[int],
     return False
 
 
+def _toptan_satirlari(sonuc, birikim: dict[str, str]) -> None:
+    """Araç sonucundaki fiyat_cumlesi'lerden Toptan değerlerini (ad → tutar) topla.
+
+    Toptan satırı fiyat_cumlesi'ne YALNIZ patron beyaz listesinde eklenir
+    (menu_veri.fiyat_cumlesi, toptan_goster) — yani birikimin dolması gönderenin
+    patron olduğunun kanıtıdır. Model bu satırı cevaba almazsa (canlıda görüldü:
+    lite yedek model prompttaki üç satırlık örneğe normalize edip 4. satırı
+    atıyor) cevabın sonuna kod garantisiyle basılır.
+    """
+    if isinstance(sonuc, dict):
+        fc = sonuc.get("fiyat_cumlesi")
+        if isinstance(fc, str) and "\nToptan: " in fc:
+            ad = str(sonuc.get("ad") or sonuc.get("sku") or f"#{len(birikim) + 1}")
+            birikim[ad] = fc.rsplit("\nToptan: ", 1)[1].strip()
+        for v in sonuc.values():
+            _toptan_satirlari(v, birikim)
+    elif isinstance(sonuc, list):
+        for v in sonuc:
+            _toptan_satirlari(v, birikim)
+
+
 # Modele giden görünümden çıkarılan ham fiyat alanları. Model bu ayrı rakamları
 # (liste/perakende/indirim/taban) yeniden cümleye çevirirken — özellikle çok
 # ürünlü teşhir listesinde — birbirine karıştırıyor (canlıda görüldü: 9 üründe
@@ -623,6 +645,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     teshir_cagrildi = False            # teşhir pazarlığında _pazarlik_kalkani sinyali
     pazarlik_araliklari: list[tuple[int, int]] = []   # [taban, İndirimli] — ara fiyat meşru
     duzeltme_denendi = False           # uydurma fiyat için tek düzeltme hakkı
+    toptan_birikim: dict[str, str] = {}   # patron: araçtan gelen Toptan satırları (ad → tutar)
 
     for _ in range(MAKS_TOOL_TURU):
         yanit = litellm.completion(
@@ -662,7 +685,15 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                             f"model gerçek fiyatı yazmadı")
                 log.warning("ajan: fiyat kalkanı — uydurma fiyat, menüye düşülüyor")
                 return None
-            return cevap[:MAKS_CEVAP_KR] if cevap else None
+            if not cevap:
+                return None
+            cevap = cevap[:MAKS_CEVAP_KR]
+            if toptan_birikim and "toptan" not in cevap.lower():
+                # Patron cevabında model Toptan satırını düşürdü → kod garantisi.
+                # Birikim yalnız patron akışında dolar; müşteri cevabı etkilenmez.
+                cevap += "\n\nToptan (yalnız size görünür):\n" + "\n".join(
+                    f"• {ad}: {deger}" for ad, deger in toptan_birikim.items())
+            return cevap
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
         mesajlar.append(secim.model_dump())
@@ -688,6 +719,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 pazarlik_araliklari.extend(
                     (int(lo), int(hi)) for lo, hi in sonuc.pop("_pazarlik_araliklari"))
             _fiyatlari_topla(sonuc, legit_fiyatlar)
+            _toptan_satirlari(sonuc, toptan_birikim)
             mesajlar.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
