@@ -111,6 +111,32 @@ def gonder_instagram_private_reply(comment_id: str, mesaj: dict) -> dict | None:
     return None
 
 
+def gonder_instagram_yorum_cevabi(comment_id: str, metin: str) -> bool:
+    """Bir yoruma HERKESE AÇIK (public) cevap yaz — yorumun hemen altında görünür.
+
+    Yorumdan-DM'in tamamlayıcısı (İsmail kararı 2026-07-11): fiyat yoruma değil
+    DM'e gider; yorumun altına "bilginiz DM'de" notu düşülür ki hem yorumcu DM'i
+    fark etsin hem diğer müşteriler soruların cevapsız kalmadığını görsün.
+    instagram_business_manage_comments izni gerektirir (yorum webhook'ları için
+    zaten verili). Başarısızlık akışı bozmaz — False döner, çağıran loglar.
+    """
+    if settings.BOT_DRY_RUN_IG:
+        log.info("[DRY_RUN] IG yorum-cevabı → %s: %s", comment_id, metin)
+        return True
+    url = (f"https://graph.instagram.com/{settings.GRAPH_API_VERSION}"
+           f"/{comment_id}/replies")
+    try:
+        r = requests.post(url,
+                          headers={"Authorization": f"Bearer {aktif_ig_token()}"},
+                          json={"message": metin}, timeout=10)
+        if r.status_code == 200:
+            return True
+        log.error("IG yorum-cevabı hatası %s: %s", r.status_code, r.text[:300])
+    except requests.RequestException as e:
+        log.error("IG yorum-cevabı istisnası: %s", e)
+    return False
+
+
 def profil_instagram(igsid: str) -> dict | None:
     """Bize mesaj atan IG kullanıcısının profilini çek (ad, kullanıcı adı, foto).
 

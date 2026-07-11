@@ -9,7 +9,9 @@ veri yapısı/eşleme tablosu gerekmez (DRY); zaten test edilmiş akış yeniden
 Kısıtlar (İsmail kararı, faz-4):
 - Kişi başı TEK tetikleme — aynı yorumcuya bir daha private-reply atılmaz (spam olmaz).
 - Saatte ~200 üst sınır — Meta rate limit + maliyet güvenliği.
-- Yalnızca private reply (DM); genel/public yorum cevabı kapsam dışı bırakıldı.
+- Fiyat/detay yalnızca private reply (DM) ile gider; DM başarılıysa yorumun
+  ALTINA herkese açık "bilginiz DM'de" notu da yazılır (İsmail, 2026-07-11 —
+  önceden İsmail bu notu elle yazıyordu).
 
 Hatalar webhook'u asla bozmaz: yut, logla, devam et (diğer modüllerle aynı ilke).
 """
@@ -32,6 +34,14 @@ TETIK_KELIMELER = (
 )
 
 SAATLIK_LIMIT = 200
+
+# Yorumun ALTINA yazılan herkese açık not (İsmail'in metni, birebir). Fiyat asla
+# yoruma yazılmaz — yorumcu DM'i fark etsin, diğer müşteriler de soruların
+# cevaplandığını görsün diye. YALNIZ private reply gerçekten gittiyse yazılır.
+YORUM_ALTI_NOT = ("Merhabalar, ilgilendiğiniz ürünle ilgili fiyat ve detaylı "
+                  "bilgi mesaj (DM) yoluyla tarafınıza ulaştırılmıştır. Sormak "
+                  "istediğiniz farklı bir konu olursa yardımcı olmaktan "
+                  "mutluluk duyarız.")
 # Giden yorumdan-DM kaydının öneki. Dedup GÖNDERİ BAŞINA (İsmail kararı 2026-07-08):
 # aynı kişi FARKLI gönderiye yorum yaparsa yeni DM alır, aynı gönderiye defalarca
 # yazınca tek DM. Bu yüzden önek media_id taşır: "[yorum-dm:<media_id>] ...".
@@ -153,6 +163,12 @@ def isle(yorum: GelenYorum) -> None:
                f"{_isaret(yorum.media_id)} " + ozet_giden(mesaj))
 
     if ilk_basarili:
+        # Yorumun altına herkese açık "bilginiz DM'de" notu. Başarısızlık akışı
+        # bozmaz (DM zaten gitti); bot_mesaj'a kaydedilmez — DM sohbeti değil.
+        try:
+            meta_client.gonder_instagram_yorum_cevabi(yorum.comment_id, YORUM_ALTI_NOT)
+        except Exception:
+            log.exception("yorumdan-DM: yorum altı not yazılamadı (%s)", yorum.comment_id)
         # Panelde botun ne anladığı görünsün: çözülen ürün bağlamıyla birlikte
         # ("[yorum] Massimo Köşe Takımı fiyat"); bağlam yoksa ham yorum.
         kaydet("instagram", yorum.yorumcu_id, "gelen", f"[yorum] {metin}")
