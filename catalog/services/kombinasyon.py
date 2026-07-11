@@ -142,15 +142,23 @@ def hesapla_kombinasyon_toplam(kombi: Kombinasyon) -> dict:
     Returns: {
         "toplam_liste": int (TL) | None,
         "toplam_perakende": int (TL) | None,
+        "toplam_toptan": int (TL) | None,
         "indirim_yuzde": int | None,
         "urun_sayisi": int,
         "toplam_adet": int,
     }
+
+    toplam_toptan: liste/perakende'nin aksine TÜM ürünlerin toptanı doluysa
+    hesaplanır, tek ürün bile eksikse None döner. Kısmi toplam gerçek
+    maliyeti düşük gösterir → instALL pazarlık tabanı maliyetin altına
+    inebilirdi. UI'da gösterilmez (kullanıcı kararı 2026-07-11).
     """
     toplam_liste = 0
     toplam_perakende = 0
+    toplam_toptan = 0
     has_liste = False
     has_perakende = False
+    toptan_tam = True  # tüm ürünlerde son_toptan_fiyat dolu mu?
     urun_sayisi = 0
     toplam_adet = 0
 
@@ -164,6 +172,10 @@ def hesapla_kombinasyon_toplam(kombi: Kombinasyon) -> dict:
         if u and u.son_perakende_fiyat is not None:
             toplam_perakende += u.son_perakende_fiyat * ku.miktar
             has_perakende = True
+        if u and u.son_toptan_fiyat is not None:
+            toplam_toptan += u.son_toptan_fiyat * ku.miktar
+        else:
+            toptan_tam = False
 
     indirim = None
     if has_liste and has_perakende and toplam_liste > 0 and toplam_perakende < toplam_liste:
@@ -172,6 +184,7 @@ def hesapla_kombinasyon_toplam(kombi: Kombinasyon) -> dict:
     return {
         "toplam_liste": toplam_liste if has_liste else None,
         "toplam_perakende": toplam_perakende if has_perakende else None,
+        "toplam_toptan": toplam_toptan if (toptan_tam and urun_sayisi) else None,
         "indirim_yuzde": indirim,
         "urun_sayisi": urun_sayisi,
         "toplam_adet": toplam_adet,

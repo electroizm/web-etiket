@@ -69,6 +69,16 @@ class Urun(Base):
     son_liste_fiyat: Mapped[int | None] = mapped_column(Integer)
     son_perakende_fiyat: Mapped[int | None] = mapped_column(Integer)
 
+    # Bayi alış (toptan) fiyatı — kaynak: PRG Fiyat Robotu'nun SAP'tan
+    # hesaplattığı "Tutar" (urun_toptan_guncelle RPC'si ile yazılır,
+    # migration 0016). UI'da HİÇBİR yerde gösterilmez; instALL botu ve
+    # iç maliyet hesapları içindir. Tarihçesi tutulmaz (fiyatlar tablosuna
+    # girmez); tazelik son_toptan_guncelleme'den izlenir.
+    son_toptan_fiyat: Mapped[int | None] = mapped_column(Integer)
+    son_toptan_guncelleme: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
     # Son güncelleme: insert'te NOW(), scraper fiyat değişimi (≥70 TL) tespit
     # ettiğinde de NOW() ile yenilenir. Yeni ürün de güncelleme de aynı kolonu kullanır.
     son_guncelleme: Mapped[datetime] = mapped_column(
