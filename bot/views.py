@@ -54,7 +54,39 @@ def saglik(request):
         "webhook_son_govde_saat": (WEBHOOK_SON_GOVDELER[-1].split(" ", 1)[0]
                                    if WEBHOOK_SON_GOVDELER else None),
         "ig_token": _ig_token_bilgi(),
+        "toptan_teshis": _toptan_teshis(),
     })
+
+
+def _toptan_teshis():
+    """GEÇİCİ teşhis (2026-07-11): patron toptan satırı canlıda 'kayıtlı değil'
+    döndü; aynı anda yerel okuma aynı DB'de değerleri görüyor. Bu uç, prod'un
+    KENDİ bağlantısından kolonun dolu görünüp görünmediğini ve hesap katmanının
+    toplam_toptan anahtarını üretip üretmediğini söyler. Rakam SIZDIRMAZ —
+    yalnız sayaç/bool. Kök neden bulununca kaldırılacak."""
+    try:
+        import inspect
+
+        from sqlalchemy import func, select
+
+        from catalog.database import SessionLocal
+        from catalog.sa_models import Urun
+        from catalog.services.kombinasyon import hesapla_kombinasyon_toplam
+
+        session = SessionLocal()
+        try:
+            dolu = session.scalar(
+                select(func.count()).select_from(Urun)
+                .where(Urun.son_toptan_fiyat.isnot(None)))
+        finally:
+            session.close()
+        return {
+            "dolu_urun_sayisi": int(dolu or 0),
+            "hesap_anahtari_var": "toplam_toptan" in inspect.getsource(
+                hesapla_kombinasyon_toplam),
+        }
+    except Exception as e:
+        return f"hata: {type(e).__name__}: {str(e)[:120]}"
 
 
 def _ajan_son_hata():
