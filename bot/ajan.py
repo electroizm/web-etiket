@@ -297,9 +297,21 @@ TOOLS = [
 ]
 
 
+def _patron_mu(kullanici: str) -> bool:
+    """Gönderen patron beyaz listesinde mi? (settings.BOT_PATRON_KIMLIKLER)
+
+    True ise fiyat araçlarının fiyat_cumlesi'ne TOPTAN (bayi alış) satırı da
+    eklenir. Kimlik Meta tarafından doğrulanır (WA telefon / IG IGSID) —
+    taklit edilemez. Listede olmayan HERKES normal müşteridir; toptan onların
+    araç sonucuna bile girmez (model göremez → sızdıramaz).
+    """
+    return bool(kullanici) and kullanici in settings.BOT_PATRON_KIMLIKLER
+
+
 def _tool_calistir(ad: str, argumanlar: dict,
                    platform: str = "", kullanici: str = ""):
     """Modelin istediği aracı gerçek veriyle çalıştır."""
+    patron = _patron_mu(kullanici)
     if ad == "koleksiyon_ara":
         return menu_veri.koleksiyon_ara(str(argumanlar.get("q", "")))
     if ad == "kategorileri_listele":
@@ -309,12 +321,14 @@ def _tool_calistir(ad: str, argumanlar: dict,
     if ad == "kombinasyonlari_listele":
         # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
         # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
-        return _ham_fiyat_gizle(menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"])))
+        return _ham_fiyat_gizle(menu_veri.kombinasyonlar(
+            int(argumanlar["koleksiyon_id"]), toptan_dahil=patron))
     if ad == "fiyat_detay":
-        return _ham_fiyat_gizle(menu_veri.kombinasyon(int(argumanlar["kombinasyon_id"])))
+        return _ham_fiyat_gizle(menu_veri.kombinasyon(
+            int(argumanlar["kombinasyon_id"]), toptan_dahil=patron))
     if ad == "parca_ara":
         # Tekil parça fiyatı: kayıtlarda yalnız fiyat_cumlesi var (ham rakam alanı yok).
-        parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")))
+        parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")), toptan_dahil=patron)
         if not parcalar:
             return {"bulunamadi": True,
                     "not": "Bu parça bulunamadı — fiyat UYDURMA. Bilmediğini söyle, "

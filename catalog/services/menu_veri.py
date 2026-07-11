@@ -23,7 +23,7 @@ def _tl(n) -> str:
     return f"{round(n):,}".replace(",", ".") + " TL"
 
 
-def fiyat_cumlesi(liste, perakende) -> str:
+def fiyat_cumlesi(liste, perakende, toptan=None, toptan_goster: bool = False) -> str:
     """Modelin AYNEN kopyalayacağı hazır, çok satırlı fiyat metni.
 
     Model ayrı ayrı sayı alanlarını cümleye çevirirken rakamları bozabiliyor
@@ -32,18 +32,27 @@ def fiyat_cumlesi(liste, perakende) -> str:
     Biçim (İsmail kararı 2026-07-09): kısa, etiketli üç satır; süslü söz yok
     ("size şu kadar indirim yaptık" DEĞİL). Sıra sabit: Liste → İndirim →
     İndirimli. Uydurma indirim yok — yalnız gerçek liste>perakende'de indirim satırı.
+
+    toptan_goster (İsmail kararı 2026-07-11): YALNIZ patron beyaz listesindeki
+    gönderen için True gelir — sona "Toptan: X TL" (bayi alış) satırı eklenir.
+    Toptan kayıtlı değilse patron bunu bilsin diye "kayıtlı değil" yazılır.
+    Normal müşteri akışında bu parametre hiç set edilmez; toptan metne girmez.
     """
     if perakende is None:
         return ""
     if liste and liste > perakende:
         fark = round(liste) - round(perakende)
-        return (f"Liste Fiyatı: {_tl(liste)}\n"
-                f"İndirim: {_tl(fark)}\n"
-                f"İndirimli Fiyat: {_tl(perakende)}")
-    return f"Fiyatı: {_tl(perakende)}"
+        metin = (f"Liste Fiyatı: {_tl(liste)}\n"
+                 f"İndirim: {_tl(fark)}\n"
+                 f"İndirimli Fiyat: {_tl(perakende)}")
+    else:
+        metin = f"Fiyatı: {_tl(perakende)}"
+    if toptan_goster:
+        metin += f"\nToptan: {_tl(toptan) if toptan else 'kayıtlı değil'}"
+    return metin
 
 
-def _toplam_ozet(kombi) -> dict:
+def _toplam_ozet(kombi, toptan_dahil: bool = False) -> dict:
     t = hesapla_kombinasyon_toplam(kombi)
     return {
         "urun_sayisi": t["urun_sayisi"],
@@ -51,7 +60,9 @@ def _toplam_ozet(kombi) -> dict:
         "toplam_liste": t["toplam_liste"],
         "toplam_perakende": t["toplam_perakende"],
         "indirim_yuzde": t["indirim_yuzde"],
-        "fiyat_cumlesi": fiyat_cumlesi(t["toplam_liste"], t["toplam_perakende"]),
+        "fiyat_cumlesi": fiyat_cumlesi(t["toplam_liste"], t["toplam_perakende"],
+                                       toptan=t.get("toplam_toptan"),
+                                       toptan_goster=toptan_dahil),
     }
 
 
@@ -100,7 +111,7 @@ def koleksiyonlar(kategori_id: int) -> dict | None:
         session.close()
 
 
-def kombinasyonlar(koleksiyon_id: int) -> dict | None:
+def kombinasyonlar(koleksiyon_id: int, toptan_dahil: bool = False) -> dict | None:
     """Bir koleksiyonun kombinasyonları, toplam fiyat özetiyle."""
     session = SessionLocal()
     try:
@@ -108,7 +119,8 @@ def kombinasyonlar(koleksiyon_id: int) -> dict | None:
         if koleksiyon is None:
             return None
         kombi_list = kombinasyon_listele(session, koleksiyon_id)
-        data = [{"id": k.id, "ad": k.ad, **_toplam_ozet(k)} for k in kombi_list]
+        data = [{"id": k.id, "ad": k.ad, **_toplam_ozet(k, toptan_dahil)}
+                for k in kombi_list]
         return {"koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad}, "kombinasyonlar": data}
     finally:
         session.close()
@@ -157,7 +169,7 @@ def _duz(s: str) -> str:
     return s.replace("̇", "")   # İ.lower() birleşik noktası (U+0307)
 
 
-def urun_ara(q: str) -> list[dict]:
+def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
     """Tek bir ürünün/parçanın (SET DEĞİL, tek SKU) fiyatını ad ile bul.
 
     Müşteri "sadece 5 kapaklı dolap" gibi TEK parça fiyatı sorduğunda kullanılır;
@@ -190,7 +202,10 @@ def urun_ara(q: str) -> list[dict]:
                 sonuc.append({
                     "sku": u.sku,
                     "ad": u.urun_adi_tam,
-                    "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat, u.son_perakende_fiyat),
+                    "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
+                                                   u.son_perakende_fiyat,
+                                                   toptan=u.son_toptan_fiyat,
+                                                   toptan_goster=toptan_dahil),
                     "para_birimi": "TL",
                 })
                 if len(sonuc) >= 10:
@@ -253,7 +268,7 @@ def soru_kaydet(platform: str, kullanici: str, soru: str) -> None:
         pass
 
 
-def kombinasyon(kombi_id: int) -> dict | None:
+def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
     """Seçilen kombinasyonun fiyat detayı + içindeki ürünler."""
     session = SessionLocal()
     try:
@@ -278,7 +293,7 @@ def kombinasyon(kombi_id: int) -> dict | None:
             "id": kombi.id,
             "ad": kombi.ad,
             "koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad} if koleksiyon else None,
-            **_toplam_ozet(kombi),
+            **_toplam_ozet(kombi, toptan_dahil),
             "para_birimi": "TL",
             "urunler": urunler,
         }

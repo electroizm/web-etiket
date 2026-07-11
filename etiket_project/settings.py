@@ -56,6 +56,12 @@ AJAN_AKTIF = bool(os.getenv('GEMINI_API_KEY') or os.getenv('ANTHROPIC_API_KEY'))
     and os.getenv('AJAN_KAPALI', '') != '1'
 # Konuşma bağlamı: bot_mesaj tablosundan alınacak son mesaj sayısı.
 AJAN_GECMIS_LIMIT = int(os.getenv('AJAN_GECMIS_LIMIT', '10'))
+# Patron beyaz listesi: bu gönderen kimlikleri (WA telefon "9053...", IG IGSID)
+# bota fiyat sorunca cevaba TOPTAN (bayi alış) satırı da eklenir. Toptan,
+# İsmail'in maliyet bilgisidir — listede OLMAYAN hiç kimseye asla gösterilmez
+# (araç sonucuna bile girmez, model göremez). İsmail kararı 2026-07-11.
+BOT_PATRON_KIMLIKLER = [k.strip() for k in os.getenv(
+    'BOT_PATRON_KIMLIK', '905321370627').split(',') if k.strip()]
 
 # Scraper — Supabase Postgres direct connection (SQLAlchemy)
 DATABASE_URL = os.getenv('DATABASE_URL', '')
@@ -141,7 +147,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2607.11.2"
+APP_SURUM = "2607.11.3"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
