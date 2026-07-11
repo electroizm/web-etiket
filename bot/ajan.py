@@ -169,7 +169,12 @@ KURALLAR (kesin):
     edeceğini hazır söyler — kendin sayaç tutma, o satıra uy. Geçmişte
     "indirim yapamıyorum" demiş olman ŞİMDİ de yapamayacağın anlamına
     GELMEZ — pazarlığı reddetmeden önce MUTLAKA aracı çağırıp ADIM
-    DURUMU'na bak; ancak "merdiven bitti" diyorsa reddet. pazarlik_notu
+    DURUMU'na bak; ancak "merdiven bitti" diyorsa reddet. ÜRÜN SABİT:
+    pazarlık, konuşmada EN SON fiyat verilen ürün üzerinedir — müşteri
+    açıkça başka ürün adı yazmadıkça ürün DEĞİŞTİRME, başka ürünün
+    fiyatını ARAMA; merdiven bitince de başka ürüne atlama, aynı ürünün
+    son fiyatını kibarca tekrarla. pazarlik_notu'nda "DİKKAT" uyarısı
+    varsa fiyat verme — önce hangi ürünü kastettiğini sor. pazarlik_notu
     YOKSA o üründe pazarlık yapma — kibarca "yetkili" yazmasını öner.
     Kendiliğinden indirimli teklif verme; merdiven ancak müşteri pazarlık
     edince işler.
@@ -468,6 +473,22 @@ def _pazarlik_kalkani(cevap: str, teshir_baglami: bool,
     return _TL_KALIBI.sub(duzelt, cevap)
 
 
+# Müşteri bir İÇ LİMİT olduğunu duymamalı (kural 12/14: "sistem/taban/limit"
+# deme). Prompt tembihine rağmen lite yedek model "sistemin izin verdiği son
+# fiyat" diyebiliyor (canlıda görüldü) — bilinen kalıplar doğal söze çevrilir.
+_SISTEM_KALIPLARI = (
+    (re.compile(r"sistem\w*\s+izin\s+verdiği", re.IGNORECASE), "size özel"),
+    (re.compile(r"sistem\w*\s+(mevcut\s+)?fiyatland\w+\s+kurallar\w*\s+gereği",
+                re.IGNORECASE), "mağaza politikamız gereği"),
+)
+
+
+def _sistem_sozu_temizle(cevap: str) -> str:
+    for kalip, yerine in _SISTEM_KALIPLARI:
+        cevap = kalip.sub(yerine, cevap)
+    return cevap
+
+
 # ─── Fiyat kalkanı — uydurma fiyat koruması ──────────────────────────────────
 # Model, araçtan gelen gerçek fiyatı cümleye çevirirken rakamı bozabiliyor
 # (canlıda görüldü: 66.661/53.996 → 70.000/70.000). fiyat_cumlesi verbatim
@@ -542,8 +563,14 @@ def _pazarlik_istegi_mi(metin: str) -> bool:
     return any(k in low for k in _PAZARLIK_ISTEK_KALIPLARI)
 
 
-def _giden_metinler(platform: str, kullanici: str) -> list[str]:
-    """Son giden bot mesajlarının TAM metni (redaksiyonsuz) — adım tespiti için."""
+def _son_mesajlar(platform: str, kullanici: str) -> list[tuple[str, str]]:
+    """Son konuşma satırları (yon, TAM metin — redaksiyonsuz).
+
+    İki iş görür: giden'lerden verilen pazarlık teklifleri tespit edilir
+    (adım takibi), gelen+giden bütününden pazarlık edilen ÜRÜN doğrulanır
+    (model çıplak "indirim olur mu" mesajında alakasız ürüne atlayabiliyor —
+    canlıda görüldü: Milena pazarlığı LEGNA fiyatına sıçradı).
+    """
     if not (platform and kullanici):
         return []
     try:
@@ -552,14 +579,13 @@ def _giden_metinler(platform: str, kullanici: str) -> list[str]:
             rows = session.scalars(
                 select(BotMesaj)
                 .where(BotMesaj.platform == platform,
-                       BotMesaj.kullanici == kullanici,
-                       BotMesaj.yon == "giden")
+                       BotMesaj.kullanici == kullanici)
                 .order_by(BotMesaj.id.desc())
-                .limit(_MERDIVEN_GIDEN_LIMIT)
+                .limit(_MERDIVEN_GIDEN_LIMIT * 2)
             ).all()
         finally:
             session.close()
-        return [(r.metin or "") for r in rows]
+        return [(r.yon, r.metin or "") for r in rows]
     except Exception:
         log.exception("ajan: pazarlık adım geçmişi okunamadı")
         return []
@@ -588,21 +614,47 @@ def _adim_notu(merdiven: list[int], gidenler: list[str]) -> str:
             f"daha fazla inme, kibarca son fiyatın bu olduğunu söyle.")
 
 
-def _merdiven_isle(sonuc, gidenler: list[str]) -> None:
+def _urun_konusuldu_mu(kayit: dict, konusma_duz: str) -> bool:
+    """Pazarlık edilen ürün son konuşmalarda hiç geçti mi?
+
+    Model çıplak "indirim olur mu" mesajında alakasız ürüne atlayabiliyor
+    (canlıda iki kez görüldü: Milena pazarlığı LEGNA fiyatına sıçradı).
+    Seri adı (koleksiyon adı ya da ürün adının ilk kelimesi) son konuşma
+    metinlerinde aranır; yoksa nota DİKKAT uyarısı düşülür — model fiyat
+    vermek yerine ürünü netleştirmek zorunda kalır.
+    """
+    seri = (kayit.get("koleksiyon") or {}).get("ad") or ""
+    if not seri:
+        kelimeler = (kayit.get("ad") or "").split()
+        seri = kelimeler[0] if kelimeler else ""
+    seri = menu_veri._duz(seri)
+    if len(seri) < 3:      # ayırt edici değil ("2li" gibi) — kontrolü atla
+        return True
+    return seri in konusma_duz
+
+
+def _merdiven_isle(sonuc, gidenler: list[str], konusma_duz: str) -> None:
     """Araç sonucundaki _merdiven alanlarını düşür, adım durumunu nota işle.
 
     _merdiven modele GİTMEZ (ham basamak listesi); pazarlik_notu'na eklenen
     ADIM DURUMU cümlesiyle model yalnız söyleneni uygular — sayaç tutmaz.
+    Ürün son konuşmalarda hiç geçmediyse DİKKAT uyarısı eklenir (yanlış
+    ürüne pazarlık fiyatı verilmesin).
     """
     if isinstance(sonuc, dict):
         merdiven = sonuc.pop("_merdiven", None)
         if merdiven and sonuc.get("pazarlik_notu"):
             sonuc["pazarlik_notu"] += _adim_notu(list(merdiven), gidenler)
+            if not _urun_konusuldu_mu(sonuc, konusma_duz):
+                sonuc["pazarlik_notu"] += (
+                    " DİKKAT: bu ürün müşteriyle SON KONUŞULAN ürün DEĞİL "
+                    "görünüyor — müşteri bu ürünü açıkça istemediyse bu fiyatı "
+                    "VERME; pazarlığı hangi ürün için istediğini SOR.")
         for v in sonuc.values():
-            _merdiven_isle(v, gidenler)
+            _merdiven_isle(v, gidenler, konusma_duz)
     elif isinstance(sonuc, list):
         for v in sonuc:
-            _merdiven_isle(v, gidenler)
+            _merdiven_isle(v, gidenler, konusma_duz)
 
 
 def _toptan_satirlari(sonuc, birikim: dict[str, str]) -> None:
@@ -789,7 +841,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     "teklif edilecek fiyat orada hazır yazıyor."})
                 continue
             if cevap:
-                cevap = _pazarlik_kalkani(cevap, teshir_cagrildi, legit=legit_fiyatlar)
+                cevap = _sistem_sozu_temizle(
+                    _pazarlik_kalkani(cevap, teshir_cagrildi, legit=legit_fiyatlar))
             # Fiyat kalkanı (teşhir DAHİL, artık her zaman açık): cevaptaki bir TL
             # tutarı ne araçların döndürdüğü gerçek fiyat, ne müşterinin yazdığı
             # tutar, ne de bir teşhir pazarlık aralığı [taban, İndirimli] içindeyse
@@ -858,8 +911,12 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     (int(lo), int(hi)) for lo, hi in sonuc.pop("_pazarlik_araliklari"))
             if tc.function.name in ("fiyat_detay", "parca_ara"):
                 # Pazarlık adım durumu: verilen teklifler bot_mesaj'dan tespit
-                # edilir, nota "ŞİMDİ şunu teklif et" eklenir (_merdiven düşer).
-                _merdiven_isle(sonuc, _giden_metinler(platform, kullanici))
+                # edilir, nota "ŞİMDİ şunu teklif et" eklenir (_merdiven düşer);
+                # konuşulmamış ürüne DİKKAT uyarısı düşer (yanlış ürün ataması).
+                satirlar = _son_mesajlar(platform, kullanici)
+                _merdiven_isle(sonuc,
+                               [m for y, m in satirlar if y == "giden"],
+                               menu_veri._duz(" ".join(m for _, m in satirlar)))
             _fiyatlari_topla(sonuc, legit_fiyatlar)
             _toptan_satirlari(sonuc, toptan_birikim)
             mesajlar.append({
