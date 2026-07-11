@@ -570,16 +570,24 @@ def _son_mesajlar(platform: str, kullanici: str) -> list[tuple[str, str]]:
     (adım takibi), gelen+giden bütününden pazarlık edilen ÜRÜN doğrulanır
     (model çıplak "indirim olur mu" mesajında alakasız ürüne atlayabiliyor —
     canlıda görüldü: Milena pazarlığı LEGNA fiyatına sıçradı).
+
+    Yalnız son BOT_PAZARLIK_HAFIZA_SAAT saat taranır (İsmail kararı: 24):
+    süre içinde merdiven kaldığı yerden sürer, dolunca aynı müşteriye
+    pazarlık 1. adımdan yeniden başlar ("kampanya güncellendi" davranışı).
     """
     if not (platform and kullanici):
         return []
     try:
+        from datetime import datetime, timedelta, timezone
+        esik = datetime.now(timezone.utc) - timedelta(
+            hours=settings.BOT_PAZARLIK_HAFIZA_SAAT)
         session = SessionLocal()
         try:
             rows = session.scalars(
                 select(BotMesaj)
                 .where(BotMesaj.platform == platform,
-                       BotMesaj.kullanici == kullanici)
+                       BotMesaj.kullanici == kullanici,
+                       BotMesaj.olusturma >= esik)
                 .order_by(BotMesaj.id.desc())
                 .limit(_MERDIVEN_GIDEN_LIMIT * 2)
             ).all()

@@ -69,6 +69,10 @@ BOT_PATRON_KIMLIKLER = [k.strip() for k in os.getenv(
 # fark 6'ya bölünür; teklifler indirimli−3/6 ve −5/6 (100'e yuvarlı), son teklif
 # tabanın kendisi. Marj değişirse env'den ayarlanır, kod değişmez.
 BOT_PAZARLIK_MARJ = float(os.getenv('BOT_PAZARLIK_MARJ', '1.27'))
+# Verilen teklifler bu kadar saat hatırlanır (İsmail kararı 2026-07-12: 24).
+# Süre içinde merdiven kaldığı adımdan sürer (12.100 diyen bot 13.000'e geri
+# ÇIKMAZ); süre dolunca aynı müşteriye pazarlık 1. adımdan yeniden başlar.
+BOT_PAZARLIK_HAFIZA_SAAT = int(os.getenv('BOT_PAZARLIK_HAFIZA_SAAT', '24'))
 
 # Scraper — Supabase Postgres direct connection (SQLAlchemy)
 DATABASE_URL = os.getenv('DATABASE_URL', '')
@@ -154,7 +158,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2607.12.3"
+APP_SURUM = "2607.12.4"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
