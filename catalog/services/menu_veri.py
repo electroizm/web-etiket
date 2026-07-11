@@ -117,6 +117,9 @@ def _toplam_ozet(kombi, toptan_dahil: bool = False, pazarlik: bool = False) -> d
         merdiven = pazarlik_merdiveni(t["toplam_perakende"], t.get("toplam_toptan"))
         if merdiven:
             ozet["pazarlik_notu"] = _pazarlik_notu(kombi.ad, merdiven)
+            # _ önekli alan modele GİTMEZ: ajan tool döngüsü bunu düşürüp
+            # geçmişten adım durumunu hesaplar (hangi teklif verildi, sıradaki ne).
+            ozet["_merdiven"] = merdiven
     return ozet
 
 
@@ -267,6 +270,7 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
                                               u.son_toptan_fiyat)
                 if merdiven:
                     kayit["pazarlik_notu"] = _pazarlik_notu(u.urun_adi_tam, merdiven)
+                    kayit["_merdiven"] = merdiven   # modele gitmez (ajan düşürür)
                 sonuc.append(kayit)
                 if len(sonuc) >= 10:
                     break
