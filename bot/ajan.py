@@ -126,7 +126,7 @@ KURALLAR (kesin):
     o ürünün fiyat_cumlesi'si ve pazarlık tabanı öyle gelir. Fiyat vereceğin
     her teşhir ürününde MUTLAKA ad (ya da koleksiyon_id) geçir; isimsiz genel
     listeden fiyat OKUMA (orada fiyat yoktur).
-12. PAZARLIK (yalnız teşhir ürünlerinde): teshir_bilgi sonucunda bir ürünün
+12. PAZARLIK — TEŞHİR ürünleri: teshir_bilgi sonucunda bir ürünün
     "pazarlik_notu" alanı VARSA ve müşteri pazarlık ederse ("indirim olur mu",
     "son fiyat ne", "kaça bırakırsın") indirim yapabilirsin. pazarlik_notu, o
     ürün için inebileceğin EN DÜŞÜK fiyatı söyleyen hazır bir talimattır. Kurallar:
@@ -153,6 +153,20 @@ KURALLAR (kesin):
     hangisini kastettiğini sor. parca_ara boş dönerse fiyatı UYDURMA — bilmiyorum
     de, "yetkili" yazmasını öner. (Müşteri tüm odayı/seti soruyorsa bu aracı
     KULLANMA; her zamanki koleksiyon/kombinasyon akışını kullan.)
+14. PAZARLIK — KATALOG (kombinasyon ve tek parça). Katalog fiyatı verdiğin
+    cevabın SONUNA BİR KEZ "Fiyatlarımızda pazarlık payımız var 😊" notu ekle
+    (ürün başına değil, cevap başına bir kez; müşteri pazarlığa zaten
+    başladıysa tekrar etme). Müşteri pazarlık ederse ("indirim olur mu",
+    "son fiyat ne", "kaça olur"): araç sonucundaki "pazarlik_notu" alanına
+    AYNEN uy — merdivendeki fiyatları SIRAYLA, her ısrarda yalnız BİR adım
+    inerek teklif et; merdivenin SON fiyatının altına ASLA inme; "taban",
+    "limit", "sistem" gibi sözler kullanma; notu müşteriye okuma, UYGULA.
+    Kombinasyonun pazarlik_notu'su fiyat_detay aracında gelir — müşteri hangi
+    kombinasyonda pazarlık ediyorsa ONUN fiyat_detay'ını çağır (hangisi
+    olduğu belli değilse önce sor). Tek parçada pazarlik_notu parca_ara
+    sonucunda zaten vardır. pazarlik_notu YOKSA o üründe pazarlık yapma —
+    kibarca "yetkili" yazmasını öner. Kendiliğinden indirimli teklif verme;
+    merdiven ancak müşteri pazarlık edince işler.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -263,9 +277,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "fiyat_detay",
-            "description": "Bir kombinasyonun fiyat detayını ve içindeki ürünleri verir. "
-                           "Müşteriye fiyat söylemeden önce MUTLAKA bu (veya "
-                           "kombinasyonlari_listele) çağrılmış olmalı.",
+            "description": "Bir kombinasyonun fiyat detayını, içindeki ürünleri VE "
+                           "pazarlık merdivenini (pazarlik_notu) verir. Müşteriye fiyat "
+                           "söylemeden önce MUTLAKA bu (veya kombinasyonlari_listele) "
+                           "çağrılmış olmalı. Müşteri bir kombinasyonda PAZARLIK "
+                           "ederse de bunu çağır — pazarlık fiyatları buradan gelir.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -400,7 +416,8 @@ _PAZARLIK_IPUCLARI = ("son fiyat", "özel fiyat", "indirim", "pazarlık", "pazar
 _TL_KALIBI = re.compile(r"\b(\d{1,3}(?:[.\s]\d{3})+|\d{4,6})\s*TL\b", re.IGNORECASE)
 
 
-def _pazarlik_kalkani(cevap: str, teshir_baglami: bool) -> str:
+def _pazarlik_kalkani(cevap: str, teshir_baglami: bool,
+                      legit: set[int] = frozenset()) -> str:
     """Teşhir pazarlığı bağlamında taban altı fiyat teklifini tabana çek.
 
     YALNIZ bu turda teshir_bilgi aracı çağrıldıysa (gerçek pazarlık bağlamı)
@@ -410,6 +427,10 @@ def _pazarlik_kalkani(cevap: str, teshir_baglami: bool) -> str:
     tabanına (70.000) yükseltip bozuyordu (canlıda görüldü). Sinyal artık
     aracın çağrılıp çağrılmadığı. Taban altı ama tabanın %60'ından büyük TL
     tutarları ilgili tabana yükseltilir; küçük tutarlar ("5.000 TL indirim") etkilenmez.
+
+    legit: bu turda araçların döndürdüğü GERÇEK tutarlar — bunlara dokunma.
+    Katalog pazarlık merdiveni fiyatları (2026-07-12) bir teşhir tabanının
+    altında kalabilir; kalkan onları teşhir tabanına yükseltip bozmasın.
     """
     if not teshir_baglami:
         return cevap
@@ -429,6 +450,8 @@ def _pazarlik_kalkani(cevap: str, teshir_baglami: bool) -> str:
 
     def duzelt(m: re.Match) -> str:
         deger = int(re.sub(r"[.\s]", "", m.group(1)))
+        if any(abs(deger - g) <= 1 for g in legit):
+            return m.group(0)       # araçtan gelen gerçek tutar — dokunma
         for taban in tabanlar:      # küçükten büyüğe — en yakın üst taban
             if taban * 0.6 <= deger < taban:
                 log.warning("ajan: pazarlık kalkanı — %s TL taban altı, %s TL yapıldı",
@@ -660,7 +683,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
         if not getattr(secim, "tool_calls", None):
             cevap = (secim.content or "").strip()
             if cevap:
-                cevap = _pazarlik_kalkani(cevap, teshir_cagrildi)
+                cevap = _pazarlik_kalkani(cevap, teshir_cagrildi, legit=legit_fiyatlar)
             # Fiyat kalkanı (teşhir DAHİL, artık her zaman açık): cevaptaki bir TL
             # tutarı ne araçların döndürdüğü gerçek fiyat, ne müşterinin yazdığı
             # tutar, ne de bir teşhir pazarlık aralığı [taban, İndirimli] içindeyse

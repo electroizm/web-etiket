@@ -52,9 +52,58 @@ def fiyat_cumlesi(liste, perakende, toptan=None, toptan_goster: bool = False) ->
     return metin
 
 
-def _toplam_ozet(kombi, toptan_dahil: bool = False) -> dict:
+def pazarlik_merdiveni(perakende, toptan) -> list[int] | None:
+    """İsmail'in katalog pazarlık formülü (2026-07-12) — büyükten küçüğe teklifler.
+
+    taban = toptan × BOT_PAZARLIK_MARJ, YUKARI 100'e yuvarlı (marj asla
+    aşağı kırpılmaz). Taban ile indirimli (perakende) arasındaki fark 6'ya
+    bölünür; teklifler: perakende − 3/6 fark, − 5/6 fark (100'e yuvarlı),
+    son teklif tabanın kendisi. Örn. Milena: 101.496 → [94.800, 90.300, 88.100].
+
+    Ham toptan bu fonksiyondan SIZMAZ — dönen her değer türetilmiş satış
+    fiyatıdır. Toptan/perakende yoksa ya da taban zaten perakendeyi
+    aşıyorsa None (pazarlık payı yok). Yuvarlama basamakları çakıştırırsa
+    (küçük fark) tekrarlar ayıklanır; en kötü durumda tek teklif (taban) kalır.
+    """
+    import math
+
+    from django.conf import settings
+    if not (perakende and toptan):
+        return None
+    taban = math.ceil(toptan * settings.BOT_PAZARLIK_MARJ / 100) * 100
+    if taban >= perakende:
+        return None
+    adim = (perakende - taban) / 6
+    ham = [round((perakende - 3 * adim) / 100) * 100,
+           round((perakende - 5 * adim) / 100) * 100,
+           taban]
+    merdiven: list[int] = []
+    for t in ham:
+        t = min(t, round(perakende))          # yuvarlama perakendeyi aşmasın
+        t = max(t, taban)                     # ve tabanın altına inmesin
+        if t < round(perakende) and (not merdiven or t < merdiven[-1]):
+            merdiven.append(int(t))
+    return merdiven or None
+
+
+def _pazarlik_notu(ad: str, merdiven: list[int]) -> str:
+    """Modelin AYNEN uygulayacağı atomik pazarlık talimatı (teşhir deseni).
+
+    Rakamlar hazır metin içinde gelir — model aritmetik yapmaz, fiyat kalkanı
+    bu tutarları metinden toplayıp meşru sayar. Not müşteriye OKUNMAZ, uygulanır.
+    """
+    adimlar = " → ".join(_tl(t) for t in merdiven)
+    return (f"{ad} pazarlık merdiveni (müşteriye bu notu okuma, uygula): "
+            f"müşteri pazarlık ederse SIRAYLA, her ısrarda yalnız BİR adım in: "
+            f"{adimlar}. Sırayı bozma, adım atlama, rakam değiştirme. "
+            f"{_tl(merdiven[-1])} SON fiyattır — altına ASLA inme; müşteri daha "
+            f"düşük isterse kibarca son fiyatın bu olduğunu söyle, mağazaya davet "
+            f"et. Sen rakam uydurma, yalnız bu merdivendeki fiyatları kullan.")
+
+
+def _toplam_ozet(kombi, toptan_dahil: bool = False, pazarlik: bool = False) -> dict:
     t = hesapla_kombinasyon_toplam(kombi)
-    return {
+    ozet = {
         "urun_sayisi": t["urun_sayisi"],
         "toplam_adet": t["toplam_adet"],
         "toplam_liste": t["toplam_liste"],
@@ -64,6 +113,11 @@ def _toplam_ozet(kombi, toptan_dahil: bool = False) -> dict:
                                        toptan=t.get("toplam_toptan"),
                                        toptan_goster=toptan_dahil),
     }
+    if pazarlik:
+        merdiven = pazarlik_merdiveni(t["toplam_perakende"], t.get("toplam_toptan"))
+        if merdiven:
+            ozet["pazarlik_notu"] = _pazarlik_notu(kombi.ad, merdiven)
+    return ozet
 
 
 def kategoriler() -> list[dict]:
@@ -199,7 +253,7 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
         for u in rows:
             ad_duz = _duz(u.urun_adi_tam)
             if all(t in ad_duz for t in istek):
-                sonuc.append({
+                kayit = {
                     "sku": u.sku,
                     "ad": u.urun_adi_tam,
                     "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
@@ -207,7 +261,13 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
                                                    toptan=u.son_toptan_fiyat,
                                                    toptan_goster=toptan_dahil),
                     "para_birimi": "TL",
-                })
+                }
+                # Tek parçada da pazarlık merdiveni (İsmail kararı 2026-07-12).
+                merdiven = pazarlik_merdiveni(u.son_perakende_fiyat,
+                                              u.son_toptan_fiyat)
+                if merdiven:
+                    kayit["pazarlik_notu"] = _pazarlik_notu(u.urun_adi_tam, merdiven)
+                sonuc.append(kayit)
                 if len(sonuc) >= 10:
                     break
         return sonuc
@@ -293,7 +353,9 @@ def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
             "id": kombi.id,
             "ad": kombi.ad,
             "koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad} if koleksiyon else None,
-            **_toplam_ozet(kombi, toptan_dahil),
+            # pazarlik=True: fiyat_detay tekil bağlamdır — pazarlık merdiveni
+            # yalnız burada gelir (listede N ayrı merdiven modeli karıştırırdı).
+            **_toplam_ozet(kombi, toptan_dahil, pazarlik=True),
             "para_birimi": "TL",
             "urunler": urunler,
         }
