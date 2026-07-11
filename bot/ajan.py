@@ -180,7 +180,9 @@ KURALLAR (kesin):
     varsa fiyat verme — önce hangi ürünü kastettiğini sor. pazarlik_notu
     YOKSA o üründe pazarlık yapma — kibarca "yetkili" yazmasını öner.
     Kendiliğinden indirimli teklif verme; merdiven ancak müşteri pazarlık
-    edince işler.
+    edince işler. Müşteriye yazdığın cevapta "merdiven", "adım",
+    "ADIM DURUMU", "pazarlik_notu" gibi İÇ terimleri ASLA kullanma —
+    bunlar senin talimatındır, müşteri bir mekanizma olduğunu bilmemeli.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -331,35 +333,39 @@ TOOLS = [
 def _patron_mu(kullanici: str) -> bool:
     """Gönderen patron beyaz listesinde mi? (settings.BOT_PATRON_KIMLIKLER)
 
-    True ise fiyat araçlarının fiyat_cumlesi'ne TOPTAN (bayi alış) satırı da
-    eklenir. Kimlik Meta tarafından doğrulanır (WA telefon / IG IGSID) —
-    taklit edilemez. Listede olmayan HERKES normal müşteridir; toptan onların
-    araç sonucuna bile girmez (model göremez → sızdıramaz).
+    Kimlik Meta tarafından doğrulanır (WA telefon / IG IGSID) — taklit
+    edilemez. ŞU AN hiçbir akış çağırmıyor: Toptan satırı bot cevaplarından
+    kaldırıldı (İsmail kararı 2026-07-12). Beyaz liste ve bu yardımcı,
+    ileride patrona özel bir özellik gerekirse hazır dursun diye korunuyor
+    (örn. toptan_dahil=_patron_mu(kullanici) ile tek satırda geri açılır).
     """
     return bool(kullanici) and kullanici in settings.BOT_PATRON_KIMLIKLER
 
 
 def _tool_calistir(ad: str, argumanlar: dict,
                    platform: str = "", kullanici: str = ""):
-    """Modelin istediği aracı gerçek veriyle çalıştır."""
-    patron = _patron_mu(kullanici)
+    """Modelin istediği aracı gerçek veriyle çalıştır.
+
+    NOT: Toptan satırı bot cevaplarından KALDIRILDI (İsmail kararı 2026-07-12;
+    pazarlık merdiveni toptanı zaten içeride kullanıyor, ayrıca göstermek
+    gürültüydü). Beyaz liste (_patron_mu) ve menu_veri'nin toptan_dahil
+    altyapısı ileride gerekirse tek satırla geri açılmak üzere duruyor.
+    """
     if ad == "koleksiyon_ara":
         return menu_veri.koleksiyon_ara(str(argumanlar.get("q", "")))
     if ad == "kategorileri_listele":
         return menu_veri.kategoriler()
     if ad == "koleksiyonlari_listele":
-        return menu_veri.koleksiyonlar(int(argumanlar["kategori_id"]))
-    if ad == "kombinasyonlari_listele":
         # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
         # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
         return _ham_fiyat_gizle(menu_veri.kombinasyonlar(
-            int(argumanlar["koleksiyon_id"]), toptan_dahil=patron))
+            int(argumanlar["koleksiyon_id"])))
     if ad == "fiyat_detay":
         return _ham_fiyat_gizle(menu_veri.kombinasyon(
-            int(argumanlar["kombinasyon_id"]), toptan_dahil=patron))
+            int(argumanlar["kombinasyon_id"])))
     if ad == "parca_ara":
         # Tekil parça fiyatı: kayıtlarda yalnız fiyat_cumlesi var (ham rakam alanı yok).
-        parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")), toptan_dahil=patron)
+        parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")))
         if not parcalar:
             return {"bulunamadi": True,
                     "not": "Bu parça bulunamadı — fiyat UYDURMA. Bilmediğini söyle, "
@@ -483,6 +489,10 @@ _SISTEM_KALIPLARI = (
     (re.compile(r"sistem\w*\s+izin\s+verdiği", re.IGNORECASE), "size özel"),
     (re.compile(r"sistem\w*\s+(mevcut\s+)?fiyatland\w+\s+kurallar\w*\s+gereği",
                 re.IGNORECASE), "mağaza politikamız gereği"),
+    # canlıda görüldü: "sistemin bana tanımladığı son fiyat merdivenini tamamladık"
+    (re.compile(r"sistem\w*\s+(bana\s+)?tanımlad\w+\s+son\s+fiyat\s+merdiven\w+\s+"
+                r"tamamlad\w+", re.IGNORECASE), "size sunabileceğim son fiyata ulaştık"),
+    (re.compile(r"(son\s+)?fiyat\s+merdiven\w+", re.IGNORECASE), "son fiyat"),
 )
 
 
@@ -669,27 +679,6 @@ def _merdiven_isle(sonuc, gidenler: list[str], konusma_duz: str) -> None:
             _merdiven_isle(v, gidenler, konusma_duz)
 
 
-def _toptan_satirlari(sonuc, birikim: dict[str, str]) -> None:
-    """Araç sonucundaki fiyat_cumlesi'lerden Toptan değerlerini (ad → tutar) topla.
-
-    Toptan satırı fiyat_cumlesi'ne YALNIZ patron beyaz listesinde eklenir
-    (menu_veri.fiyat_cumlesi, toptan_goster) — yani birikimin dolması gönderenin
-    patron olduğunun kanıtıdır. Model bu satırı cevaba almazsa (canlıda görüldü:
-    lite yedek model prompttaki üç satırlık örneğe normalize edip 4. satırı
-    atıyor) cevabın sonuna kod garantisiyle basılır.
-    """
-    if isinstance(sonuc, dict):
-        fc = sonuc.get("fiyat_cumlesi")
-        if isinstance(fc, str) and "\nToptan: " in fc:
-            ad = str(sonuc.get("ad") or sonuc.get("sku") or f"#{len(birikim) + 1}")
-            birikim[ad] = fc.rsplit("\nToptan: ", 1)[1].strip()
-        for v in sonuc.values():
-            _toptan_satirlari(v, birikim)
-    elif isinstance(sonuc, list):
-        for v in sonuc:
-            _toptan_satirlari(v, birikim)
-
-
 # Modele giden görünümden çıkarılan ham fiyat alanları. Model bu ayrı rakamları
 # (liste/perakende/indirim/taban) yeniden cümleye çevirirken — özellikle çok
 # ürünlü teşhir listesinde — birbirine karıştırıyor (canlıda görüldü: 9 üründe
@@ -820,7 +809,6 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     teshir_cagrildi = False            # teşhir pazarlığında _pazarlik_kalkani sinyali
     pazarlik_araliklari: list[tuple[int, int]] = []   # [taban, İndirimli] — ara fiyat meşru
     duzeltme_denendi = False           # uydurma fiyat için tek düzeltme hakkı
-    toptan_birikim: dict[str, str] = {}   # patron: araçtan gelen Toptan satırları (ad → tutar)
     arac_cagrildi = False              # bu istekte en az bir araç çalıştı mı
     pazarlik_zorlandi = False          # araçsız pazarlık cevabına tek zorlama hakkı
 
@@ -889,13 +877,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 return None
             if not cevap:
                 return None
-            cevap = cevap[:MAKS_CEVAP_KR]
-            if toptan_birikim and "toptan" not in cevap.lower():
-                # Patron cevabında model Toptan satırını düşürdü → kod garantisi.
-                # Birikim yalnız patron akışında dolar; müşteri cevabı etkilenmez.
-                cevap += "\n\nToptan (yalnız size görünür):\n" + "\n".join(
-                    f"• {ad}: {deger}" for ad, deger in toptan_birikim.items())
-            return cevap
+            return cevap[:MAKS_CEVAP_KR]
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
         arac_cagrildi = True
@@ -930,7 +912,6 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                                [m for y, m in satirlar if y == "giden"],
                                menu_veri._duz(" ".join(m for _, m in satirlar)))
             _fiyatlari_topla(sonuc, legit_fiyatlar)
-            _toptan_satirlari(sonuc, toptan_birikim)
             mesajlar.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
