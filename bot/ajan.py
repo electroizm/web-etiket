@@ -153,11 +153,13 @@ KURALLAR (kesin):
     hangisini kastettiğini sor. parca_ara boş dönerse fiyatı UYDURMA — bilmiyorum
     de, "yetkili" yazmasını öner. (Müşteri tüm odayı/seti soruyorsa bu aracı
     KULLANMA; her zamanki koleksiyon/kombinasyon akışını kullan.)
-14. PAZARLIK — KATALOG (kombinasyon ve tek parça). Katalog fiyatı verdiğin
-    cevabın SONUNA BİR KEZ, AYNEN şu cümleyi ekle: "Size özel bir fiyat
-    çalışması yapmak isteriz. 😊" (ürün başına değil, cevap başına bir kez;
-    cümleyi değiştirme, başına/sonuna ek açıklama koyma; müşteri pazarlığa
-    zaten başladıysa hiç ekleme). Müşteri pazarlık ederse ("indirim olur mu",
+14. PAZARLIK — KATALOG (kombinasyon ve tek parça). YALNIZ TEK bir ürünün ya da
+    kombinasyonun fiyatını verdiğin cevabın SONUNA BİR KEZ, AYNEN şu cümleyi
+    ekle: "Size özel bir fiyat çalışması yapmak isteriz. 😊" (cümleyi
+    değiştirme, başına/sonuna ek açıklama koyma; müşteri pazarlığa zaten
+    başladıysa hiç ekleme). BİRDEN FAZLA kombinasyon/ürün listelediğin cevaba
+    bu cümleyi EKLEME — o cevabın sonunda hangi kombinasyonu istediğini SOR;
+    müşteri birini seçince fiyatını ver ve cümleyi ANCAK O cevaba ekle. Müşteri pazarlık ederse ("indirim olur mu",
     "son fiyat ne", "kaça olur"): araç sonucundaki "pazarlik_notu" alanına
     AYNEN uy — merdivendeki fiyatları SIRAYLA, her ısrarda yalnız BİR adım
     inerek teklif et; merdivenin SON fiyatının altına ASLA inme; "taban",
@@ -361,8 +363,17 @@ def _tool_calistir(ad: str, argumanlar: dict,
     if ad == "kombinasyonlari_listele":
         # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
         # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
-        return _ham_fiyat_gizle(menu_veri.kombinasyonlar(
+        sonuc = _ham_fiyat_gizle(menu_veri.kombinasyonlar(
             int(argumanlar["koleksiyon_id"])))
+        if sonuc and len(sonuc.get("kombinasyonlar") or []) > 1:
+            # Pazarlık daveti seçimden ÖNCE gitmesin (İsmail kararı 2026-07-12):
+            # listede davet olunca pazarlığın hangi kombinasyon üzerinde
+            # başlayacağı belirsiz kalıyor. Önce seçim, davet tek ürün cevabında.
+            sonuc["not"] = ("Birden fazla kombinasyon listeliyorsun: cevabın "
+                            "sonunda hangi kombinasyonu istediğini SOR. 'Size "
+                            "özel bir fiyat çalışması' cümlesini BU cevaba "
+                            "EKLEME — müşteri bir kombinasyon seçince ekle.")
+        return sonuc
     if ad == "fiyat_detay":
         return _ham_fiyat_gizle(menu_veri.kombinasyon(
             int(argumanlar["kombinasyon_id"])))
@@ -502,6 +513,31 @@ _SISTEM_KALIPLARI = (
 def _sistem_sozu_temizle(cevap: str) -> str:
     for kalip, yerine in _SISTEM_KALIPLARI:
         cevap = kalip.sub(yerine, cevap)
+    return cevap
+
+
+# ─── Pazarlık daveti yeri ────────────────────────────────────────────────────
+# Davet cümlesi yalnız TEK ürünün fiyatı verilen cevaba eklenir (İsmail kararı
+# 2026-07-12): birden çok kombinasyon listelenen cevapta davet olursa pazarlık
+# hangi ürün üzerinde başlayacağı belirsiz kalıyor — önce seçim sorulmalı.
+# Prompt kuralı (14) + araç notu modele bunu söyler; model unutursa bu süzgeç
+# cümleyi liste cevabından düşürür ve soru yoksa seçim sorusu ekler.
+_DAVET_KALIBI = re.compile(
+    r"[ \t]*Size özel bir fiyat çalışması yapmak isteriz\.?\s*(?:😊\s*)?",
+    re.IGNORECASE)
+# fiyat_cumlesi blokları: indirimli üç satırlık biçim "İndirimli Fiyat:" ile,
+# indirimsiz tek satır "Fiyatı:" ile biter ("Liste Fiyatı:" sayılmaz).
+_FIYAT_BLOK_KALIBI = re.compile(r"İndirimli Fiyat:|(?<!Liste )Fiyatı:")
+
+
+def _davet_yeri_duzelt(cevap: str) -> str:
+    if len(_FIYAT_BLOK_KALIBI.findall(cevap)) < 2:
+        return cevap
+    if not _DAVET_KALIBI.search(cevap):
+        return cevap
+    cevap = _DAVET_KALIBI.sub("", cevap).strip()
+    if "?" not in cevap:
+        cevap += "\n\nHangi kombinasyon ilginizi çeker? 😊"
     return cevap
 
 
@@ -844,8 +880,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     "teklif edilecek fiyat orada hazır yazıyor."})
                 continue
             if cevap:
-                cevap = _sistem_sozu_temizle(
-                    _pazarlik_kalkani(cevap, teshir_cagrildi, legit=legit_fiyatlar))
+                cevap = _davet_yeri_duzelt(_sistem_sozu_temizle(
+                    _pazarlik_kalkani(cevap, teshir_cagrildi, legit=legit_fiyatlar)))
             # Fiyat kalkanı (teşhir DAHİL, artık her zaman açık): cevaptaki bir TL
             # tutarı ne araçların döndürdüğü gerçek fiyat, ne müşterinin yazdığı
             # tutar, ne de bir teşhir pazarlık aralığı [taban, İndirimli] içindeyse
