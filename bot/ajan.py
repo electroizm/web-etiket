@@ -146,14 +146,22 @@ KURALLAR (kesin):
       kendin rakam UYDURMA/yuvarlama yapma.
     "pazarlik_notu" alanı YOKSA pazarlık yapma — mağazaya ya da "yetkili"
     yazmaya yönlendir.
-13. TEK PARÇA FİYATI. Müşteri bir setin/odanın SADECE tek bir parçasını sorarsa
-    ("sadece 5 kapaklı dolap", "tek başına komodin", "yalnız yatak fiyatı" gibi
-    "sadece/tek/yalnız" vurgusuyla) parca_ara aracını o parçanın adıyla çağır ve
-    YALNIZ o parçanın fiyatını (fiyat_cumlesi) ver. Seti KENDİLİĞİNDEN önerme,
-    dayatma; müşteri set/oda sormadıkça sete geçme. Birden çok eşleşme dönerse
-    hangisini kastettiğini sor. parca_ara boş dönerse fiyatı UYDURMA — bilmiyorum
-    de, "yetkili" yazmasını öner. (Müşteri tüm odayı/seti soruyorsa bu aracı
-    KULLANMA; her zamanki koleksiyon/kombinasyon akışını kullan.)
+13. TEK ÜRÜN / PARÇA FİYATI. parca_ara aracını ŞU durumlarda çağır:
+    (a) Müşteri SET/ODA değil TEK bir ürünün fiyatını soruyorsa — "sadece/
+        tek/yalnız" demese bile (örn. "zigon sehpa", "berjer", "komodin",
+        "milena zigon sehpa fiyatı").
+    (b) Müşteri bir setin tek parçasını "sadece/tek başına/yalnız" vurgusuyla
+        soruyorsa ("sadece 5 kapaklı dolap", "tek başına komodin").
+    (c) Sorulan ürünü koleksiyon/kombinasyon akışında bulamadıysan —
+        "bulamadım/fiyatına ulaşamadım" demeden ÖNCE parca_ara'yı o ürünün
+        adıyla MUTLAKA dene.
+    YALNIZ sorulan ürünün fiyatını (fiyat_cumlesi) ver. Seti KENDİLİĞİNDEN
+    önerme, dayatma; müşteri set/oda sormadıkça sete geçme. Birden çok eşleşme
+    dönerse ya da dönen adlar müşterinin yazdığından FARKLIYSA (arama yakın
+    adları da getirir) fiyat dökmeden önce hangisini kastettiğini sor (örn.
+    "MILENA Zigon Sehpa'yı mı kastettiniz?"). parca_ara da boş dönerse fiyatı
+    UYDURMA — bilmiyorum de, "yetkili" yazmasını öner. (Müşteri tüm odayı/seti
+    soruyorsa bu aracı KULLANMA; koleksiyon/kombinasyon akışını kullan.)
 14. PAZARLIK — KATALOG (kombinasyon ve tek parça). YALNIZ TEK bir ürünün ya da
     kombinasyonun fiyatını verdiğin cevabın SONUNA BİR KEZ, AYNEN şu cümleyi
     ekle: "Size özel bir fiyat çalışması yapmak isteriz. 😊" (cümleyi
@@ -322,9 +330,10 @@ TOOLS = [
         "function": {
             "name": "parca_ara",
             "description": "TEK bir ürünün/parçanın (set/oda DEĞİL, tek parça) kendi "
-                           "fiyatını ada göre verir. YALNIZCA müşteri bir setin tek bir "
-                           "parçasını 'sadece/tek başına/yalnız' diye özellikle sorduğunda "
-                           "kullan (örn. 'sadece 5 kapaklı dolap', 'tek başına komodin'). "
+                           "fiyatını ada göre verir. Müşteri tek bir ürün adı sorduğunda "
+                           "('zigon sehpa', 'berjer', 'sadece 5 kapaklı dolap') — "
+                           "'sadece/tek' demese bile — ya da sorduğu ürünü "
+                           "koleksiyon/kombinasyon akışında bulamadığında çağır. "
                            "Ürün adını olabildiğince tam yaz. Tüm oda/set fiyatı için bunu "
                            "KULLANMA — koleksiyon/kombinasyon araçlarını kullan.",
             "parameters": {
@@ -393,7 +402,9 @@ def _tool_calistir(ad: str, argumanlar: dict,
                            "'yetkili' yazmasını öner."}
         return {"parcalar": parcalar,
                 "not": "Yalnız sorulan parçanın fiyat_cumlesi'ni AYNEN ver. Seti "
-                       "kendiliğinden önerme. Birden çok eşleşme varsa hangisi olduğunu sor."}
+                       "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
+                       "adlar müşterinin yazdığından farklıysa (arama yakın adları "
+                       "da getirir) fiyat vermeden önce hangisini kastettiğini SOR."}
     if ad == "teshir_bilgi":
         from catalog.services import teshir as teshir_servis
         kol = argumanlar.get("koleksiyon_id")

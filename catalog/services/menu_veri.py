@@ -241,6 +241,17 @@ def _duz(s: str) -> str:
     return s.replace("̇", "")   # İ.lower() birleşik noktası (U+0307)
 
 
+# Ürün aramasında anlam taşımayan dolgu kelimeler (_duz'lanmış halleriyle).
+# Model bazen tüm cümleyi aratıyor ("zigon sehpa fiyatı" gibi); her token'ı
+# adda arayan kesin eşleşme dolgu kelime yüzünden boş dönüyordu.
+_ARAMA_GURULTU = frozenset((
+    "fiyat", "fiyati", "fiyatlar", "fiyatlari", "ne", "kadar", "kac", "para",
+    "tl", "icin", "sadece", "tek", "yalniz", "basina", "bilgi", "bilgisi",
+    "adet", "tane", "lutfen", "acaba", "istiyorum", "isterim", "alabilir",
+    "verir", "miyim", "misin", "olur", "olabilir", "rica", "urun", "urunu",
+))
+
+
 def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
     """Tek bir ürünün/parçanın (SET DEĞİL, tek SKU) fiyatını ad ile bul.
 
@@ -252,11 +263,17 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
     yalnız ASCII-güvenli token'larla daraltır, kesin çok-kelimeli eşleşmeyi
     Python'da _duz ile yaparız (bilgi_ara ile aynı sadeleştirme). Fiyatı
     olmayan ürünler elenir; en fazla 10 sonuç.
+
+    Tam eşleşme boş kalırsa kelime kelime KESİN yedek devreye girer
+    (benzerlik/fuzzy DEĞİL — İsmail kararı 2026-07-12): eşleşen token'lar
+    gerçek adları bulur, en çok token tutturan öne gelir, model müşteriye
+    hangisini kastettiğini sorar.
     """
     q = (q or "").strip()
     if len(q) < 2:
         return []
     tokens = [t for t in re.split(r"\s+", q) if len(t) >= 2 or t.isdigit()]
+    tokens = [t for t in tokens if _duz(t) not in _ARAMA_GURULTU] or tokens
     if not tokens:
         return []
     ascii_tokens = [t for t in tokens if t == t.encode("ascii", "ignore").decode()]
@@ -267,28 +284,51 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
             stmt = stmt.where(Urun.urun_adi_tam.ilike(f"%{t}%"))
         rows = session.scalars(stmt.order_by(Urun.urun_adi_tam).limit(80)).all()
         istek = [_duz(t) for t in tokens]
+        rows = [u for u in rows if all(t in _duz(u.urun_adi_tam) for t in istek)]
+        if not rows:
+            # Kelime kelime KESİN yedek (benzerlik DEĞİL): "milana zigon sehpa"
+            # hiçbir adla tam eşleşmez (canlı vaka 2026-07-12: sesli mesaj
+            # transkripti "Milena"yı "Milana" yazdı) ama "zigon"/"sehpa"
+            # token'ları gerçek adları bulur. En çok token tutturan adlar öne
+            # gelir; model müşteriye hangisini kastettiğini sorar
+            # (koleksiyon_ara'daki tam-ifade yedeğiyle aynı desen).
+            aday = {}
+            for t in (ascii_tokens or tokens):
+                if len(t) < 3:
+                    continue
+                for u in session.scalars(
+                        select(Urun)
+                        .where(Urun.son_perakende_fiyat.isnot(None),
+                               Urun.urun_adi_tam.ilike(f"%{t}%"))
+                        .limit(40)).all():
+                    aday[u.id] = u
+
+            def _skor(u) -> int:
+                ad = _duz(u.urun_adi_tam)
+                return sum(1 for t in istek if t in ad)
+
+            rows = sorted((u for u in aday.values() if _skor(u) > 0),
+                          key=lambda u: (-_skor(u), u.urun_adi_tam))
         sonuc = []
         for u in rows:
-            ad_duz = _duz(u.urun_adi_tam)
-            if all(t in ad_duz for t in istek):
-                kayit = {
-                    "sku": u.sku,
-                    "ad": u.urun_adi_tam,
-                    "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
-                                                   u.son_perakende_fiyat,
-                                                   toptan=u.son_toptan_fiyat,
-                                                   toptan_goster=toptan_dahil),
-                    "para_birimi": "TL",
-                }
-                # Tek parçada da pazarlık merdiveni (İsmail kararı 2026-07-12).
-                merdiven = pazarlik_merdiveni(u.son_perakende_fiyat,
-                                              u.son_toptan_fiyat)
-                if merdiven:
-                    kayit["pazarlik_notu"] = _pazarlik_notu(u.urun_adi_tam, merdiven)
-                    kayit["_merdiven"] = merdiven   # modele gitmez (ajan düşürür)
-                sonuc.append(kayit)
-                if len(sonuc) >= 10:
-                    break
+            kayit = {
+                "sku": u.sku,
+                "ad": u.urun_adi_tam,
+                "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
+                                               u.son_perakende_fiyat,
+                                               toptan=u.son_toptan_fiyat,
+                                               toptan_goster=toptan_dahil),
+                "para_birimi": "TL",
+            }
+            # Tek parçada da pazarlık merdiveni (İsmail kararı 2026-07-12).
+            merdiven = pazarlik_merdiveni(u.son_perakende_fiyat,
+                                          u.son_toptan_fiyat)
+            if merdiven:
+                kayit["pazarlik_notu"] = _pazarlik_notu(u.urun_adi_tam, merdiven)
+                kayit["_merdiven"] = merdiven   # modele gitmez (ajan düşürür)
+            sonuc.append(kayit)
+            if len(sonuc) >= 10:
+                break
         return sonuc
     finally:
         session.close()
