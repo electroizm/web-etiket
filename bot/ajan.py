@@ -356,6 +356,8 @@ def _tool_calistir(ad: str, argumanlar: dict,
     if ad == "kategorileri_listele":
         return menu_veri.kategoriler()
     if ad == "koleksiyonlari_listele":
+        return menu_veri.koleksiyonlar(int(argumanlar["kategori_id"]))
+    if ad == "kombinasyonlari_listele":
         # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
         # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
         return _ham_fiyat_gizle(menu_veri.kombinasyonlar(

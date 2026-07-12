@@ -185,25 +185,40 @@ def kombinasyonlar(koleksiyon_id: int, toptan_dahil: bool = False) -> dict | Non
 
 def koleksiyon_ara(q: str) -> list[dict]:
     """Ad içinde arama — AI ajanın 'MARIZA fiyatı?' gibi serbest metinden koleksiyon
-    bulması için. Kombinasyonu olan koleksiyonlarda, büyük/küçük harf duyarsız."""
+    bulması için. Kombinasyonu olan koleksiyonlarda, büyük/küçük harf duyarsız.
+
+    Model bazen tüm cümleyi arıyor ("charm genç odası" — canlıda görüldü, boş
+    döndü). Tam ifade eşleşmezse kelime kelime yedek arama yapılır: sorgunun
+    3+ harfli her token'ı ayrı denenir, ilk eşleşen token'ın sonuçları döner.
+    """
     q = (q or "").strip()
     if len(q) < 2:
         return []
-    session = SessionLocal()
-    try:
+
+    def _sorgula(session, ifade: str):
         kombi_say = (
             select(func.count(Kombinasyon.id))
             .where(Kombinasyon.koleksiyon_id == Koleksiyon.id)
             .correlate(Koleksiyon)
             .scalar_subquery()
         )
-        rows = session.execute(
+        return session.execute(
             select(Koleksiyon.id, Koleksiyon.ad, Koleksiyon.kategori_id,
                    kombi_say.label("ks"))
-            .where(Koleksiyon.ad.ilike(f"%{q}%"))
+            .where(Koleksiyon.ad.ilike(f"%{ifade}%"))
             .order_by(Koleksiyon.ad)
             .limit(10)
         ).all()
+
+    session = SessionLocal()
+    try:
+        rows = _sorgula(session, q)
+        if not rows:
+            for token in re.split(r"\s+", q):
+                if len(token) >= 3:
+                    rows = _sorgula(session, token)
+                    if rows:
+                        break
         kategori_adlari = {k.id: k.ad for k in session.scalars(select(Kategori)).all()}
         return [
             {"id": r.id, "ad": r.ad,
