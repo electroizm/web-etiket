@@ -359,6 +359,8 @@ def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
         if kombi is None:
             return None
         koleksiyon = session.get(Koleksiyon, kombi.koleksiyon_id)
+        kategori = (session.get(Kategori, koleksiyon.kategori_id)
+                    if koleksiyon and koleksiyon.kategori_id else None)
         urunler = [
             {
                 "sku": ku.urun.sku,
@@ -371,7 +373,11 @@ def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
         return {
             "id": kombi.id,
             "ad": kombi.ad,
-            "koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad} if koleksiyon else None,
+            # kategori adı: menü detay başlığı "BEND Oturma Grubu için ..."
+            # (wa/ig_presenter.kombinasyon_detay_mesaji) için gerekli.
+            "koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad,
+                           "kategori": kategori.ad if kategori else None}
+                          if koleksiyon else None,
             # pazarlik=True: fiyat_detay tekil bağlamdır — pazarlık merdiveni
             # yalnız burada gelir (listede N ayrı merdiven modeli karıştırırdı).
             **_toplam_ozet(kombi, toptan_dahil, pazarlik=True),

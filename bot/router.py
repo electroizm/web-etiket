@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from catalog.services import menu_veri as _default_veri
 from bot import ig_presenter as _default_P
-from bot.webhook_core import parse_secim
+from bot.webhook_core import KOMBI_ONAY_SORUSU, parse_secim
 
 # ── Yetkiliye yönlendirme ────────────────────────────────────────────────────
 YETKILI_WA = "905321370627"            # wa.me linki (0532 137 06 27)
@@ -60,6 +60,41 @@ def _beniara_mi(tur: str, tetik: str) -> bool:
         return True
     low = (tetik or "").lower()
     return any(k in low for k in BENIARA_KELIMELER)
+
+
+# ── Kombinasyon onayı → pazarlık daveti ──────────────────────────────────────
+# Menü akışının kombinasyon detayı KOMBI_ONAY_SORUSU ile biter (presenter'lar).
+# Müşteri kısa olumlu cevap verirse pazarlık daveti gönderilir (şablon —
+# bedava, AI kotası harcamaz; İsmail kararı 2026-07-12: menüden seçilen
+# kombinasyonda da AI akışındaki gibi fiyat çalışması teklif edilsin).
+# Sonraki mesajı AI devralır — davet + kombinasyon detayı bot_mesaj
+# geçmişinde olduğundan hangi ürünün pazarlığı olduğunu bilir.
+ONAY_KELIMELER = ("evet", "uygun", "olur", "tamam", "olabilir", "isterim",
+                  "beğendim", "begendim", "yapalım", "yapalim")
+
+
+def davet_metni() -> str:
+    return "Harika! 👍 Size özel bir fiyat çalışması yapmak isteriz. 😊"
+
+
+def _onay_cevabi_mi(tetik: str) -> bool:
+    """Kısa, olumlu, sinyalsiz cevap mı? ("evet", "uygundur", "olur"...)
+
+    Fiyat/soru sinyali taşıyanlar ("indirim olur mu", "evet fiyatı ne olur")
+    onay sayılmaz — onlar AI'ya gitmeli ki soru cevapsız kalmasın."""
+    metin = (tetik or "").strip().lower()
+    if not metin or len(metin) > 24 or _ai_gerekli_mi(metin) or _selam_mi(metin):
+        return False
+    return any(k in metin for k in ONAY_KELIMELER)
+
+
+def _kombi_onay_bekleniyor_mu(platform: str, kullanici: str) -> bool:
+    """Bota ait SON giden mesaj kombinasyon onay sorusu mu?
+
+    ('in' ile aranır: IG kaydında metnin sonuna '[menü]' etiketi eklenir.)"""
+    son = _son_giden(platform, kullanici)
+    return son is not None and son is not _DB_HATA \
+        and KOMBI_ONAY_SORUSU in (son.metin or "")
 
 
 _DB_HATA = object()   # _son_giden: "okunamadı" (hata) ile "hiç mesaj yok" (None) ayrımı
@@ -383,6 +418,13 @@ def yanit_uret(tetik: str, veri=_default_veri, P=_default_P,
     # 0b) Yazıyla geri arama isteği ("beni arayın", "geri ara"…) → soruyu sor.
     if _beniara_mi(tur, tetik):
         return P.metin_mesaji(ara_soru_metni())
+
+    # 0c) Kombinasyon detayındaki onay sorusuna kısa olumlu cevap ("evet",
+    #     "uygundur") → pazarlık daveti. Müşterinin sonraki mesajı ("olur",
+    #     "ne kadar olur") AI'ya düşer ve pazarlık merdiveni oradan işler.
+    if platform and kullanici and _onay_cevabi_mi(tetik) \
+            and _kombi_onay_bekleniyor_mu(platform, kullanici):
+        return P.metin_mesaji(davet_metni())
 
     # 1) Sadece selam (fiyat/soru sinyali yoksa) → sıcak karşılama + menü (iki mesaj)
     if _selam_mi(tetik) and not _ai_gerekli_mi(tetik):

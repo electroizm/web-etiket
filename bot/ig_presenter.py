@@ -175,23 +175,12 @@ def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
 
 
 def kombinasyon_detay_mesaji(veri: dict) -> dict:
+    """Metin gövdesi WhatsApp ile birebir aynı (wa_presenter._detay_satirlari —
+    İsmail biçimi 2026-07-12: başlık + fiyat_cumlesi + onay sorusu).
+    Fiyat sonrası çıkmaz sokak olmasın diye quick reply'lar korunur."""
     if not veri:
         return {"text": "Kombinasyon bulunamadı."}
-    ind = veri.get("indirim_yuzde")
-    satirlar = [f"🛋️ {veri.get('ad', '')}"]
-    if veri.get("koleksiyon"):
-        satirlar.append(f"({veri['koleksiyon'].get('ad', '')})")
-    satirlar.append("")
-    for u in veri.get("urunler", []):
-        satirlar.append(f"• {u.get('miktar', 1)}× {u.get('urun', '')}")
-    satirlar.append("")
-    perakende = veri.get("toplam_perakende")
-    satirlar.append(f"Fiyat: {_tl(perakende)}")
-    if ind:
-        liste = veri.get("toplam_liste")
-        satirlar.append(f"({_tl(liste)} liste fiyatından size {_tl(liste - perakende)} "
-                        f"indirim yaptık — %{ind})")
-    # Fiyat sonrası çıkmaz sokak olmasın: menüye dönüş + yetkili + geri arama.
-    return quick_replies("\n".join(satirlar),
+    from bot.wa_presenter import _detay_satirlari
+    return quick_replies("\n".join(_detay_satirlari(veri)),
                          [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI"),
                           BENI_ARA_QR])

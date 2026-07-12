@@ -12,6 +12,8 @@ Bu modül dönüşü "to/messaging_product" içermez — onu meta_client ekler.
 """
 from __future__ import annotations
 
+from bot.webhook_core import KOMBI_ONAY_SORUSU
+
 BUTON_BASLIK = 20
 BUTON_MAX = 3
 SATIR_BASLIK = 24
@@ -198,22 +200,23 @@ def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
 
 
 def kombinasyon_detay_mesaji(veri: dict) -> dict:
+    """Biçim İsmail kararı (2026-07-12): parça dökümü ve menü yönergesi yerine
+    başlık + fiyat_cumlesi (AI cevabıyla aynı üç satır) + onay sorusu.
+    Onay sorusuna gelen kısa olumlu cevabı router pazarlık davetine çevirir."""
     if not veri:
         return _metin("Kombinasyon bulunamadı.")
-    ind = veri.get("indirim_yuzde")
-    satirlar = [f"🛋️ {veri.get('ad', '')}"]
-    if veri.get("koleksiyon"):
-        satirlar.append(f"({veri['koleksiyon'].get('ad', '')})")
-    satirlar.append("")
-    for u in veri.get("urunler", []):
-        satirlar.append(f"• {u.get('miktar', 1)}× {u.get('urun', '')}")
-    satirlar.append("")
-    perakende = veri.get("toplam_perakende")
-    satirlar.append(f"Fiyat: {_tl(perakende)}")
-    if ind:
-        liste = veri.get("toplam_liste")
-        satirlar.append(f"({_tl(liste)} liste fiyatından size {_tl(liste - perakende)} "
-                        f"indirim yaptık — %{ind})")
-    satirlar.append("")
-    satirlar.append("⬅️ Menüye dönmek için bir mesaj yazman yeterli.")
-    return _metin("\n".join(satirlar))
+    return _metin("\n".join(_detay_satirlari(veri)))
+
+
+def _detay_satirlari(veri: dict) -> list[str]:
+    kol = veri.get("koleksiyon") or {}
+    baslik = " ".join(p for p in (kol.get("ad"), kol.get("kategori")) if p)
+    satirlar = []
+    if baslik:
+        satirlar += [f"{baslik} için tercih ettiğiniz kombinasyonun "
+                     "bilgileri aşağıdadır:", ""]
+    satirlar.append((veri.get("ad") or "").strip())
+    satirlar.append(veri.get("fiyat_cumlesi")
+                    or f"Fiyatı: {_tl(veri.get('toplam_perakende'))}")
+    satirlar += ["", KOMBI_ONAY_SORUSU]
+    return satirlar

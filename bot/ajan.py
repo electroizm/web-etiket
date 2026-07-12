@@ -20,6 +20,7 @@ import re
 from django.conf import settings
 from sqlalchemy import select
 
+from bot.webhook_core import KOMBI_ONAY_SORUSU
 from catalog.database import SessionLocal
 from catalog.sa_models import BotMesaj
 from catalog.services import menu_veri
@@ -186,6 +187,12 @@ KURALLAR (kesin):
     edince işler. Müşteriye yazdığın cevapta "merdiven", "adım",
     "ADIM DURUMU", "pazarlik_notu" gibi İÇ terimleri ASLA kullanma —
     bunlar senin talimatındır, müşteri bir mekanizma olduğunu bilmemeli.
+    MENÜDEN SEÇİM: geçmişte "... için tercih ettiğiniz kombinasyonun
+    bilgileri" mesajı varsa pazarlık edilen ürün ODUR. Fiyat çalışması
+    davetinden sonra müşteri olumlu dönerse ("olur", "evet", "yapalım")
+    bu PAZARLIK başlangıcıdır: o kombinasyonu koleksiyon_ara +
+    kombinasyonlari_listele ile bulup fiyat_detay'ını çağır ve ADIM
+    DURUMU ne diyorsa ilk teklifi ver.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -615,6 +622,29 @@ def _pazarlik_istegi_mi(metin: str) -> bool:
     return any(k in low for k in _PAZARLIK_ISTEK_KALIPLARI)
 
 
+# Davet cümlesinin değişmez çekirdeği (menü şablonu ve AI cevabı aynı cümleyi
+# kullanır: "Size özel bir fiyat çalışması yapmak isteriz. 😊").
+_DAVET_ISARETI = "fiyat çalışması yapmak isteriz"
+_DAVET_ONAY_KELIMELERI = ("evet", "olur", "tamam", "olabilir", "uygun",
+                          "isterim", "yapalım", "yapalim")
+
+
+def _davete_olumlu_mu(metin: str, platform: str, kullanici: str) -> bool:
+    """Bot az önce pazarlık daveti gönderdi ve müşteri kısa olumlu mu döndü?
+
+    "olur"/"evet" pazarlık kalıbı içermez ama davetin hemen ardından pazarlık
+    BAŞLANGICIDIR — araçsız cevap yasağından geçmeli ki model fiyat_detay
+    çağırıp merdivenin ilk adımını teklif etsin (menüden gelen akışta müşteri
+    başka hiçbir pazarlık kelimesi yazmadan bu noktaya ulaşır)."""
+    m = (metin or "").strip().lower()
+    if not m or len(m) > 24 or not any(k in m for k in _DAVET_ONAY_KELIMELERI):
+        return False
+    for yon, mt in _son_mesajlar(platform, kullanici):
+        if yon == "giden":                       # en yeni giden mesaj
+            return _DAVET_ISARETI in mt
+    return False
+
+
 def _son_mesajlar(platform: str, kullanici: str) -> list[tuple[str, str]]:
     """Son konuşma satırları (yon, TAM metin — redaksiyonsuz).
 
@@ -767,7 +797,13 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
     mesajlar: list[dict] = []
     for r in rows:
         metin = (r.metin or "").strip()
-        if not metin or metin.startswith("[buton]") or "[menü]" in metin \
+        if "[menü]" in metin and KOMBI_ONAY_SORUSU in metin:
+            # IG'de kombinasyon detayı quick reply ile gider ("[menü]" etiketi
+            # alır) ama bağlam için kritiktir: müşterinin menüden HANGİ
+            # kombinasyonu seçtiğini model ancak buradan öğrenir. Atlamak
+            # yerine etiketi temizleyip tut.
+            metin = metin.replace("[menü]", "").strip()
+        elif not metin or metin.startswith("[buton]") or "[menü]" in metin \
                 or metin.startswith("[kart") or metin.startswith("[sohbeti") \
                 or metin.startswith("[ses —") or metin.startswith("[görsel —"):
             continue
@@ -850,6 +886,10 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     duzeltme_denendi = False           # uydurma fiyat için tek düzeltme hakkı
     arac_cagrildi = False              # bu istekte en az bir araç çalıştı mı
     pazarlik_zorlandi = False          # araçsız pazarlık cevabına tek zorlama hakkı
+    # Pazarlık niyeti: açık kalıp ("indirim olur mu") YA DA az önce gönderilen
+    # davete kısa olumlu dönüş ("olur", "evet" — menü akışından gelen müşteri).
+    pazarlik_niyeti = _pazarlik_istegi_mi(metin) or _davete_olumlu_mu(
+        metin, platform, kullanici)
 
     for _ in range(MAKS_TOOL_TURU):
         yanit = litellm.completion(
@@ -867,7 +907,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # cevapları modeli araç çağırmadan "indirim yapamıyorum" demeye
             # itiyor (canlıda görüldü) — merdivende adım varken pazarlık ölüyor.
             # ADIM DURUMU'nu görmeden karar veremez; bir kez araca zorla.
-            if (cevap and _pazarlik_istegi_mi(metin) and not arac_cagrildi
+            if (cevap and pazarlik_niyeti and not arac_cagrildi
                     and not pazarlik_zorlandi):
                 pazarlik_zorlandi = True
                 mesajlar.append({"role": "assistant", "content": cevap})

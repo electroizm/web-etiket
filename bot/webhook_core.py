@@ -10,6 +10,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Menü akışının kombinasyon detay mesajını bitiren onay sorusu (İsmail kararı
+# 2026-07-12). Üç tüketicisi var: presenter'lar mesajın sonuna koyar; router,
+# son giden mesajda bu işareti görünce müşterinin kısa olumlu cevabını pazarlık
+# davetine çevirir; ajan._gecmis IG "[menü]" etiketli kaydında bu işaret varsa
+# mesajı modelden GİZLEMEZ (hangi kombinasyonun seçildiği bağlam için kritik).
+KOMBI_ONAY_SORUSU = "Bu kombinasyon sizin için uygun mudur? 😊"
+
 
 def verify_challenge(mode: str, token: str, challenge: str, beklenen_token: str):
     """Meta GET doğrulaması. (status_code, body) döner.
