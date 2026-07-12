@@ -158,7 +158,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2607.12.7"
+APP_SURUM = "2607.12.8"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
