@@ -152,14 +152,26 @@ def transkript(veri: bytes, mime: str) -> str | None:
         ],
     }]
     from datetime import datetime
+
+    from bot import kota
+    if kota.hepsi_kapali_mi(settings.AJAN_MODELLER):
+        kota.kapalilari_ac()
     for model in settings.AJAN_MODELLER:
+        if kota.kapali_mi(model):
+            continue
         try:
             yanit = litellm.completion(model=model, messages=mesajlar,
                                        max_tokens=500, timeout=25)
             metin = (yanit.choices[0].message.content or "").strip()
+            kota.say(model, "ses", "basari" if metin else "bos")
             if metin:
                 return metin[:1000]
         except Exception as e:
+            kotali = "429" in str(e) or "quota" in str(e).lower()
+            kota.say(model, "ses", "kota" if kotali else "hata")
+            if kotali:
+                kota.limiti_ogren(model, e)
+                kota.kapat(model, e)
             SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
             log.warning("transkript: %s başarısız (%s), sıradaki model",
                         model, type(e).__name__)

@@ -2197,6 +2197,32 @@ def _pencere_durumu(platform: str, kullanici: str) -> dict:
 
 
 @login_required_supabase
+def bot_kota(request):
+    """Gemini kota sayfası — hangi model ne kadar istek yedi, limit ne?
+
+    Ücretsiz katmanda limitler MODEL BAŞINA ve GÜNLÜK; Google artık tabloyu
+    yayımlamıyor, gerçek sayı ancak 429 gövdesinden öğreniliyor (bkz.
+    bot/kota.py). Sayaç app_ayarlari'nda tutulur — deploy'da sıfırlanmaz.
+    """
+    from django.conf import settings
+
+    from bot import kota
+
+    try:
+        kota.temizle()          # eski satırlar birikmesin; hata sayfayı düşürmesin
+    except Exception:
+        logging.getLogger(__name__).exception("kota temizlik hatası")
+    try:
+        veri = kota.ozet()
+    except Exception:
+        logging.getLogger(__name__).exception("kota özeti okunamadı")
+        veri = {"bugun": "", "modeller": [], "isler": [], "gunler": [],
+                "toplam_bugun": 0}
+    veri["modeller_sirali"] = settings.AJAN_MODELLER
+    return render(request, "dashboard/bot_kota.html", veri)
+
+
+@login_required_supabase
 def bot_konusmalar(request):
     """WhatsApp Web tarzı gelen kutusu: solda sohbet listesi, sağda seçili konuşma.
 

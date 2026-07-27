@@ -44,13 +44,16 @@ MODEL_SAYAC: dict[str, dict[str, int]] = {}
 SAYAC_BASLANGIC: str | None = None
 
 
-def _sayac(model: str, alan: str) -> None:
+def _sayac(model: str, alan: str, is_adi: str = "sohbet") -> None:
     global SAYAC_BASLANGIC
     from datetime import datetime
     if SAYAC_BASLANGIC is None:
         SAYAC_BASLANGIC = f"{datetime.now():%d.%m %H:%M}"
     MODEL_SAYAC.setdefault(
         model, {"basari": 0, "bos": 0, "kota": 0, "hata": 0})[alan] += 1
+    # Kalıcı sayaç (deploy'da sıfırlanmaz) — panel /app/bot/kota buradan okur.
+    from bot import kota
+    kota.say(model, is_adi, alan)
 
 
 def _kota_mu(e: Exception) -> bool:
@@ -969,12 +972,22 @@ def cevapla(metin: str, platform: str, kullanici: str,
         return None
     from datetime import datetime
     from time import monotonic
+    from bot import kota as kota_modul
+    if kota_modul.hepsi_kapali_mi(settings.AJAN_MODELLER):
+        kota_modul.kapalilari_ac()   # son çare: susmaktansa bir tur daha dene
     for model in settings.AJAN_MODELLER:
+        if kota_modul.kapali_mi(model):
+            continue                 # günlük kotası dolmuş, boşuna deneme
         basla = monotonic()
         try:
             cevap = _cevapla(metin, platform, kullanici, model, gecmissiz=gecmissiz)
         except Exception as e:
             _sayac(model, "kota" if _kota_mu(e) else "hata")
+            if _kota_mu(e):
+                # Google günlük limit tablosunu artık yayımlamıyor; gerçek
+                # sayıyı yalnız 429 gövdesinden öğrenebiliyoruz — sakla.
+                kota_modul.limiti_ogren(model, e)
+                kota_modul.kapat(model, e)   # günlükse bugünlük atla
             SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
             log.warning("ajan: %s başarısız (%s%s), sıradaki model deneniyor",
                         model, type(e).__name__, " — KOTA" if _kota_mu(e) else "")

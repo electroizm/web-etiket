@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Ajan Kota · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  <style>
+    /* Ajan Bilgi sayfasıyla aynı dil (aydınlık tema). */
+    .kt { max-width: 760px; margin: 0 auto; padding: 12px; color: #191c2e; }
+    .kt h2 { font-size: 1.05rem; margin: 18px 4px 10px; }
+    .kt-not { background: #e9f6f1; border: 1px solid #c4e8da; border-radius: 12px;
+              padding: 12px 14px; font-size: .85rem; line-height: 1.55; color: #1e3a30; }
+    .kt-not b { color: #14513f; }
+
+    .kt-kart { background: #fff; border: 1px solid #e4e6f0; border-radius: 14px;
+               padding: 14px; margin-bottom: 10px;
+               box-shadow: 0 1px 2px rgba(25,28,46,.05); }
+    .kt-kart__ust { display: flex; justify-content: space-between; align-items: baseline;
+                    gap: 10px; flex-wrap: wrap; }
+    .kt-model { font-weight: 800; font-size: .95rem; word-break: break-all; }
+    .kt-sayi { font-size: .82rem; opacity: .7; white-space: nowrap; }
+
+    .kt-cubuk { height: 10px; border-radius: 999px; background: #eef1f5;
+                overflow: hidden; margin: 10px 0 6px; }
+    .kt-cubuk__ic { height: 100%; border-radius: 999px; background: #00a884; }
+    .kt-cubuk__ic--uyari { background: #f0a336; }
+    .kt-cubuk__ic--dolu  { background: #e0544f; }
+
+    .kt-etiketler { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .kt-etiket { font-size: .72rem; font-weight: 700; padding: 3px 9px;
+                 border-radius: 999px; background: #eef1f5; color: #4a5162; }
+    .kt-etiket--basari { background: #d9fdd3; color: #0b7d57; }
+    .kt-etiket--kota   { background: #fdecec; color: #b42323; }
+    .kt-etiket--hata   { background: #fff4e0; color: #8a5a00; }
+
+    .kt-tablo { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .kt-tablo th, .kt-tablo td { padding: 8px 6px; text-align: left;
+                                 border-bottom: 1px solid #eef1f5; }
+    .kt-tablo th { font-size: .74rem; text-transform: uppercase; opacity: .55;
+                   letter-spacing: .4px; }
+    .kt-tablo td.sag, .kt-tablo th.sag { text-align: right; }
+    .kt-bos { opacity: .55; font-size: .86rem; padding: 14px 4px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:bot_konusmalar' %}" class="btn-ghost" title="Ajan Konuşmalarına dön">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <span>Konuşmalar</span>
+      </a>
+      <span class="topbar__title">📊 Ajan Kota</span>
+    </div>
+    <div class="topbar__user">
+      <a href="{% url 'dashboard:home' %}" class="user-link">{{ request.supabase_user.display_name }}</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="kt">
+
+      <div class="kt-not">
+        Bugün toplam <b>{{ toplam_bugun }}</b> yapay zekâ isteği gitti.
+        Bir müşteri mesajı <b>birden fazla istek</b> demektir — bot önce ürünü arar,
+        sonra fiyatı alır, sonra cevabı yazar; her adım ayrı bir istek.
+        Ücretsiz kotalar <b>model başına ve günlüktür</b>; bir model dolunca bot
+        sıradakine geçer, cevap vermeye devam eder.
+      </div>
+
+      <h2>Bugün · model bazında</h2>
+      {% for m in modeller %}
+        <div class="kt-kart">
+          <div class="kt-kart__ust">
+            <span class="kt-model">{{ m.model }}</span>
+            <span class="kt-sayi">
+              {% if m.limit %}{{ m.kullanilan }} / {{ m.limit }}{% else %}{{ m.toplam }} istek{% endif %}
+            </span>
+          </div>
+
+          {% if m.yuzde is not None %}
+            <div class="kt-cubuk">
+              <div class="kt-cubuk__ic{% if m.yuzde >= 100 %} kt-cubuk__ic--dolu{% elif m.yuzde >= 70 %} kt-cubuk__ic--uyari{% endif %}"
+                   style="width: {{ m.yuzde }}%"></div>
+            </div>
+          {% endif %}
+
+          <div class="kt-etiketler">
+            <span class="kt-etiket kt-etiket--basari">✅ {{ m.basari }} başarılı</span>
+            {% if m.kota %}<span class="kt-etiket kt-etiket--kota">🚫 {{ m.kota }} kota reddi</span>{% endif %}
+            {% if m.hata %}<span class="kt-etiket kt-etiket--hata">⚠️ {{ m.hata }} hata</span>{% endif %}
+            {% if m.bos %}<span class="kt-etiket">◻️ {{ m.bos }} boş</span>{% endif %}
+          </div>
+
+          {% if m.kota %}
+            <div class="kt-sayi" style="margin-top:8px">
+              Bu modelin günlük hakkı bitmiş; istekler sıradaki modele düşüyor.
+            </div>
+          {% endif %}
+        </div>
+      {% empty %}
+        <div class="kt-bos">Bugün henüz istek yok.</div>
+      {% endfor %}
+
+      {% if isler %}
+        <h2>Bugün · kotayı ne yedi?</h2>
+        <div class="kt-kart">
+          <table class="kt-tablo">
+            <tr><th>İş</th><th class="sag">İstek</th></tr>
+            {% for ad, adet in isler %}
+              <tr>
+                <td>
+                  {% if ad == 'sohbet' %}💬 Müşteri sohbeti
+                  {% elif ad == 'gorsel' %}🖼️ Görsel okuma
+                  {% elif ad == 'ses' %}🎙️ Sesli mesaj
+                  {% elif ad == 'ozet' %}📬 Sabah özeti
+                  {% else %}{{ ad }}{% endif %}
+                </td>
+                <td class="sag">{{ adet }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endif %}
+
+      <h2>Son günler</h2>
+      <div class="kt-kart">
+        <table class="kt-tablo">
+          <tr><th>Gün</th><th class="sag">İstek</th><th class="sag">Kota reddi</th></tr>
+          {% for g in gunler %}
+            <tr>
+              <td>{{ g.gun }}</td>
+              <td class="sag">{{ g.toplam }}</td>
+              <td class="sag">{% if g.kota %}{{ g.kota }}{% else %}—{% endif %}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3" class="kt-bos">Henüz kayıt yok.</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+
+      <div class="kt-not" style="margin-top:14px">
+        <b>Sıralı model zinciri:</b>
+        {% for m in modeller_sirali %}{{ m }}{% if not forloop.last %} → {% endif %}{% endfor %}<br>
+        Soldaki dolunca sağdakine geçilir. Limit rakamı ancak Google bir isteği
+        kotadan reddettiğinde öğrenilebiliyor — o yüzden bazı modellerde
+        "/ limit" görünmeyebilir.
+      </div>
+
+    </div>
+  </main>
+</div>
+{% endblock %}

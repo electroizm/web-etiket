@@ -78,16 +78,28 @@ def oku(veri: bytes, mime: str) -> str | None:
         "content": [{"type": "text", "text": OKUMA_TALIMAT}, ek],
     }]
     from datetime import datetime
+
+    from bot import kota
+    if kota.hepsi_kapali_mi(settings.AJAN_MODELLER):
+        kota.kapalilari_ac()
     for model in settings.AJAN_MODELLER:
+        if kota.kapali_mi(model):
+            continue
         try:
             yanit = litellm.completion(model=model, messages=mesajlar,
                                        max_tokens=200, timeout=25)
             metin = (yanit.choices[0].message.content or "").strip()
+            kota.say(model, "gorsel", "basari" if metin else "bos")
             if metin and metin.upper() != "YOK":
                 return metin[:300]
             if metin:            # model "YOK" dedi — görselde metin yok, aramayı bırak
                 return None
         except Exception as e:
+            kotali = "429" in str(e) or "quota" in str(e).lower()
+            kota.say(model, "gorsel", "kota" if kotali else "hata")
+            if kotali:
+                kota.limiti_ogren(model, e)
+                kota.kapat(model, e)
             SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
             log.warning("görsel okuma: %s başarısız (%s), sıradaki model",
                         model, type(e).__name__)

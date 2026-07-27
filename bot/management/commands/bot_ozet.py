@@ -156,6 +156,8 @@ def _ai_ozet(konusmalar: dict, adlar: dict) -> str | None:
 
     import litellm
     litellm.suppress_debug_info = True
+
+    from bot import kota
     for model in settings.AJAN_MODELLER:
         try:
             yanit = litellm.completion(
@@ -163,8 +165,11 @@ def _ai_ozet(konusmalar: dict, adlar: dict) -> str | None:
                 messages=[{"role": "user", "content": icerik[:30000]}],
                 max_tokens=800, timeout=30)
             metin = (yanit.choices[0].message.content or "").strip()
+            kota.say(model, "ozet", "basari" if metin else "bos")
             if metin:
                 return metin
-        except Exception:
+        except Exception as e:
+            kotali = "429" in str(e) or "quota" in str(e).lower()
+            kota.say(model, "ozet", "kota" if kotali else "hata")
             continue
     return None

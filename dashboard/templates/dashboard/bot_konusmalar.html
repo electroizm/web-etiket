@@ -185,6 +185,9 @@
           <a class="wa-bilgi" href="{% url 'dashboard:bot_bilgi' %}" title="Ajan bilgi tabanı — mağaza bilgileri + cevapsız sorular">
             💡 Bilgi{% if acik_soru %} <span class="rozet">{{ acik_soru }}</span>{% endif %}
           </a>
+          <a class="wa-bilgi" href="{% url 'dashboard:bot_kota' %}" title="Yapay zekâ kota kullanımı — hangi model ne kadar istek yedi">
+            📊 Kota
+          </a>
         </div>
         <div class="wa-search">
           <input type="text" id="waAra" placeholder="Aratın (numara / kullanıcı)"
