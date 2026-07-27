@@ -18,8 +18,8 @@ from django.views.decorators.http import require_http_methods
 from bot import ig_presenter, kisi, meta_client, wa_presenter
 from bot.kayit import kaydet, ozet_gelen, ozet_giden
 from bot.router import yanit_uret
-from bot.webhook_core import (extract_events, extract_yorumlar, verify_challenge,
-                              verify_signature)
+from bot.webhook_core import (extract_events, extract_yorumlar, imza_tani,
+                              verify_challenge)
 
 log = logging.getLogger("bot")
 
@@ -179,16 +179,15 @@ def webhook(request):
     global WEBHOOK_SON_HATA, WEBHOOK_IMZA_DURUM
     from datetime import datetime
     raw = request.body or b"{}"
-    # ── İmza doğrulaması (X-Hub-Signature-256) — sahte webhook POST'larını reddet ──
-    # META_APP_SECRET boşsa (yerel/geliştirme) atlanır; doluysa (üretim) imzası
-    # eşleşmeyen istek İŞLENMEDEN 403 döner. Meta gerçek istekleri app secret ile
-    # imzalar → eşleşme, isteğin gerçekten Meta'dan geldiğinin kanıtı.
+    # ── İmza İZLEME modu (X-Hub-Signature-256) — 2026-07-27 ──────────────────
+    # Enforce (403) ilk denemede secret uyuşmadığı için botu susturdu. Şimdi
+    # İZLEME: imzayı kontrol eder, sonucu + NEDENİNİ /saglik'a yazar ama mesajı
+    # REDDETMEZ (bot asla susmaz). /saglik'ta kararlı 'OK' görülünce enforce'a
+    # (403) geri geçilecek. META_APP_SECRET boşsa doğrulama tamamen atlanır.
     if settings.META_APP_SECRET:
-        if not verify_signature(raw, request.headers.get("X-Hub-Signature-256", ""),
-                                settings.META_APP_SECRET):
-            WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} RED"
-            return HttpResponse(status=403)
-        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} OK"
+        gecerli, detay = imza_tani(raw, request.headers.get("X-Hub-Signature-256", ""),
+                                   settings.META_APP_SECRET)
+        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} {'OK' if gecerli else 'RED'} · {detay}"
     else:
         WEBHOOK_IMZA_DURUM = "atlandı (META_APP_SECRET yok)"
     # Ayrıştırma başarısız olsa/olay 0 çıksa bile HAM veriyi sakla — Meta'nın
