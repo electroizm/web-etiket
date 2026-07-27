@@ -179,11 +179,11 @@ def webhook(request):
     global WEBHOOK_SON_HATA, WEBHOOK_IMZA_DURUM
     from datetime import datetime
     raw = request.body or b"{}"
-    # ── İmza İZLEME modu + çift secret (WhatsApp + Instagram) — 2026-07-27 ──────
-    # Enforce'ta (2607.27.3) WhatsApp geçti ama bazı olaylar (Instagram, ayrı
-    # app/secret) HASH FARKLI aldı → yanlışlıkla reddediliyordu. Şimdi: iki secret'ı
-    # da dene (biri tutarsa geçerli), RED'de HANGİ platform (object) olduğunu yaz,
-    # ama İZLEME modunda mesajı REDDETME (403 dönme). Çift secret 'OK' olunca enforce.
+    # ── İmza doğrulaması (X-Hub-Signature-256) + çift secret (WA+IG) — ENFORCE ──
+    # İzleme modunda (2607.27.4) canlıda hem WhatsApp hem Instagram için kararlı
+    # 'OK', 0 RED doğrulandı → artık ENFORCE: iki secret'tan biri tutmayan istek
+    # İŞLENMEDEN 403 döner (sebep + platform /saglik'a yazılır). İki secret de
+    # boşsa doğrulama atlanır (kurtarma: secret'ları sil → fail-open).
     if settings.META_APP_SECRET or settings.IG_APP_SECRET:
         gecerli, detay = imza_tani(
             raw, request.headers.get("X-Hub-Signature-256", ""),
@@ -193,8 +193,9 @@ def webhook(request):
                 nesne = (json.loads(raw) or {}).get("object", "?")
             except Exception:
                 nesne = "?"
-            detay = f"{detay} object={nesne}"
-        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} {'OK' if gecerli else 'RED'} · {detay}"
+            WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} RED · {detay} object={nesne}"
+            return HttpResponse(status=403)
+        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} OK"
     else:
         WEBHOOK_IMZA_DURUM = "atlandı (secret yok)"
     # Ayrıştırma başarısız olsa/olay 0 çıksa bile HAM veriyi sakla — Meta'nın
