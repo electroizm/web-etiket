@@ -120,6 +120,24 @@
               flex: none; display: flex; align-items: center; justify-content: center; }
     .wa-yaz button:hover { filter: brightness(1.1); }
 
+    /* 24 saatlik Meta penceresi kapalıyken: uyarı + kilitli cevap kutusu.
+       Açma düğmesi gizli bir checkbox'a bağlı — JS yok, sadece CSS. */
+    .wa-kilit__kutu { display: none; }
+    .wa-kilit { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap;
+                justify-content: space-between; padding: 12px 14px;
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+                background: #fff8e1; border-top: 1px solid #ecd9a0;
+                color: #6b5900; font-size: .85rem; line-height: 1.5; }
+    .wa-kilit__yazi { flex: 1; min-width: 220px; }
+    .wa-kilit__btn { flex: none; cursor: pointer; padding: 8px 15px; border-radius: 999px;
+                     border: 1px solid #c9b26b; background: #fff; color: #6b5900;
+                     font-weight: 600; font-size: .82rem; white-space: nowrap; }
+    .wa-kilit__btn:hover { background: #f7efd4; }
+    .wa-kilit--sure { background: #f0f2f5; border-top: 1px solid #e0e4e8; color: #54656f; }
+    .wa-yaz--kilitli { display: none; }
+    .wa-kilit__kutu:checked ~ .wa-yaz--kilitli { display: flex; }
+    .wa-kilit__kutu:checked ~ .wa-kilit .wa-kilit__btn { display: none; }
+
     .wa-toast { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
                 padding: 9px 16px; border-radius: 10px; font-size: .88rem; font-weight: 600;
                 z-index: 5; box-shadow: 0 6px 18px rgba(17,27,33,.18); max-width: 90%; }
@@ -261,7 +279,35 @@
             {% for m in secili.mesajlar %}<div class="wa-msg {{ m.yon }}">{% if m.elle %}<span class="kaynak">👤 YETKİLİ</span>{% endif %}{{ m.metin }}<span class="saat">{{ m.olusturma|date:"d.m H:i" }}</span></div>{% endfor %}
           </div>
 
-          <form class="wa-yaz" method="post" action="{% url 'dashboard:bot_cevap' %}">
+          {# Meta 24 saat kuralı: pencere kapalıysa yazmadan önce uyar, kutuyu kilitle. #}
+          {% if not secili.pencere.acik %}
+            <input type="checkbox" id="kilitAc" class="wa-kilit__kutu">
+            <div class="wa-kilit">
+              <div class="wa-kilit__yazi">
+                🔒 <b>Şu an buradan mesaj gönderilemez.</b><br>
+                {% if secili.pencere.sebep == 'yorum' %}
+                  Bu kişi hiç DM yazmadı — yalnız gönderi altına <b>yorum</b> yaptı.
+                  Yorum, Meta'nın 24 saatlik mesaj penceresini açmaz; bota tanınan
+                  tek seferlik cevap hakkı da kullanıldı.
+                {% else %}
+                  Müşterinin son mesajından bu yana <b>24 saat</b> geçti. Meta bu
+                  süreden sonra serbest metni reddeder.
+                {% endif %}
+                <br>Cevap vermek istersen <b>Instagram/WhatsApp uygulamasından</b> yaz
+                ya da müşterinin tekrar yazmasını bekle.
+              </div>
+              <label for="kilitAc" class="wa-kilit__btn">Yine de dene</label>
+            </div>
+          {% elif secili.pencere.kalan_saat < 6 %}
+            <div class="wa-kilit wa-kilit--sure">
+              <div class="wa-kilit__yazi">⏳ Mesaj penceresi yaklaşık
+                <b>{{ secili.pencere.kalan_saat }} sa {{ secili.pencere.kalan_dk }} dk</b>
+                sonra kapanıyor.</div>
+            </div>
+          {% endif %}
+
+          <form class="wa-yaz{% if not secili.pencere.acik %} wa-yaz--kilitli{% endif %}"
+                method="post" action="{% url 'dashboard:bot_cevap' %}">
             {% csrf_token %}
             <input type="hidden" name="platform" value="{{ secili.platform }}">
             <input type="hidden" name="kullanici" value="{{ secili.kullanici }}">

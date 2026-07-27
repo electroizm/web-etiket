@@ -2148,6 +2148,54 @@ def _bot_temizlik(session) -> int:
     return silinen
 
 
+# Meta mesajlaşma penceresi: müşteri DM yazdıktan sonra 24 saat serbest metin
+# gönderilebilir; sonrasında API reddeder.
+PENCERE_SAAT = 24
+
+
+def _pencere_hesapla(son) -> dict:
+    """Son gerçek DM zamanından pencere durumunu üret (saf fonksiyon — testlenebilir)."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    if son is None:
+        return {"acik": False, "sebep": "yorum"}      # hiç DM yazmamış
+    kalan = _td(hours=PENCERE_SAAT) - (_dt.now(_tz.utc) - son)
+    if kalan.total_seconds() <= 0:
+        return {"acik": False, "sebep": "doldu", "son": son}
+    return {"acik": True, "sebep": "acik", "son": son,
+            "kalan_saat": int(kalan.total_seconds() // 3600),
+            "kalan_dk": int(kalan.total_seconds() % 3600 // 60)}
+
+
+def _pencere_durumu(platform: str, kullanici: str) -> dict:
+    """Panelden bu kişiye elle mesaj gönderilebilir mi? (24 saatlik Meta penceresi)
+
+    Ölçüt müşterinin son GERÇEK DM'i. "[yorum] ..." kayıtları müşterinin gönderi
+    altına yazdığı yorumdur — DM değildir ve pencereyi AÇMAZ (yoruma karşılık
+    yalnız tek bir private-reply hakkı vardır, bot onu anında kullanır). Bu
+    yüzden yalnız yorumdan gelen sohbetlerde panel baştan kilitli gelir.
+
+    Kilit tavsiye niteliğinde: şablonda "yine de dene" ile açılabilir — Meta'nın
+    kuralı ileride değişirse panel İsmail'i haksız yere engellemesin.
+    """
+    session = SessionLocal()
+    try:
+        son = session.scalar(
+            select(BotMesaj.olusturma)
+            .where(BotMesaj.platform == platform,
+                   BotMesaj.kullanici == kullanici,
+                   BotMesaj.yon == "gelen",
+                   ~BotMesaj.metin.like("[yorum]%"))
+            .order_by(BotMesaj.olusturma.desc()).limit(1))
+    except Exception:
+        logging.getLogger(__name__).exception("pencere durumu okunamadı")
+        # Şüphede kilitleme: hesaplayamıyorsak yazmayı engelleme.
+        return {"acik": True, "sebep": "bilinmiyor", "kalan_saat": 99, "kalan_dk": 0}
+    finally:
+        session.close()
+    return _pencere_hesapla(son)
+
+
 @login_required_supabase
 def bot_konusmalar(request):
     """WhatsApp Web tarzı gelen kutusu: solda sohbet listesi, sağda seçili konuşma.
@@ -2250,6 +2298,7 @@ def bot_konusmalar(request):
                 "foto": prof.get("foto_url"),
                 "cozuldu": bool(kisi is not None and kisi.cozuldu),
                 "mesajlar": [_bot_mesaj_goster(m) for m in reversed(msgs)],
+                "pencere": _pencere_durumu(p, u),
             }
 
     acik_soru = 0
