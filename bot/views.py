@@ -179,15 +179,17 @@ def webhook(request):
     global WEBHOOK_SON_HATA, WEBHOOK_IMZA_DURUM
     from datetime import datetime
     raw = request.body or b"{}"
-    # ── İmza İZLEME modu (X-Hub-Signature-256) — 2026-07-27 ──────────────────
-    # Enforce (403) ilk denemede secret uyuşmadığı için botu susturdu. Şimdi
-    # İZLEME: imzayı kontrol eder, sonucu + NEDENİNİ /saglik'a yazar ama mesajı
-    # REDDETMEZ (bot asla susmaz). /saglik'ta kararlı 'OK' görülünce enforce'a
-    # (403) geri geçilecek. META_APP_SECRET boşsa doğrulama tamamen atlanır.
+    # ── İmza doğrulaması (X-Hub-Signature-256) — sahte webhook POST'larını reddet ──
+    # 2607.27.2 izleme modunda canlıda kararlı 'OK' doğrulandı (secret doğru) →
+    # artık ENFORCE: imzası eşleşmeyen istek İŞLENMEDEN 403 döner (sebebi /saglik'a
+    # yazılır). META_APP_SECRET boşsa doğrulama atlanır (kurtarma yolu: secret'ı sil).
     if settings.META_APP_SECRET:
         gecerli, detay = imza_tani(raw, request.headers.get("X-Hub-Signature-256", ""),
                                    settings.META_APP_SECRET)
-        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} {'OK' if gecerli else 'RED'} · {detay}"
+        if not gecerli:
+            WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} RED · {detay}"
+            return HttpResponse(status=403)
+        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} OK"
     else:
         WEBHOOK_IMZA_DURUM = "atlandı (META_APP_SECRET yok)"
     # Ayrıştırma başarısız olsa/olay 0 çıksa bile HAM veriyi sakla — Meta'nın
