@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import dataclass
 
 # Menü akışının kombinasyon detay mesajını bitiren onay sorusu (İsmail kararı
@@ -26,6 +28,23 @@ def verify_challenge(mode: str, token: str, challenge: str, beklenen_token: str)
     if mode == "subscribe" and token and token == beklenen_token:
         return 200, challenge
     return 403, "dogrulama basarisiz"
+
+
+def verify_signature(raw_body: bytes, signature_header: str, app_secret: str) -> bool:
+    """Meta webhook POST imzasını doğrula (X-Hub-Signature-256).
+
+    Meta gövdeyi app secret ile HMAC-SHA256'lar ve başlıkta 'sha256=<hex>'
+    biçiminde yollar. Aynı özeti hesaplayıp SABİT ZAMANLI karşılaştırırız.
+    True = imza geçerli (istek gerçekten Meta'dan geldi). app_secret ya da
+    başlık boşsa / biçim yanlışsa False.
+    """
+    if not app_secret or not signature_header:
+        return False
+    if not signature_header.startswith("sha256="):
+        return False
+    gelen = signature_header.split("=", 1)[1].strip()
+    beklenen = hmac.new(app_secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(gelen, beklenen)
 
 
 @dataclass

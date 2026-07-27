@@ -31,6 +31,11 @@ ETIKET_API_KEY = os.getenv('ETIKET_API_KEY', '')
 # ─── WhatsApp/Instagram bot (instALL köprüsü — artık bu app içinde, tek Render servisi) ──
 # Webhook doğrulaması için Meta'ya verilen gizli kelime (hub.verify_token ile karşılaştırılır).
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN', '')
+# Webhook POST imza doğrulaması (X-Hub-Signature-256) için Meta App Secret.
+# Meta for Developers → App Settings → Basic → App Secret. BOŞSA imza doğrulaması
+# ATLANIR (yerel/geliştirme kolaylığı); üretimde (Render) dolu olunca sahte webhook
+# POST'ları 403 ile reddedilir. İsmail Render'a girdi: 2026-07-27.
+META_APP_SECRET = os.getenv('META_APP_SECRET', '')
 # WhatsApp Cloud API (graph.facebook.com) — gönderim token'ı + numara kimliği.
 META_TOKEN = os.getenv('META_TOKEN', '')
 PHONE_NUMBER_ID = os.getenv('PHONE_NUMBER_ID', '')
@@ -158,7 +163,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2607.21.1"
+APP_SURUM = "2607.27.1"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'

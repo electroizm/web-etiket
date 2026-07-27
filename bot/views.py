@@ -18,12 +18,16 @@ from django.views.decorators.http import require_http_methods
 from bot import ig_presenter, kisi, meta_client, wa_presenter
 from bot.kayit import kaydet, ozet_gelen, ozet_giden
 from bot.router import yanit_uret
-from bot.webhook_core import extract_events, extract_yorumlar, verify_challenge
+from bot.webhook_core import (extract_events, extract_yorumlar, verify_challenge,
+                              verify_signature)
 
 log = logging.getLogger("bot")
 
 # Son webhook hatası — Render loguna erişim olmadan /saglik'tan teşhis için.
 WEBHOOK_SON_HATA: str | None = None
+# Son webhook imza doğrulama sonucu (OK / RED / atlandı) — canlı testte /saglik'tan
+# imza korumasının çalışıp çalışmadığını doğrulamak için.
+WEBHOOK_IMZA_DURUM: str | None = None
 # Son N webhook POST'unun HAM gövdesi (ayrıştırma başarısız/olay 0 çıksa bile).
 # Tek slot WA durum bildirimleriyle (sık gelir) hemen ezilebiliyordu — halka
 # tampon (ring buffer) son birkaç isteği tutar. Geçici teşhis amaçlı —
@@ -48,6 +52,7 @@ def saglik(request):
         "ses_son_hata": _ses_son_hata(),
         "gorsel_son_hata": _gorsel_son_hata(),
         "webhook_son_hata": WEBHOOK_SON_HATA,
+        "webhook_imza": WEBHOOK_IMZA_DURUM,
         "ig_gonderim_son_hata": meta_client.IG_SON_GONDERIM_HATA,
         # İçerik yok (KVKK) — sadece "en son ne zaman bir webhook POST'u geldi" saati.
         # Uzun süre güncellenmiyorsa Meta bize hiç istek atmıyor demektir (kod değil, ayar sorunu).
@@ -171,9 +176,21 @@ def webhook(request):
     # ── POST: gelen olayları işle ──
     # Meta 200 dışında her yanıtı "başarısız" sayıp olayı TEKRAR gönderir; bu yüzden
     # NE OLURSA OLSUN 200 döneriz (senkron yolda beklenmedik hata bile olsa).
-    global WEBHOOK_SON_HATA
+    global WEBHOOK_SON_HATA, WEBHOOK_IMZA_DURUM
     from datetime import datetime
     raw = request.body or b"{}"
+    # ── İmza doğrulaması (X-Hub-Signature-256) — sahte webhook POST'larını reddet ──
+    # META_APP_SECRET boşsa (yerel/geliştirme) atlanır; doluysa (üretim) imzası
+    # eşleşmeyen istek İŞLENMEDEN 403 döner. Meta gerçek istekleri app secret ile
+    # imzalar → eşleşme, isteğin gerçekten Meta'dan geldiğinin kanıtı.
+    if settings.META_APP_SECRET:
+        if not verify_signature(raw, request.headers.get("X-Hub-Signature-256", ""),
+                                settings.META_APP_SECRET):
+            WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} RED"
+            return HttpResponse(status=403)
+        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} OK"
+    else:
+        WEBHOOK_IMZA_DURUM = "atlandı (META_APP_SECRET yok)"
     # Ayrıştırma başarısız olsa/olay 0 çıksa bile HAM veriyi sakla — Meta'nın
     # gerçekten ne gönderdiğini görmeden ayrıştırma kodunu doğru yazamayız.
     WEBHOOK_SON_GOVDELER.append(
