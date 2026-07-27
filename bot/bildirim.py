@@ -1,4 +1,4 @@
-"""Yetkiliye (İsmail) bildirim — geri arama talepleri + memnuniyetsizlik alarmı.
+"""Yetkiliye (İsmail) bildirim — memnuniyetsizlik alarmı + sistem uyarıları.
 
 Önce İsmail'in kişisel WhatsApp'ına (0532) Cloud API ile serbest metin denenir;
 24 saat penceresi kapalıysa Meta serbest metni reddeder → e-posta yedeği
@@ -69,15 +69,6 @@ def _yetkiliye_ilet(eposta_konu: str, govde: str) -> None:
                           fail_silently=True)
         except Exception:
             log.exception("e-posta bildirimi gönderilemedi")
-
-
-def geri_arama_bildir(platform: str, kullanici: str, mesaj: str) -> None:
-    """Geri arama talebini yetkiliye ilet."""
-    ad = _musteri_adi(platform, kullanici)
-    govde = ("📞 GERİ ARAMA TALEBİ\n"
-             f"Müşteri: {ad or 'İsimsiz'} — {_kimlik(platform, kullanici)}\n"
-             f"Yazdığı: {mesaj}")
-    _yetkiliye_ilet("instALL ajan — 📞 geri arama talebi", govde)
 
 
 def sistem_uyari(konu: str, govde: str) -> None:

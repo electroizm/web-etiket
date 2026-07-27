@@ -1,6 +1,6 @@
 """Memnuniyetsizlik radarı — müşteri mesajında şikâyet sinyali arar.
 
-Sinyal bulunursa İsmail'e ANINDA bildirim gider (geri arama talebiyle aynı
+Sinyal bulunursa İsmail'e ANINDA bildirim gider (sistem uyarılarıyla aynı
 kanal: bot/bildirim.py → önce 0532 WhatsApp, olmazsa e-posta). Müşteri akışına
 DOKUNMAZ: bot normal cevabını vermeye devam eder, alarm paralel gider —
 amaç müşteri daha hattayken İsmail'in devreye girebilmesi.

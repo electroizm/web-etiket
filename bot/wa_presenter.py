@@ -124,7 +124,8 @@ def _secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
 # (10 − 1 devam − sabit sayısı) seçenek + "➡️ Devamını gör" + sabit satır(lar).
 # Sayfa numarası payload'da taşınır (KAT:48:2) — köprü stateless kalır.
 ANA_MENU = ("⬅️ Ana Menü", "START", "")
-BENI_ARA = ("📞 Beni arayın", "BENIARA", "")
+# "📞 Beni arayın" butonu kaldırıldı (İsmail 2026-07-27) — insana yönlendirme
+# yalnız "Yetkiliyle görüş" ile olur.
 
 
 def _sayfali_liste(metin: str, secenekler: list[tuple[str, str, str]],
@@ -148,7 +149,7 @@ def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     if not kategoriler:
         return _metin("Şu an gösterilecek kategori yok.")
     sec = [(k["ad"], f"KAT:{k['id']}", "") for k in kategoriler]
-    sabit = [("👤 Yetkiliyle görüş", "YETKILI", ""), BENI_ARA]
+    sabit = [("👤 Yetkiliyle görüş", "YETKILI", "")]
     metin = "Hangi kategoriye bakmak istersin?"
     if sayfa == 1 and len(sec) + len(sabit) <= LISTE_MAX:
         return _secim_mesaji(metin, sec + sabit)

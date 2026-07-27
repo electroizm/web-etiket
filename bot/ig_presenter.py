@@ -74,7 +74,8 @@ def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:
 SAYFA_KART = KART_MAX - 2  # 8 kart + Devamı kartı + Ana Menü kartı
 
 ANA_MENU_QR = ("⬅️ Ana Menü", "START")
-BENI_ARA_QR = ("📞 Beni arayın", "BENIARA")
+# "📞 Beni arayın" quick reply'ı kaldırıldı (İsmail 2026-07-27) — insana
+# yönlendirme yalnız "Yetkiliyle görüş" ile olur.
 
 
 def _sayfali_qr(metin: str, secenekler: list[tuple[str, str]],
@@ -96,7 +97,7 @@ def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
     if not kategoriler:
         return {"text": "Şu an gösterilecek kategori yok."}
     sec = [(k["ad"], f"KAT:{k['id']}") for k in kategoriler]
-    sabit = [("👤 Yetkiliyle görüş", "YETKILI"), BENI_ARA_QR]
+    sabit = [("👤 Yetkiliyle görüş", "YETKILI")]
     metin = "Hangi kategoriye bakmak istersin?"
     if sayfa == 1 and len(sec) + len(sabit) <= QR_MAX:
         return quick_replies(_tam_adlar_eki(metin, sec), sec + sabit)
@@ -182,5 +183,4 @@ def kombinasyon_detay_mesaji(veri: dict) -> dict:
         return {"text": "Kombinasyon bulunamadı."}
     from bot.wa_presenter import _detay_satirlari
     return quick_replies("\n".join(_detay_satirlari(veri)),
-                         [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI"),
-                          BENI_ARA_QR])
+                         [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI")])

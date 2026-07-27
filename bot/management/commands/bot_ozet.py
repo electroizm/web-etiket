@@ -53,10 +53,7 @@ class Command(BaseCommand):
         finally:
             session.close()
 
-        # İsmail'e giden bildirimler (geri arama/alarm) müşteri konuşması değildir.
-        geri_arama = sum(1 for r in rows
-                         if r.kullanici == YETKILI_WA and r.yon == "giden"
-                         and (r.metin or "").startswith("📞 GERİ ARAMA"))
+        # İsmail'e giden bildirimler (alarm/sistem uyarısı) müşteri konuşması değildir.
         alarmlar = sum(1 for r in rows
                        if r.kullanici == YETKILI_WA and r.yon == "giden"
                        and (r.metin or "").startswith("⚠️ MEMNUNİYETSİZLİK"))
@@ -76,7 +73,6 @@ class Command(BaseCommand):
             f"🤖 instALL ajan — sabah özeti ({simdi:%d.%m.%Y %H:%M})",
             "",
             f"Konuşma: {len(konusmalar)} · Gelen mesaj: {gelen_sayisi}"
-            f" · Geri arama talebi: {geri_arama}"
             + (f" · ⚠️ Memnuniyetsizlik alarmı: {alarmlar}" if alarmlar else ""),
         ]
 
