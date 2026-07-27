@@ -57,6 +57,23 @@ def tetikleyici_mi(metin: str) -> bool:
     return any(_duzle(k) in d for k in TETIK_KELIMELER)
 
 
+def _kendi_yorumumuz_mu(yorum: GelenYorum) -> bool:
+    """Bu yorumu BİZ mi yazdık? (bot kendi notuna cevap vermesin)
+
+    2026-07-27 hatası: YORUM_ALTI_NOT içinde "fiyat" geçtiği için, Meta bu notu
+    yeni bir yorum olarak webhook'a düşürdüğünde tetikleyici çalışıyor ve bot
+    kendi yorumuna DM atıyordu (2026-07-11'den 26'sına kadar 44 kez: boşa AI
+    çağrısı, gereksiz DM, gönderi altında çift not).
+
+    İki kat kontrol: önce hesabın gerçek kimliği (Graph API, önbellekli),
+    o alınamazsa notun metninden tanı — notu birebir biz yazıyoruz.
+    """
+    from bot import meta_client
+    if yorum.yorumcu_id and yorum.yorumcu_id in meta_client.kendi_kimlikler():
+        return True
+    return _duzle(yorum.metin).startswith(_duzle(YORUM_ALTI_NOT)[:60])
+
+
 def _daha_once_tetiklendi_mi(igsid: str, media_id: str) -> bool:
     """Bu kişiye BU GÖNDERİDEN daha önce yorumdan-DM atıldı mı? (gönderi başına tek)"""
     try:
@@ -125,6 +142,9 @@ def _gonderi_baglami(media_id: str) -> str | None:
 def isle(yorum: GelenYorum) -> None:
     """Bir GelenYorum'u değerlendir: tetik + throttle geçerse private reply gönderir."""
     if not tetikleyici_mi(yorum.metin):
+        return
+    if _kendi_yorumumuz_mu(yorum):
+        log.info("yorumdan-DM: yorum bize ait (%s), atlandı", yorum.comment_id)
         return
     if _daha_once_tetiklendi_mi(yorum.yorumcu_id, yorum.media_id):
         log.info("yorumdan-DM: %s bu gönderiden (%s) zaten tetiklemiş, atlandı",

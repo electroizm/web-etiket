@@ -56,6 +56,47 @@ def aktif_ig_token() -> str:
     return token
 
 
+# Kendi hesap kimliklerimiz — "bu yorumu biz mi yazdık?" kontrolü için.
+# /me iki kimlik döndürür: id (uygulama kapsamlı) ve user_id (IGID, 17841...).
+# Yorum webhook'u user_id'yi taşır ama ikisini de tutuyoruz (biçim değişirse
+# kontrol yine tutsun). 6 saatlik önbellek — bu değerler hiç değişmez.
+_ig_kimlik_cache: tuple[float, frozenset[str]] | None = None
+_IG_KIMLIK_TTL = 6 * 3600
+
+
+def kendi_kimlikler() -> frozenset[str]:
+    """Bu IG işletme hesabının kendi kimlikleri.
+
+    Yorumdan-DM'de botun KENDİ yorumunu müşteri yorumu sanmaması için gerekir
+    (2026-07-27 hatası: bot, yorum altına yazdığı "bilginiz DM'de" notunu
+    webhook'tan geri alıp kendine cevap veriyordu). Başarısızlıkta BOŞ küme
+    döner — çağıran metin yedeğine düşer, akış bozulmaz. Sonuç yalnız
+    başarıyken önbelleğe alınır ki geçici bir hata 6 saat boyunca yapışmasın.
+    """
+    global _ig_kimlik_cache
+    now = time.monotonic()
+    if _ig_kimlik_cache and now - _ig_kimlik_cache[0] < _IG_KIMLIK_TTL:
+        return _ig_kimlik_cache[1]
+
+    kimlikler: frozenset[str] = frozenset()
+    try:
+        r = requests.get(
+            f"https://graph.instagram.com/{settings.GRAPH_API_VERSION}/me",
+            params={"fields": "id,user_id"},
+            headers={"Authorization": f"Bearer {aktif_ig_token()}"}, timeout=10)
+        if r.status_code == 200:
+            d = r.json() or {}
+            kimlikler = frozenset(str(d[a]) for a in ("id", "user_id") if d.get(a))
+        else:
+            log.error("kendi kimlik sorgusu hatası %s: %s", r.status_code, r.text[:200])
+    except requests.RequestException as e:
+        log.error("kendi kimlik sorgusu istisnası: %s", e)
+
+    if kimlikler:
+        _ig_kimlik_cache = (now, kimlikler)
+    return kimlikler
+
+
 def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
     """Instagram DM gönder (Instagram Login API — host graph.instagram.com,
     kimlik IG_TOKEN; WhatsApp'ın META_TOKEN'ından bağımsız)."""

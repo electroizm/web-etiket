@@ -183,8 +183,11 @@ def extract_yorumlar(govde: dict) -> list[GelenYorum]:
 
     Format: entry[].changes[] with field == "comments":
       value: {from: {id, username}, id: <comment_id>, text, media: {...}}
-    Bot hiçbir zaman genel (public) yorum ATMAZ — yalnız private reply — bu
-    yüzden botun kendi cevabının webhook'tan geri gelip döngü yaratma riski yok.
+
+    ⚠️ Bot 2026-07-11'den beri yorum altına herkese açık not YAZIYOR
+    (yorum.YORUM_ALTI_NOT), dolayısıyla kendi yorumu da buradan geri döner.
+    Ayıklama `yorum._kendi_yorumumuz_mu` ile yapılır — bu fonksiyon gelen her
+    yorumu döndürür, filtrelemez.
     """
     yorumlar: list[GelenYorum] = []
     for entry in govde.get("entry", []):
