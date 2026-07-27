@@ -206,7 +206,11 @@ KURALLAR (kesin):
     BAŞKA kombinasyonuna (başka kategoriye) geçme; id'den emin değilsen
     fiyat verdiğin kombinasyonu kombinasyonlari_listele ile bulup doğrula. pazarlik_notu'nda "DİKKAT" uyarısı
     varsa fiyat verme — önce hangi ürünü kastettiğini sor. pazarlik_notu
-    YOKSA o üründe pazarlık yapma — kibarca "yetkili" yazmasını öner.
+    YOKSA: önce o ürün için parca_ara (tek parça) ya da fiyat_detay
+    (kombinasyon) aracını ÇAĞIR — merdiven orada gelir. Ancak ARACI ÇAĞIRDIN
+    ve o da pazarlik_notu döndürmediyse pazarlığı bırak, "yetkili" yazmasını
+    öner. Bağlamda not görmemek TEK BAŞINA RET SEBEBİ DEĞİLDİR: liste
+    araçları (en_uygun_ara, kombinasyonlari_listele) not taşımaz.
     Kendiliğinden indirimli teklif verme; merdiven ancak müşteri pazarlık
     edince işler. Müşteriye yazdığın cevapta "merdiven", "adım",
     "ADIM DURUMU", "pazarlik_notu" gibi İÇ terimleri ASLA kullanma —
@@ -230,6 +234,18 @@ KURALLAR (kesin):
     cevaba ekle. Araç boş dönerse fiyat UYDURMA — hangi ürünü aradığını sor.
     Müşteri belirli bir seri adı yazdıysa (örn. "Calmera çekyat") bu aracı
     KULLANMA; her zamanki koleksiyon/parça akışını kullan.
+    LİSTEDEN SONRA PAZARLIK (önemli): en_uygun_ara sonucunda pazarlik_notu
+    YOKTUR — bu bir liste, pazarlık aracı değil. Müşteri listeden sonra
+    pazarlık ederse ("son fiyat ne", "son ne olur", "indirim olur mu", "en
+    uygun olanın son fiyatı") pazarlığı REDDETME, "yetkili"ye de YÖNLENDİRME
+    ve en_uygun_ara'yı TEKRAR ÇAĞIRMA (liste yeniden dökülmesin). Bunun
+    yerine ilgili ürünün ADIYLA parca_ara'yı çağır — pazarlık merdiveni ve
+    ADIM DURUMU orada gelir, kural 14'e göre teklif ver. Müşteri hangi ürün
+    olduğunu söylemediyse ÜRÜN SEÇİMİ (sırayla): (a) konuşmada TEK bir ürünün
+    fiyatını zaten verdiysen pazarlık O ürün üzerindedir — kural 14 ÜRÜN SABİT
+    geçerli, başka ürüne ATLAMA; (b) henüz tek ürün fiyatı vermediysen
+    listedeki EN UCUZ (ilk) ürünü kastediyor say. "en uygun olanın son fiyatı"
+    gibi bir cümle YENİ ürün arama emri DEĞİLDİR — konuşulan üründe kal.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -467,7 +483,13 @@ def _tool_calistir(ad: str, argumanlar: dict,
                        "KENDİ fiyat_cumlesi'ni AYNEN yaz, rakamları karıştırma. "
                        "Bu ÇOKLU bir listedir: 'Size özel bir fiyat çalışması' "
                        "cümlesini EKLEME. Listeden sonra tüm kataloğu tek mesajda "
-                       "dökemediğini kibarca söyle ve aklındaki seri/ürün adını sor."}
+                       "dökemediğini kibarca söyle ve aklındaki seri/ürün adını sor. "
+                       "PAZARLIK: burada pazarlik_notu YOK. Müşteri bundan sonra "
+                       "son fiyat/indirim isterse REDDETME ve 'yetkili'ye yönlendirme; "
+                       "bu aracı tekrar çağırma — ürünün ADIYLA parca_ara'yı çağır, "
+                       "merdiven orada gelir. Ürün belirtilmediyse: konuşmada tek bir "
+                       "ürünün fiyatını zaten verdiysen O üründe kal (ürün sabit), "
+                       "vermediysen listedeki EN UCUZ (ilk) ürünü kastediyor say."}
     if ad == "teshir_bilgi":
         from catalog.services import teshir as teshir_servis
         kol = argumanlar.get("koleksiyon_id")
@@ -685,10 +707,17 @@ def _fiyat_uydurma_var_mi(cevap: str, legit: set[int],
 _MERDIVEN_GIDEN_LIMIT = 12   # taranacak son giden mesaj sayısı (pazarlık oturumu kısa)
 
 # Müşterinin mesajı pazarlık isteği mi? (araçsız pazarlık cevabı yasağı için)
-_PAZARLIK_ISTEK_KALIPLARI = ("indirim", "pazarl", "son fiyat", "olmaz mı", "olmaz mi",
+# Canlı vaka (2026-07-28, 904882180424): müşteri 6 kez son fiyat sordu, bunların
+# 4'ü hiçbir kalıba UYMADI ("en son ne olur", "son fiystı" (yazım hatası),
+# "son ne olur söyler misin", "işte son ne olur") → araçsız-pazarlık zorlaması
+# hiç devreye girmedi. "son fiyat" yerine "son fiy" (yazım hatasını da yakalar)
+# ve "son ne"/"en son" kalıpları eklendi.
+_PAZARLIK_ISTEK_KALIPLARI = ("indirim", "pazarl", "son fiy", "olmaz mı", "olmaz mi",
                              "biraz daha", "daha in", "daha düş", "daha dus",
                              "kaça olur", "kaca olur", "kaça verirsin", "ucuz",
-                             "bırak", "birak")
+                             "bırak", "birak", "son ne", "en son", "son kaç",
+                             "son kac", "net fiyat", "netini", "kaç yapar",
+                             "kac yapar", "en aşağı", "en asagi", "son teklif")
 
 
 def _pazarlik_istegi_mi(metin: str) -> bool:
@@ -778,6 +807,18 @@ def _adim_notu(merdiven: list[int], gidenler: list[str]) -> str:
             f"daha fazla inme, kibarca son fiyatın bu olduğunu söyle.")
 
 
+# Ürün adlarında hemen her üründe geçen jenerik kelimeler — ürünü AYIRT ETMEZLER.
+# Seri adı ("LOFT", "MARLIN", "CALMERA") ayırt edicidir; pazarlık kontrolünde
+# ürünün gerçekten konuşulduğu ancak ayırt edici kelimeyle anlaşılır.
+_JENERIK_URUN_KELIMELERI = frozenset((
+    "koltuk", "uclu", "ikili", "tekli", "dortlu", "yatakli", "sandikli",
+    "sehpali", "sehpa", "berjer", "kose", "takim", "takimi", "oda", "odasi",
+    "grubu", "grup", "yemek", "yatak", "genc", "cocuk", "mutfak", "bahce",
+    "plus", "line", "kollu", "kolsuz", "acili", "modul", "moduler", "set",
+    "seti", "sol", "sag", "kapakli", "karyola", "baza", "baslik",
+))
+
+
 def _urun_konusuldu_mu(kayit: dict, konusma_duz: str) -> bool:
     """Pazarlık edilen ürün/kombinasyon son konuşmalarda gerçekten geçti mi?
 
@@ -794,6 +835,14 @@ def _urun_konusuldu_mu(kayit: dict, konusma_duz: str) -> bool:
                  if len(k) >= 3 or (k.isdigit() and len(k) >= 2)]
     if not kelimeler:      # ayırt edici kelime yok — kontrolü atla
         return True
+    # SERİ ADI ŞARTI (2026-07-28 canlı vakası): "LOFT Üçlü Koltuk" için "üçlü"
+    # ve "koltuk" konuşmada geçtiğinden çoğunluk testi geçiyordu, seri adı LOFT
+    # hiç geçmemesine rağmen — bot müşteriye HİÇ göstermediği ürüne pazarlık
+    # fiyatı verdi. Jenerik mobilya kelimeleri ürünü ayırt etmez; adda ayırt
+    # edici bir kelime varsa en az biri konuşmada geçmeli.
+    ayirt_edici = [k for k in kelimeler if k not in _JENERIK_URUN_KELIMELERI]
+    if ayirt_edici and not any(k in konusma_duz for k in ayirt_edici):
+        return False
     bulunan = sum(1 for k in kelimeler if k in konusma_duz)
     return bulunan * 2 >= len(kelimeler)   # en az yarısı konuşmada geçmeli
 
@@ -809,12 +858,19 @@ def _merdiven_isle(sonuc, gidenler: list[str], konusma_duz: str) -> None:
     if isinstance(sonuc, dict):
         merdiven = sonuc.pop("_merdiven", None)
         if merdiven and sonuc.get("pazarlik_notu"):
-            sonuc["pazarlik_notu"] += _adim_notu(list(merdiven), gidenler)
-            if not _urun_konusuldu_mu(sonuc, konusma_duz):
-                sonuc["pazarlik_notu"] += (
-                    " DİKKAT: bu ürün müşteriyle SON KONUŞULAN ürün DEĞİL "
-                    "görünüyor — müşteri bu ürünü açıkça istemediyse bu fiyatı "
-                    "VERME; pazarlığı hangi ürün için istediğini SOR.")
+            if _urun_konusuldu_mu(sonuc, konusma_duz):
+                sonuc["pazarlik_notu"] += _adim_notu(list(merdiven), gidenler)
+            else:
+                # Konuşulmamış ürün: uyarı YETMİYOR (2026-07-28 canlı denemesi —
+                # kota yüzünden devreye giren zayıf yedek model DİKKAT'i
+                # görmezden gelip LOFT'a 19.200 TL teklif etti). Merdiven
+                # RAKAMLARINI hiç verme: model görmediği rakamı teklif edemez,
+                # uydurursa fiyat kalkanı yakalar. Liste fiyatı (fiyat_cumlesi)
+                # yerinde kalır — ürünü tanıtmak serbest, indirim vermek değil.
+                sonuc["pazarlik_notu"] = (
+                    "DİKKAT: bu ürün müşteriyle konuşulan ürün DEĞİL. Bu üründe "
+                    "pazarlık/indirim fiyatı VERME, rakam teklif etme; önce "
+                    "hangi ürün için fiyat istediğini müşteriye SOR.")
         for v in sonuc.values():
             _merdiven_isle(v, gidenler, konusma_duz)
     elif isinstance(sonuc, list):
