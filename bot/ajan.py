@@ -105,6 +105,14 @@ KURALLAR (kesin):
    söyle ve "yetkili" yazmasını öner — sorusu yetkiliye iletilmiştir, de.
    Kendi genel bilginden ya da internetten mağaza bilgisi verme; başka
    şehirlerdeki/şubelerdeki Doğtaş mağazalarının bilgisi BİZİM bilgimiz değildir.
+   İSTİSNA — BAŞKA ŞEHİR/İLÇE SORUSU: müşteri Batman dışında bir yer adı
+   geçirip mağaza/şube sorarsa (örn. "Elazığ'da mağazanız var mı", "Van'a
+   gönderiyor musunuz") "mağazamız yok" DEME, Batman adresini de cevap diye
+   okuma — müşteri uzakta diye vazgeçmesin. magaza_bilgi'yi "şube" ile çağır
+   ve oradan dönen gönderim/servis cevabını ver (fabrikadan doğrudan gönderim,
+   ücretsiz nakliye ve montaj, güvenli ödeme, istenirse sesli görüşme).
+   Müşteri ADRESİMİZİ açıkça sorarsa ("neredesiniz", "adresiniz nedir")
+   elbette Batman adresini ver — istisna yalnız başka yer adı geçen sorular içindir.
 8. Müşteri kategori/koleksiyon adını yanlış yazabilir (örn. "mariza", "yatak odsı")
    — arama aracını kullanıp en yakınını bul.
 9. Markdown/biçimlendirme işareti KULLANMA (**, ##, madde imi vb.) — WhatsApp ve
@@ -209,6 +217,19 @@ KURALLAR (kesin):
     verdiğin kombinasyon/tek ürün üzerinedir: onu fiyat_detay (kombinasyon) ya
     da parca_ara (tek parça) ile bulup ADIM DURUMU ne diyorsa ilk teklifi ver.
     Hangi ürün olduğundan emin değilsen önce sor.
+15. EN UYGUN FİYATLI SEÇENEKLER. Müşteri SERİ ADI vermeden GENEL bir tip
+    söylerse ("çekyat", "kanepe", "koltuk", "üçlü koltuk"), bunun fiyatını
+    sorarsa ya da adet belirtirse ("2 tane çekyat", "çekyat kaç para")
+    yetkiliye HEMEN yönlendirme, "hangi modeli istiyorsunuz" diye de takılıp
+    kalma → en_uygun_ara aracını çağır ve dönen 2-3 seçeneği fiyatlarıyla
+    listele. Her ürünün KENDİ fiyat_cumlesi'ni AYNEN yaz (kural 4). Listeden
+    sonra kısaca: tüm kataloğu tek mesajda dökemediğini söyle, aklında bir
+    seri/ürün adı varsa yazmasını iste, istersen "yetkili" hatırlatmasını ekle.
+    Pazarlık davet cümlesini bu listeye EKLEME — çoklu listedir (kural 14);
+    müşteri birini seçince o ürünün fiyatını parca_ara ile ver ve daveti O
+    cevaba ekle. Araç boş dönerse fiyat UYDURMA — hangi ürünü aradığını sor.
+    Müşteri belirli bir seri adı yazdıysa (örn. "Calmera çekyat") bu aracı
+    KULLANMA; her zamanki koleksiyon/parça akışını kullan.
 
 Mağazadaki kategoriler: {kategoriler}
 """
@@ -286,6 +307,28 @@ TOOLS = [
                              "description": "Müşterinin sorusu, örn. 'mağazanız nerede'"},
                 },
                 "required": ["soru"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "en_uygun_ara",
+            "description": "Bir ürün TİPİNİN en uygun fiyatlı 2-3 seçeneğini "
+                           "fiyatlarıyla getirir. Müşteri SERİ ADI vermeden genel "
+                           "konuşuyorsa çağır: 'çekyat', 'kanepe', 'koltuk', "
+                           "'üçlü koltuk', '2 tane çekyat', 'en ucuz koltuk ne "
+                           "kadar' gibi. Müşteri belirli bir seri adı yazdıysa "
+                           "(örn. 'Calmera koltuk') bunu KULLANMA — koleksiyon "
+                           "akışını kullan.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tip": {"type": "string",
+                            "description": "Genel ürün tipi, örn. 'çekyat' ya da "
+                                           "'üçlü koltuk'"},
+                },
+                "required": ["tip"],
             },
         },
     },
@@ -413,6 +456,18 @@ def _tool_calistir(ad: str, argumanlar: dict,
                        "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
                        "adlar müşterinin yazdığından farklıysa (arama yakın adları "
                        "da getirir) fiyat vermeden önce hangisini kastettiğini SOR."}
+    if ad == "en_uygun_ara":
+        urunler = menu_veri.en_uygun(str(argumanlar.get("tip", "")))
+        if not urunler:
+            return {"bulunamadi": True,
+                    "not": "Bu tipte ürün bulunamadı — fiyat UYDURMA. Müşteriye "
+                           "hangi ürünü aradığını sor ya da 'yetkili' yazmasını öner."}
+        return {"urunler": urunler,
+                "not": "En uygun fiyatlı seçenekler (ucuzdan pahalıya). Her ürünün "
+                       "KENDİ fiyat_cumlesi'ni AYNEN yaz, rakamları karıştırma. "
+                       "Bu ÇOKLU bir listedir: 'Size özel bir fiyat çalışması' "
+                       "cümlesini EKLEME. Listeden sonra tüm kataloğu tek mesajda "
+                       "dökemediğini kibarca söyle ve aklındaki seri/ürün adını sor."}
     if ad == "teshir_bilgi":
         from catalog.services import teshir as teshir_servis
         kol = argumanlar.get("koleksiyon_id")

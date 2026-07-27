@@ -334,6 +334,94 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
         session.close()
 
 
+# ─── "En uygun fiyatlı" listesi ──────────────────────────────────────────────
+# Müşteri seri adı vermeden "çekyat / kanepe / koltuk" derse yetkiliye
+# yönlendirmek yerine en ucuz birkaç seçeneği fiyatıyla sun (İsmail 2026-07-28).
+#
+# Katalog gerçekleri (2026-07-28'de ölçüldü — tasarımı bunlar belirledi):
+#   • "çekyat" ve "kanepe" diye ÜRÜN YOK (0 kayıt). Karşılıkları "... Yataklı
+#     Koltuk". Bu yüzden tip → ad token'ı eşlemesi şart.
+#   • 19 ürünün fiyatı 0 TL. Ham "en ucuz" sıralaması bunları başa alır ve bot
+#     "en uygun seçeneğimiz 0 TL" derdi → fiyat > 0 filtresi ZORUNLU.
+#   • Aynı model onlarca SKU ile tekrarlıyor (LEA Üçlü Yataklı Koltuk 12 kayıt)
+#     → ada göre tekilleştirilmezse liste aynı ismi 3 kez yazar.
+#
+# Değer: (SQL daraltma token'ı, Python'da aranan token'lar).
+# SQL token'ı ASCII olmalı: Postgres lower() 'Yataklı'yı 'yataklı' yapar,
+# ilike('%yatakli%') tutmaz (urun_ara'daki i/ı sorunuyla aynı) — bu yüzden
+# daraltmayı ASCII "koltuk" ile yapıp kesin eşleşmeyi _duz ile Python'da veririz.
+# "uclu" her ikisinde de var: İsmail kararı (2026-07-28) çekyatta da yalnız
+# ÜÇLÜ modeller listelensin — İkili modeller daha ucuz olduğu için listeyi
+# domine ediyordu (ilk üç sıra ikiliydi), oysa müşteriye üçlü sunulmak isteniyor.
+EN_UYGUN_TIPLERI: dict[str, tuple[str, tuple[str, ...]]] = {
+    "cekyat": ("koltuk", ("uclu", "yatakli", "koltuk")),
+    "koltuk": ("koltuk", ("uclu", "koltuk")),
+}
+# "çekyat" niyetini ele veren kelimeler (_duz'lanmış). Bunlar YOKSA ve mesajda
+# "koltuk/oturma" varsa düz üçlü koltuk listesi verilir.
+_CEKYAT_KELIMELERI = ("cekyat", "cek yat", "kanepe", "yatakli", "yatak olan",
+                      "yataga donusen", "yatakli koltuk")
+
+# Adı token'lara uysa da bu listeye girmemesi gereken ürünler. "Bahçe" koltuğu
+# fiyatça ucuz olduğu için listenin başına geçiyordu (TEONA/WINONA canlı veride
+# 2. ve 7. sıradaydı); salon koltuğu soran müşteriye bahçe mobilyası önerilmesin.
+_EN_UYGUN_HARIC = ("bahce",)
+
+
+def _en_uygun_tip(tip: str) -> tuple[str, tuple[str, ...]] | None:
+    """Müşterinin dediği tipi katalog token'larına çevir; tanımadıysa None."""
+    d = _duz(tip)
+    if any(k in d for k in _CEKYAT_KELIMELERI):
+        return EN_UYGUN_TIPLERI["cekyat"]
+    if "koltuk" in d or "oturma" in d:
+        return EN_UYGUN_TIPLERI["koltuk"]
+    return None
+
+
+def en_uygun(tip: str, limit: int = 3) -> list[dict]:
+    """Bir ürün tipinin EN UYGUN FİYATLI ilk `limit` seçeneği.
+
+    Fiyatı 0/boş olanlar elenir, aynı model bir kez görünür (en ucuz SKU'su),
+    sonuç ucuzdan pahalıya sıralıdır. Kayıt biçimi urun_ara ile aynıdır ki
+    model fiyatı yine hazır fiyat_cumlesi'nden kopyalasın.
+
+    pazarlik_notu BİLEREK yok: bu bir ÇOKLU listedir, pazarlık hangi ürün
+    üzerine olacağı belirsiz kalır (kombinasyonlari_listele ile aynı ilke).
+    Müşteri birini seçince model parca_ara'yı çağırır, merdiven orada gelir.
+    """
+    eslesme = _en_uygun_tip(tip)
+    if not eslesme:
+        return []
+    sql_token, tokenlar = eslesme
+    session = SessionLocal()
+    try:
+        rows = session.scalars(
+            select(Urun)
+            .where(Urun.son_perakende_fiyat > 0,      # 0 TL ve NULL elenir
+                   Urun.urun_adi_tam.ilike(f"%{sql_token}%"))
+            .order_by(Urun.son_perakende_fiyat)).all()
+        gorulen: set[str] = set()
+        sonuc: list[dict] = []
+        for u in rows:
+            ad = _duz(u.urun_adi_tam)
+            if (ad in gorulen or not all(t in ad for t in tokenlar)
+                    or any(h in ad for h in _EN_UYGUN_HARIC)):
+                continue
+            gorulen.add(ad)
+            sonuc.append({
+                "sku": u.sku,
+                "ad": u.urun_adi_tam,
+                "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
+                                               u.son_perakende_fiyat),
+                "para_birimi": "TL",
+            })
+            if len(sonuc) >= limit:
+                break
+        return sonuc
+    finally:
+        session.close()
+
+
 def bilgi_ara(soru: str) -> list[dict]:
     """Mağaza bilgi kayıtlarında anahtar kelime eşleşmesi.
 
