@@ -47,25 +47,29 @@ def verify_signature(raw_body: bytes, signature_header: str, app_secret: str) ->
     return hmac.compare_digest(gelen, beklenen)
 
 
-def imza_tani(raw_body: bytes, signature_header: str, app_secret: str) -> tuple[bool, str]:
+def imza_tani(raw_body, signature_header, app_secrets):
     """İzleme/teşhis: imza geçerli mi + NEDEN geçersiz. (gecerli, detay) döner.
 
-    detay sırrı AÇIĞA ÇIKARMAZ — yalnız 'başlık geldi mi' + gelen/beklenen
-    özetin ilk 12 hanesi (bunlar HASH; geri döndürülüp secret elde edilemez) +
-    gövde uzunluğu. Böylece /saglik'tan 'secret mi yanlış yoksa gövde mi
-    farklı' ayırt edilebilir."""
-    if not app_secret:
+    app_secrets tek string YA DA liste olabilir — WhatsApp ve Instagram AYRI
+    uygulama/secret kullanabilir ve webhook tek uçtan ikisini de alır; secret'lardan
+    HERHANGİ biri eşleşirse imza geçerlidir. detay sırrı SIZDIRMAZ: başlık geldi mi,
+    gelen özetin ilk 12 hanesi, gövde uzunluğu, denenen secret sayısı."""
+    if isinstance(app_secrets, str):
+        app_secrets = [app_secrets]
+    secrets = [s for s in app_secrets if s]
+    if not secrets:
         return False, "secret yok"
-    beklenen = hmac.new(app_secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
     if not signature_header:
-        return False, f"baslik YOK (beklenen={beklenen[:12]} govde={len(raw_body)}b)"
+        return False, f"baslik YOK (govde={len(raw_body)}b)"
     if not signature_header.startswith("sha256="):
         return False, f"baslik bicimi bozuk: {signature_header[:20]!r}"
     gelen = signature_header.split("=", 1)[1].strip()
-    if hmac.compare_digest(gelen, beklenen):
-        return True, "OK"
-    return False, (f"HASH FARKLI gelen={gelen[:12]} beklenen={beklenen[:12]} "
-                   f"govde={len(raw_body)}b")
+    for s in secrets:
+        beklenen = hmac.new(s.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(gelen, beklenen):
+            return True, "OK"
+    return False, (f"HASH FARKLI gelen={gelen[:12]} govde={len(raw_body)}b "
+                   f"({len(secrets)} secret denendi)")
 
 
 @dataclass

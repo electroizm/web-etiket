@@ -179,19 +179,24 @@ def webhook(request):
     global WEBHOOK_SON_HATA, WEBHOOK_IMZA_DURUM
     from datetime import datetime
     raw = request.body or b"{}"
-    # ── İmza doğrulaması (X-Hub-Signature-256) — sahte webhook POST'larını reddet ──
-    # 2607.27.2 izleme modunda canlıda kararlı 'OK' doğrulandı (secret doğru) →
-    # artık ENFORCE: imzası eşleşmeyen istek İŞLENMEDEN 403 döner (sebebi /saglik'a
-    # yazılır). META_APP_SECRET boşsa doğrulama atlanır (kurtarma yolu: secret'ı sil).
-    if settings.META_APP_SECRET:
-        gecerli, detay = imza_tani(raw, request.headers.get("X-Hub-Signature-256", ""),
-                                   settings.META_APP_SECRET)
+    # ── İmza İZLEME modu + çift secret (WhatsApp + Instagram) — 2026-07-27 ──────
+    # Enforce'ta (2607.27.3) WhatsApp geçti ama bazı olaylar (Instagram, ayrı
+    # app/secret) HASH FARKLI aldı → yanlışlıkla reddediliyordu. Şimdi: iki secret'ı
+    # da dene (biri tutarsa geçerli), RED'de HANGİ platform (object) olduğunu yaz,
+    # ama İZLEME modunda mesajı REDDETME (403 dönme). Çift secret 'OK' olunca enforce.
+    if settings.META_APP_SECRET or settings.IG_APP_SECRET:
+        gecerli, detay = imza_tani(
+            raw, request.headers.get("X-Hub-Signature-256", ""),
+            [settings.META_APP_SECRET, settings.IG_APP_SECRET])
         if not gecerli:
-            WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} RED · {detay}"
-            return HttpResponse(status=403)
-        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} OK"
+            try:
+                nesne = (json.loads(raw) or {}).get("object", "?")
+            except Exception:
+                nesne = "?"
+            detay = f"{detay} object={nesne}"
+        WEBHOOK_IMZA_DURUM = f"{datetime.now():%H:%M:%S} {'OK' if gecerli else 'RED'} · {detay}"
     else:
-        WEBHOOK_IMZA_DURUM = "atlandı (META_APP_SECRET yok)"
+        WEBHOOK_IMZA_DURUM = "atlandı (secret yok)"
     # Ayrıştırma başarısız olsa/olay 0 çıksa bile HAM veriyi sakla — Meta'nın
     # gerçekten ne gönderdiğini görmeden ayrıştırma kodunu doğru yazamayız.
     WEBHOOK_SON_GOVDELER.append(
