@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from urllib.parse import urlparse
 
 import requests
 
@@ -20,6 +21,47 @@ from django.conf import settings
 log = logging.getLogger("bot.ses")
 
 MAKS_SES_BAYT = 8 * 1024 * 1024   # Gemini inline sınırına güvenli mesafe (~8 MB)
+
+# Instagram/Facebook CDN host son ekleri — _ig_indir yalnız bunlara gider.
+# SSRF savunma derinliği: webhook imzası artık doğrulanıyor (URL gerçekten
+# Meta'dan gelir) ama yine de iç ağa / rastgele host'a istek atmayı engelle.
+_IG_IZINLI_HOST_SONEK = (".cdninstagram.com", ".fbcdn.net", ".fbsbx.com")
+
+
+def _ig_url_guvenli(url: str) -> bool:
+    """URL https + host bilinen Meta/Instagram CDN mi? (SSRF savunma derinliği)."""
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    host = (p.hostname or "").lower()
+    if p.scheme != "https" or not host:
+        return False
+    return any(host == s.lstrip(".") or host.endswith(s) for s in _IG_IZINLI_HOST_SONEK)
+
+
+def _indir_sinirli(url: str, headers: dict | None = None, timeout: int = 20):
+    """URL'i AKIŞLA indir, MAKS_SES_BAYT aşılırsa iptal et (OOM koruması).
+
+    (icerik_bayt, content_type) döner; HTTP != 200 / sınır aşımı / hata → None.
+    Boyut kontrolü indirme SIRASINDA yapılır (tüm dosyayı belleğe almadan)."""
+    with requests.get(url, headers=headers, timeout=timeout, stream=True) as d:
+        if d.status_code != 200:
+            log.error("indirme HTTP %s", d.status_code)
+            return None
+        cl = d.headers.get("Content-Length")
+        if cl and cl.isdigit() and int(cl) > MAKS_SES_BAYT:
+            log.error("indirme çok büyük (Content-Length %s bayt)", cl)
+            return None
+        parcalar, toplam = [], 0
+        for parca in d.iter_content(chunk_size=65536):
+            toplam += len(parca)
+            if toplam > MAKS_SES_BAYT:
+                log.error("indirme sınırı aşıldı (%s bayt), iptal", toplam)
+                return None
+            parcalar.append(parca)
+        ct = (d.headers.get("Content-Type") or "").split(";")[0].strip()
+        return b"".join(parcalar), ct
 
 # Son transkript hatası — /saglik teşhisi için (Render loguna erişim yok).
 SON_HATA: str | None = None
@@ -70,23 +112,27 @@ def _wa_indir(media_id: str) -> tuple[bytes, str] | None:
     mime = (bilgi.get("mime_type") or "audio/ogg").split(";")[0].strip()
     if not url:
         return None
-    d = requests.get(url, headers=basliklar, timeout=20)
-    if d.status_code != 200 or len(d.content) > MAKS_SES_BAYT:
-        log.error("WA medya indirilemedi (%s, %s bayt)", d.status_code, len(d.content))
+    sonuc = _indir_sinirli(url, headers=basliklar, timeout=20)
+    if not sonuc:
         return None
-    return d.content, mime
+    return sonuc[0], mime   # mime Graph API bilgisinden (header'dan daha güvenilir)
 
 
 def _ig_indir(url: str) -> tuple[bytes, str] | None:
-    """Instagram sesi CDN URL'inden doğrudan iner (kimlik gerekmez)."""
+    """Instagram medyası CDN URL'inden doğrudan iner (kimlik gerekmez).
+
+    SSRF savunma derinliği: yalnız Meta/Instagram CDN host'larına gider;
+    akışla indirip boyut sınırını aşarsa iptal eder."""
     if not url:
         return None
-    d = requests.get(url, timeout=20)
-    if d.status_code != 200 or len(d.content) > MAKS_SES_BAYT:
-        log.error("IG ses indirilemedi (%s)", d.status_code)
+    if not _ig_url_guvenli(url):
+        log.error("IG indirme reddedildi (güvensiz host): %s", (urlparse(url).hostname or "?"))
         return None
-    mime = (d.headers.get("Content-Type") or "audio/mp4").split(";")[0].strip()
-    return d.content, mime
+    sonuc = _indir_sinirli(url, timeout=20)
+    if not sonuc:
+        return None
+    icerik, ct = sonuc
+    return icerik, (ct or "audio/mp4")
 
 
 def transkript(veri: bytes, mime: str) -> str | None:
