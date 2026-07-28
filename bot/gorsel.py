@@ -43,12 +43,45 @@ OKUMA_TALIMAT = (
     "mağaza teşhir kaydından sorgulanmasını sağlar.\n"
     "- Ürün adı yoksa ama başka metin varsa okuduğun metni kısaca yaz.\n"
     "- Görselde HİÇ ürün adı yazmıyorsa ve bir MOBİLYA görüyorsan, tek satır "
-    "şu biçimde yaz: '(görsel tarifi: <tip>)'. <tip> yerine şu listeden EN "
-    f"UYGUN olanı seç: {TIP_SOZLUGU}. Model/seri adı TAHMİN ETME; renk, kumaş, "
-    "malzeme, stil YAZMA (bunlar katalogda aranmaz, sonucu boşa çıkarır).\n"
+    "şu biçimde yaz: '(görsel tarifi: <tarif>)'. <tarif> şu alanları TAM BU "
+    "SIRAYLA, aralarına ' | ' koyarak içerir:\n"
+    "  tip | koltuk/kapak sayısı | ana renk | ikincil renk | döşeme/kaplama "
+    "malzemesi | ayak tipi ve rengi | kolçak/kenar biçimi | belirgin detay\n"
+    f"  <tip> için şu listeden en uygununu seç: {TIP_SOZLUGU}. Bilinmeyen "
+    "alana 'yok' yaz. Model/seri adı TAHMİN ETME — bilemezsin.\n"
     "- Görselde ne metin ne mobilya varsa tek kelime yaz: YOK\n"
     "Açıklama, yorum, tırnak, fiyat, indirim ORANI/TUTARI ekleme."
 )
+
+
+_TARIF_ONEKI = "(görsel tarifi:"
+
+
+def _benzerlerle_zenginlestir(okunan: str | None) -> str | None:
+    """Görselde ürün ADI yoksa tarifi ürün fotoğrafı kataloğunda ara.
+
+    Ürün adı okunduysa dokunulmaz — o zaten kesin bilgi. Tarif çıktıysa
+    (müşteri yazısız fotoğraf atmış) tarif, katalogdaki ürün fotoğraflarının
+    tarifleriyle karşılaştırılır ve en yakın adaylar mesaja eklenir. Eşleştirme
+    çalışmazsa mesaj OLDUĞU GİBİ kalır — akış bozulmaz, ajan tip aramasına düşer.
+    """
+    if not okunan or _TARIF_ONEKI not in okunan:
+        return okunan
+    try:
+        bas = okunan.index(_TARIF_ONEKI) + len(_TARIF_ONEKI)
+        son = okunan.index(")", bas)
+        tarif = okunan[bas:son].strip()
+        if not tarif:
+            return okunan
+        from bot import gorsel_eslestir
+        adaylar = gorsel_eslestir.benzerleri_bul(tarif, limit=3)
+        if not adaylar:
+            return okunan
+        liste = ", ".join(a["ad"] for a in adaylar)
+        return f"{okunan} (benzer ürünler: {liste})"
+    except Exception:
+        log.exception("benzer ürün araması başarısız")
+        return okunan
 
 
 def coz(gorsel: dict) -> str | None:
@@ -63,7 +96,8 @@ def coz(gorsel: dict) -> str | None:
         if not indirilen:
             return None
         veri, mime = indirilen
-        return oku(veri, mime)
+        okunan = oku(veri, mime)
+        return _benzerlerle_zenginlestir(okunan)
     except Exception as e:
         from datetime import datetime
         SON_HATA = f"{datetime.now():%H:%M:%S} coz {type(e).__name__}: {str(e)[:200]}"
