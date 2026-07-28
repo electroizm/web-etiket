@@ -40,6 +40,15 @@ def metin_mesaji(govde: str) -> dict:
     return _metin(govde)
 
 
+def gorsel_mesaji(url: str, altyazi: str = "") -> dict:
+    """Ürün fotoğrafı. Cloud API görseli PUBLIC LINKTEN kendisi çeker —
+    dosya yüklemeye gerek yok. Altyazı (caption) 1024 karakterle sınırlı."""
+    govde: dict = {"type": "image", "image": {"link": url}}
+    if altyazi:
+        govde["image"]["caption"] = altyazi[:1024]
+    return govde
+
+
 def _cta(metin: str, buton: str, url: str) -> dict:
     """Tek URL butonlu mesaj (cta_url). WhatsApp cta_url'de yalnız 1 buton olabilir."""
     return {

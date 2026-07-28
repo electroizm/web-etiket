@@ -22,6 +22,8 @@ Test için P enjekte edilebilir.
 """
 from __future__ import annotations
 
+import re
+
 from bot import ig_presenter as _default_P
 from bot.webhook_core import parse_secim
 
@@ -81,18 +83,46 @@ def _duzle(s: str) -> str:
 
 
 # ── AI cevabı ────────────────────────────────────────────────────────────────
+# Ajan tek bir ürünün fotoğrafını göstermek istediğinde cevabın SONUNA bu
+# işareti koyar: [gorsel:<SKU>]. Neden URL değil SKU (İsmail isteği 2026-07-28):
+# uzun CDN adresini model kopyalarken bozabilir; SKU kısa ve zaten araç
+# sonucunda birebir duruyor. Adresi router çözer, müşteri işareti GÖRMEZ.
+GORSEL_ISARETI = re.compile(r"\s*\[gorsel:\s*([A-Za-z0-9\-_.]{4,40})\s*\]\s*")
+
+
+def _gorsel_ayikla(cevap: str) -> tuple[str, str | None]:
+    """Cevaptan [gorsel:SKU] işaretini çıkar; (temiz metin, sku) döner."""
+    bulunan = GORSEL_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    return GORSEL_ISARETI.sub(" ", cevap).strip(), bulunan.group(1)
+
+
 def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
-               P) -> dict | None:
+               P) -> dict | list[dict] | None:
     """AI'dan cevap iste; üretemezse None (çağıran metin fallback'ine düşer).
 
-    Cevap her zaman TEK düz metin mesajıdır — menü/karşılama eklenmez
-    (İsmail kararı 2026-07-21: AI sonrası menü karışıklık yaratıyordu).
+    Normalde TEK düz metin mesajı döner — menü/karşılama eklenmez (İsmail
+    kararı 2026-07-21). İSTİSNA: ajan cevabın sonuna [gorsel:SKU] koyduysa
+    metnin ARDINDAN o ürünün fotoğrafı da gönderilir (İsmail kararı
+    2026-07-28: fotoğraf yalnız TEK ürün konuşulurken gitsin, listede değil).
+    Fotoğraf alınamazsa metin yine gider — müşteri cevapsız kalmaz.
     """
     from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
     cevap = ajan.cevapla(tetik, platform, kullanici, gecmissiz=gecmissiz)
     if not cevap:
         return None
-    return P.metin_mesaji(cevap)
+    cevap, sku = _gorsel_ayikla(cevap)
+    if not cevap:                       # işaret dışında bir şey kalmadıysa
+        return None
+    metin = P.metin_mesaji(cevap)
+    if not sku or not hasattr(P, "gorsel_mesaji"):
+        return metin
+    from bot import urun_gorsel
+    url = urun_gorsel.url_bul(sku)
+    if not url:
+        return metin
+    return [metin, P.gorsel_mesaji(url)]
 
 
 def yanit_uret(tetik: str, P=_default_P, platform: str = "",
