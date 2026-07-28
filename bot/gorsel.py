@@ -77,7 +77,10 @@ def _benzerlerle_zenginlestir(okunan: str | None) -> str | None:
         adaylar = gorsel_eslestir.benzerleri_bul(tarif, limit=3)
         if not adaylar:
             return okunan
-        liste = ", ".join(a["ad"] for a in adaylar)
+        # SKU'lar da yazılır: ajan tek çağrıda (skulari_fiyatla) hepsinin
+        # fiyatını alabilsin. Fiyatlar YİNE araçtan gelir — uydurma kalkanı
+        # bozulmaz. Panelde bu satır göründüğü için ad da tutulur.
+        liste = ", ".join(f"{a['ad']} [{a['sku']}]" for a in adaylar)
         return f"{okunan} (benzer ürünler: {liste})"
     except Exception:
         log.exception("benzer ürün araması başarısız")

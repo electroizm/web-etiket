@@ -129,12 +129,12 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   kataloğu tek mesajda dökemediğini söyleyip aklındaki seri adını sor. Seri adı
   verilmişse ("Calmera çekyat") bu aracı KULLANMA. Araç boşsa fiyat UYDURMA.
 - GÖRSEL TARİFİ: mesajda "(görsel tarifi: ...)" varsa müşteri ürün adı YAZMAYAN
-  bir fotoğraf göndermiştir. Hangi model olduğunu ASLA TAHMİN ETME, iddiada
-  BULUNMA. "(benzer ürünler: A, B, C)" da varsa bunlar fotoğrafla eşleşen
-  GERÇEK ürünlerdir: fiyatlarını parca_ara ile alıp SIRAYLA listele. Yoksa
-  tarifin ilk alanıyla (tip) en_uygun_ara çağır. İki durumda da "fotoğraftakine
-  en çok benzeyen modellerimiz şunlar, bunlardan biri mi?" diye SOR — kesinlik
-  iddia etme, sıralamayı değiştirme. (Ürün ADI okunduysa normal akış.)
+  fotoğraf göndermiştir. Hangi model olduğunu ASLA TAHMİN ETME, iddiada BULUNMA.
+  "(benzer ürünler: Ad [SKU], ...)" da varsa köşeli parantezdeki SKU'ları
+  skulari_fiyatla'ya TEK çağrıda ver, fiyatlarıyla SIRAYLA listele — isim sayıp
+  geçme, fiyat şart. Yoksa tarifin ilk alanıyla (tip) en_uygun_ara çağır. İkisinde
+  de "fotoğraftakine en çok benzeyen modellerimiz şunlar, bunlardan biri mi?" diye
+  SOR — kesinlik iddia etme, sıralamayı değiştirme. (ADI okunduysa normal akış.)
 - teshir_bilgi: (a) müşteri mağazadaki/teşhirdeki üründen bahsederse,
   (b) mesajda "(teşhirdeki ürün)" geçerse, (c) ürünü katalogda bulamazsan ya da
   bulduğun kategori müşterinin dediğiyle uyuşmazsa — "bulamadım" demeden ÖNCE.
@@ -259,6 +259,24 @@ TOOLS = [
                              "description": "Müşterinin sorusu, örn. 'mağazanız nerede'"},
                 },
                 "required": ["soru"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "skulari_fiyatla",
+            "description": "Verilen SKU listesinin fiyatlarını TEK çağrıda getirir. "
+                           "Mesajda '(benzer ürünler: Ad [SKU], ...)' varsa "
+                           "(müşteri fotoğraf göndermiştir) köşeli parantezdeki "
+                           "SKU'ları buraya ver, dönen fiyatları sırayla listele.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skular": {"type": "array", "items": {"type": "string"},
+                               "description": "SKU listesi, eşleşme sırasıyla"},
+                },
+                "required": ["skular"],
             },
         },
     },
@@ -408,6 +426,18 @@ def _tool_calistir(ad: str, argumanlar: dict,
                        "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
                        "adlar müşterinin yazdığından farklıysa (arama yakın adları "
                        "da getirir) fiyat vermeden önce hangisini kastettiğini SOR."}
+    if ad == "skulari_fiyatla":
+        urunler = menu_veri.skularin_fiyati(argumanlar.get("skular") or [])
+        if not urunler:
+            return {"bulunamadi": True,
+                    "not": "Bu SKU'lar bulunamadı — fiyat UYDURMA. Müşteriye "
+                           "hangi ürünü aradığını sor."}
+        return {"urunler": urunler,
+                "not": "Fotoğrafla eşleşen ürünler, BENZERLİK sırasıyla. Her "
+                       "ürünün KENDİ fiyat_cumlesi'ni AYNEN yaz, sırayı bozma. "
+                       "Bu ÇOKLU listedir: 'Size özel bir fiyat çalışması' "
+                       "cümlesini EKLEME, [gorsel:...] işareti de KOYMA. "
+                       "Sonunda hangisi olduğunu SOR — kesinlik iddia etme."}
     if ad == "en_uygun_ara":
         urunler = menu_veri.en_uygun(str(argumanlar.get("tip", "")))
         if not urunler:
