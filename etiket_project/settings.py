@@ -63,8 +63,19 @@ BOT_DRY_RUN_IG = not IG_TOKEN       # Instagram
 #   emekli oldu — API 404 veriyor. 2.0-flash'ın ücretsiz hakkı 0.
 #   Kota MODEL BAŞINA ayrı sayıldığı için üç ücretsiz halka arka arkaya dizildi.
 #
-# Yedek neden yine Gemini ailesi: ücretsiz kota bitince müşteri DAVRANIŞ FARKI
-# hissetmesin. Aynı model, sadece ücretli kanaldan; günlük kota tavanı yok.
+# Yedek model YARIŞMAYLA seçildi (2026-07-28): gerçek sohbet geçmişi + 6
+# senaryo, her senaryoda otomatik geçti/kaldı ölçütü. Sonuç:
+#   qwen/qwen3.7-flash                6/6  ← seçildi (ayrıca en ucuzu ve
+#                                            GÖRSEL de okuyor)
+#   mistralai/mistral-small-3.2-24b   3/6  müşteriden TELEFON NUMARASI istedi
+#                                          (kaldırdığımız "beni ara" akışı)
+#   google/gemini-2.5-flash-lite      2/6  müşteriye İÇ DÜŞÜNCESİNİ sızdırdı
+#                                          ("...tutarsızlık var, pazarlık
+#                                          istenmişti ama...") + oyalama cevabı
+#   google/gemma-4-31b-it:free        0/6
+# DERS: "tanıdık/aynı aile model daha iyidir" varsayımı YANLIŞ çıktı — önce
+# gemini-2.5-flash-lite seçilmişti, test onu 2/6 ile eledi. Groq'ta da aynı
+# tuzağa düşülmüştü. Model kararını YALNIZ gerçek akış testi verir.
 #
 # Groq denendi ve ÇIKARILDI: kural takibi zayıf (gerçek akışta 1/3; magaza_bilgi
 # aracını çağırmadan cevap uydurdu, müşteriye "ilgili aracı çağırıp" diye iç
@@ -75,7 +86,7 @@ AJAN_MODEL = os.getenv(
     'gemini/gemini-flash-latest,'
     'gemini/gemini-flash-lite-latest,'
     'gemini/gemini-2.5-flash-lite,'
-    'openrouter/google/gemini-2.5-flash-lite',
+    'openrouter/qwen/qwen3.7-flash',
 )
 AJAN_MODELLER = [m.strip() for m in AJAN_MODEL.split(',') if m.strip()]
 
@@ -88,7 +99,7 @@ AJAN_MEDYA_MODEL = os.getenv(
     'gemini/gemini-flash-latest,'
     'gemini/gemini-flash-lite-latest,'
     'gemini/gemini-2.5-flash-lite,'
-    'openrouter/google/gemini-2.5-flash-lite',
+    'openrouter/qwen/qwen3.7-flash',
 )
 AJAN_MEDYA_MODELLER = [m.strip() for m in AJAN_MEDYA_MODEL.split(',') if m.strip()]
 # Gemini anahtarı LiteLLM tarafından GEMINI_API_KEY env'inden okunur.
@@ -200,7 +211,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2807.28.5"
+APP_SURUM = "2807.28.6"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
