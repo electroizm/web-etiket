@@ -154,9 +154,10 @@ def transkript(veri: bytes, mime: str) -> str | None:
     from datetime import datetime
 
     from bot import kota
-    if kota.hepsi_kapali_mi(settings.AJAN_MODELLER):
+    # Ses alabilen zincir (Groq modelleri ses ALMAZ — bkz. settings).
+    if kota.hepsi_kapali_mi(settings.AJAN_MEDYA_MODELLER):
         kota.kapalilari_ac()
-    for model in settings.AJAN_MODELLER:
+    for model in settings.AJAN_MEDYA_MODELLER:
         if kota.kapali_mi(model):
             continue
         try:

@@ -54,14 +54,47 @@ BOT_DRY_RUN_IG = not IG_TOKEN       # Instagram
 # ─── AI ajan (Faz 5) — serbest metinleri anlayan model katmanı ──
 # Sağlayıcı-bağımsız: LiteLLM model adları, virgülle ZİNCİR (soldan denenir;
 # kota/hata → sıradaki). Her Gemini modelinin ücretsiz kotası AYRI sayılır.
+# Zincir düzeni (İsmail kararı 2026-07-28): ÖNCE Google'ın ÜCRETSİZ kotaları,
+# onlar bitince ÜCRETLİ OpenRouter. Böylece günün büyük kısmı 0 ₺'ye gider ve
+# kota bitince bot susmaz — yalnız faturası OpenRouter'a geçer.
+#
+# Ücretsiz katman gerçeği (Google'ın 429 gövdesinden ölçüldü, 2026-07-28):
+#   gemini-flash-latest günde YALNIZ 20 istek. 1.5-flash (eski 1500 hakkı)
+#   emekli oldu — API 404 veriyor. 2.0-flash'ın ücretsiz hakkı 0.
+#   Kota MODEL BAŞINA ayrı sayıldığı için üç ücretsiz halka arka arkaya dizildi.
+#
+# Yedek neden yine Gemini ailesi: ücretsiz kota bitince müşteri DAVRANIŞ FARKI
+# hissetmesin. Aynı model, sadece ücretli kanaldan; günlük kota tavanı yok.
+#
+# Groq denendi ve ÇIKARILDI: kural takibi zayıf (gerçek akışta 1/3; magaza_bilgi
+# aracını çağırmadan cevap uydurdu, müşteriye "ilgili aracı çağırıp" diye iç
+# terim sızdırdı) ve dakikalık token sınırı (12K TPM) tek müşteri mesajını zor
+# kaldırıyordu. OpenRouter zaten Groq'un modellerini de tek anahtardan sunuyor.
 AJAN_MODEL = os.getenv(
     'AJAN_MODEL',
-    'gemini/gemini-flash-latest,gemini/gemini-flash-lite-latest,gemini/gemini-2.5-flash-lite',
+    'gemini/gemini-flash-latest,'
+    'gemini/gemini-flash-lite-latest,'
+    'gemini/gemini-2.5-flash-lite,'
+    'openrouter/google/gemini-2.5-flash-lite',
 )
 AJAN_MODELLER = [m.strip() for m in AJAN_MODEL.split(',') if m.strip()]
+
+# Görsel okuma (OCR) ve sesli mesaj çözümü AYRI zincir kullanır — her model
+# görüntü/ses ALMIYOR. Ayrı tutmak, sohbet zincirine ileride metin-only ucuz
+# bir model konulsa bile medya işinin bozulmamasını garanti eder. Bu iş zaten
+# düşük hacimli (günde birkaç çağrı), maliyeti ihmal edilebilir.
+AJAN_MEDYA_MODEL = os.getenv(
+    'AJAN_MEDYA_MODEL',
+    'gemini/gemini-flash-latest,'
+    'gemini/gemini-flash-lite-latest,'
+    'gemini/gemini-2.5-flash-lite,'
+    'openrouter/google/gemini-2.5-flash-lite',
+)
+AJAN_MEDYA_MODELLER = [m.strip() for m in AJAN_MEDYA_MODEL.split(',') if m.strip()]
 # Gemini anahtarı LiteLLM tarafından GEMINI_API_KEY env'inden okunur.
 # Anahtar yoksa ajan devre dışı kalır ve bot eski davranışa (menü) düşer.
-AJAN_AKTIF = bool(os.getenv('GEMINI_API_KEY') or os.getenv('ANTHROPIC_API_KEY')) \
+AJAN_AKTIF = bool(os.getenv('GEMINI_API_KEY') or os.getenv('OPENROUTER_API_KEY')
+                  or os.getenv('ANTHROPIC_API_KEY')) \
     and os.getenv('AJAN_KAPALI', '') != '1'
 # Konuşma bağlamı: bot_mesaj tablosundan alınacak son mesaj sayısı.
 AJAN_GECMIS_LIMIT = int(os.getenv('AJAN_GECMIS_LIMIT', '10'))
@@ -167,7 +200,7 @@ TEMPLATES = [
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
 # APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2807.28.4"
+APP_SURUM = "2807.28.5"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'

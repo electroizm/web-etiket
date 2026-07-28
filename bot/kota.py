@@ -117,12 +117,19 @@ def _bugun() -> str:
 def gunluk_bitti_mi(hata: Exception) -> bool:
     """429 GÜNLÜK kota mı, dakikalık mı?
 
-    Ayrım şart: dakikalık (RPM) 429 birkaç saniyede kendiliğinden düzelir —
-    onun yüzünden modeli gün boyu kapatmak koca bir kaybolur. Google quotaId'de
-    ayrımı veriyor: GenerateRequestsPerDayPerProjectPerModel-FreeTier.
+    Ayrım şart: dakikalık (RPM/TPM) 429 birkaç saniyede kendiliğinden düzelir —
+    onun yüzünden modeli gün boyu kapatmak koca bir kayıptır. Ücretsiz
+    katmanlarda dakikalık sınır çok sık tetiklenir (~4K token'lık isteklerimizde
+    12K TPM ≈ dakikada 3 çağrı). Sağlayıcılar ayrımı farklı yazıyor:
+      Google     : quotaId "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+      Groq/diğer : "...on requests per day (RPD)" / "tokens per day (TPD)"
+    OpenRouter sağlayıcının hatasını olduğu gibi geçirdiği için aynı kalıplar
+    orada da tutar.
     """
     m = str(hata)
-    return "PerDay" in m or "per day" in m.lower() or "_per_day" in m
+    d = m.lower()
+    return ("PerDay" in m or "per day" in d or "_per_day" in m
+            or "(rpd)" in d or "(tpd)" in d)
 
 
 def kapat(model: str, hata: Exception) -> bool:
