@@ -367,15 +367,72 @@ _CEKYAT_KELIMELERI = ("cekyat", "cek yat", "kanepe", "yatakli", "yatak olan",
 # 2. ve 7. sıradaydı); salon koltuğu soran müşteriye bahçe mobilyası önerilmesin.
 _EN_UYGUN_HARIC = ("bahce",)
 
+# Ana ürün DEĞİL, parça/aksesuar olan kayıtlar. Ucuz oldukları için "en ucuz"
+# sıralamasının başına geçiyorlardı: "gardırop" araması "Dolap İçi Dar Raf",
+# "şifonyer" araması "Konsol - Şifonyer AYNASI" döndürüyordu (2026-07-28).
+# Müşteriye fotoğrafındaki mobilyaya karşılık raf/ayna göstermek işe yaramaz.
+# NOT: "modul" BİLEREK listede yok — katalog modüler, TV ünitesi/dolap gerçekten
+# modül olarak satılıyor; onu elesek satılan ürünün kendisini elemiş oluruz.
+_PARCA_KELIMELERI = ("raf", "ayna", "minder", "cep", "aksesuar", "ici",
+                     "tekerlek", "aparat", "govde")
+
+
+# Görselden gelen tarifte geçen ama katalogda BULUNMAYAN kelimeler. Ölçüm
+# (2026-07-28): 1.764 fiyatlı üründen yalnız 11'inde renk adı geçiyor — renge
+# göre arama boş döner. Model "bej üçlü koltuk" derse "bej"i atıp "üçlü koltuk"
+# ile aramalıyız, yoksa hiçbir şey bulunmaz.
+_ESLESMEYEN_KELIMELER = frozenset((
+    # renkler
+    "bej", "gri", "antrasit", "krem", "kahve", "kahverengi", "mavi", "yesil",
+    "beyaz", "siyah", "bordo", "lacivert", "pudra", "vizon", "turuncu",
+    "sari", "mor", "pembe", "haki", "somon", "tas", "acik", "koyu",
+    # malzeme / doku / biçim — üründe yazmıyor
+    "kumas", "deri", "suet", "kadife", "ahsap", "metal", "cam", "mermer",
+    "ayakli", "ayak", "modern", "klasik", "sik", "genis", "buyuk", "kucuk",
+    "renkli", "renk", "desenli", "duz",
+))
+
+
+def _tip_tokenlari(tip: str) -> list[str]:
+    """Serbest tarifi katalogda aranabilir token'lara indir (renk/malzeme atılır)."""
+    d = _duz(tip)
+    tokenlar = [t for t in re.split(r"[^0-9a-z]+", d) if len(t) >= 3]
+    süzülmüş = [_TIP_ES_ANLAM.get(t, t) for t in tokenlar
+                if t not in _ARAMA_GURULTU and t not in _ESLESMEYEN_KELIMELER]
+    return süzülmüş or tokenlar
+
+
+# Müşterinin/görselin kullandığı kelime ile katalogdaki kelime farklı olabilir.
+# Ölçüldü (2026-07-28): "gardırop" katalogda HİÇ geçmiyor, karşılığı "Dolap".
+_TIP_ES_ANLAM = {"gardirop": "dolap", "gardrop": "dolap", "elbiselik": "dolap"}
+
+# "koltuk" kısayolu (= üçlü koltuk) YALNIZ tip genelken çalışmalı. Müşteri
+# koltuk sayısını/çeşidini söylediyse ("ikili koltuk", "köşe koltuk") kısayol
+# devreye girerse yanlış ürün döner — canlı öncesi testte yakalandı:
+# "ikili koltuk" ve "tekli koltuk" ÜÇLÜ koltuk döndürüyordu.
+_KOLTUK_GENEL_TOKENLARI = frozenset(("koltuk", "oturma", "grubu", "grup",
+                                     "takim", "takimi"))
+
 
 def _en_uygun_tip(tip: str) -> tuple[str, tuple[str, ...]] | None:
     """Müşterinin dediği tipi katalog token'larına çevir; tanımadıysa None."""
     d = _duz(tip)
     if any(k in d for k in _CEKYAT_KELIMELERI):
         return EN_UYGUN_TIPLERI["cekyat"]
-    if "koltuk" in d or "oturma" in d:
+    anlamli = set(_tip_tokenlari(tip))
+    if ("koltuk" in d or "oturma" in d) and anlamli <= _KOLTUK_GENEL_TOKENLARI:
         return EN_UYGUN_TIPLERI["koltuk"]
-    return None
+    # Bilinen kısayol yoksa serbest tarifle ara (görselden gelen "şifonyer",
+    # "tv ünitesi", "yemek masası" gibi tipler buraya düşer).
+    # SQL daraltması YOK — token'lar _duz'lanmış (ASCII'ye katlanmış) haldedir
+    # ve Postgres lower('Şifonyer')='şifonyer', ilike('%sifonyer%') TUTMAZ
+    # (i/ı sorununun ş/s hâli; canlıda 4 tip hiç bulunamıyordu). Süzme tamamen
+    # Python'da _duz ile yapılır: 1.764 fiyatlı satır, fiyata göre sıralı gelir
+    # ve limit dolunca döngü kırılır — maliyeti ihmal edilebilir.
+    tokenlar = _tip_tokenlari(tip)
+    if not tokenlar:
+        return None
+    return ("", tuple(tokenlar))
 
 
 def en_uygun(tip: str, limit: int = 3) -> list[dict]:
@@ -393,19 +450,26 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
     if not eslesme:
         return []
     sql_token, tokenlar = eslesme
+    # Bahçe ürünleri normalde elenir (ucuz oldukları için salon listesinin
+    # başına geçiyorlardı), AMA müşteri/görsel açıkça bahçe diyorsa elenmemeli.
+    haric = () if "bahce" in _duz(tip) else _EN_UYGUN_HARIC
+    # Parça/aksesuar kayıtları elenir — AMA müşteri açıkça onu istediyse
+    # ("dolap içi raf", "başlık minderi") elenmemeli.
+    istenen = set(_tip_tokenlari(tip))
+    haric = tuple(haric) + tuple(p for p in _PARCA_KELIMELERI
+                                 if p not in istenen)
     session = SessionLocal()
     try:
-        rows = session.scalars(
-            select(Urun)
-            .where(Urun.son_perakende_fiyat > 0,      # 0 TL ve NULL elenir
-                   Urun.urun_adi_tam.ilike(f"%{sql_token}%"))
-            .order_by(Urun.son_perakende_fiyat)).all()
+        stmt = select(Urun).where(Urun.son_perakende_fiyat > 0)  # 0 TL/NULL elenir
+        if sql_token:        # yalnız ASCII kısayollarda ("koltuk") daraltılır
+            stmt = stmt.where(Urun.urun_adi_tam.ilike(f"%{sql_token}%"))
+        rows = session.scalars(stmt.order_by(Urun.son_perakende_fiyat)).all()
         gorulen: set[str] = set()
         sonuc: list[dict] = []
         for u in rows:
             ad = _duz(u.urun_adi_tam)
             if (ad in gorulen or not all(t in ad for t in tokenlar)
-                    or any(h in ad for h in _EN_UYGUN_HARIC)):
+                    or any(h in ad for h in haric)):
                 continue
             gorulen.add(ad)
             sonuc.append({

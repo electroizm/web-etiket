@@ -21,6 +21,18 @@ log = logging.getLogger("bot.gorsel")
 # Son görsel-okuma hatası — /saglik teşhisi için (Render loguna erişim yok).
 SON_HATA: str | None = None
 
+# Katalogda ARANABİLİR tip kelimeleri. Modelin serbest tarif yerine bu
+# sözlükten seçmesi şart: ölçüm (2026-07-28) gösterdi ki üründe RENK ve
+# MALZEME bilgisi yok (1.764 üründen 11'inde renk geçiyor), yani "bej kumaş
+# koltuk" tarifi katalogda hiçbir şey bulmaz. Ad okunabiliyorsa zaten ad
+# kullanılır; tarif YALNIZCA ad yokken devreye girer.
+TIP_SOZLUGU = (
+    "üçlü koltuk, ikili koltuk, tekli koltuk, köşe takımı, yataklı koltuk, "
+    "berjer, puf, orta sehpa, zigon sehpa, yan sehpa, tv ünitesi, konsol, "
+    "yemek masası, sandalye, vitrin, gardırop, dolap, şifonyer, komodin, "
+    "karyola, baza, başlık, yatak, çalışma masası, kitaplık, ranza"
+)
+
 OKUMA_TALIMAT = (
     "Bu görsel bir mobilya mağazasının ürün fotoğrafı, Instagram hikâyesi ya da "
     "bir web sayfasının ekran görüntüsü olabilir. Görseldeki TÜM metni oku.\n"
@@ -30,7 +42,11 @@ OKUMA_TALIMAT = (
     "ifade geçiyorsa ürün adının sonuna ' (teşhirdeki ürün)' ekle — bu, fiyatın "
     "mağaza teşhir kaydından sorgulanmasını sağlar.\n"
     "- Ürün adı yoksa ama başka metin varsa okuduğun metni kısaca yaz.\n"
-    "- Görselde hiç metin yoksa tek kelime yaz: YOK\n"
+    "- Görselde HİÇ ürün adı yazmıyorsa ve bir MOBİLYA görüyorsan, tek satır "
+    "şu biçimde yaz: '(görsel tarifi: <tip>)'. <tip> yerine şu listeden EN "
+    f"UYGUN olanı seç: {TIP_SOZLUGU}. Model/seri adı TAHMİN ETME; renk, kumaş, "
+    "malzeme, stil YAZMA (bunlar katalogda aranmaz, sonucu boşa çıkarır).\n"
+    "- Görselde ne metin ne mobilya varsa tek kelime yaz: YOK\n"
     "Açıklama, yorum, tırnak, fiyat, indirim ORANI/TUTARI ekleme."
 )
 
