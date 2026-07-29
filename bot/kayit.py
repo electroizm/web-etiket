@@ -46,6 +46,12 @@ def ozet_gelen(olay) -> str:
 
 def ozet_giden(mesaj: dict) -> str:
     """Botun gönderdiği payload'ın okunur özeti (menüler '[menü]' etiketlenir)."""
+    # Ürün fotoğrafı — metin alanı YOK. Bu kontrol EN ÖNDE olmalı: IG fotoğrafı
+    # {"attachment": {...}} taşıdığı için aşağıdaki carousel dalına düşüp
+    # panelde "[kart menüsü]" diye görünüyordu (2026-07-29'da fark edildi).
+    if mesaj.get("type") == "image" or (
+            (mesaj.get("attachment") or {}).get("type") == "image"):
+        return "[fotoğraf]"
     metin = mesaj.get("text")
     # WhatsApp düz metin: {"text": {"body": ...}}
     if isinstance(metin, dict):
