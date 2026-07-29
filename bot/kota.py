@@ -36,6 +36,9 @@ log = logging.getLogger("bot.kota")
 
 ONEK = "kota:"
 LIMIT_ONEK = "kotalimit:"
+# "Bu model bugün GÜNLÜK hakkını doldurdu" işareti. Dakikalık (RPM/TPM) 429
+# buraya YAZILMAZ — o geçicidir, modeli gün boyu kapatmaz.
+BITTI_ONEK = "kotabitti:"
 SAKLAMA_GUN = 14          # bundan eski satırlar temizlenir
 
 # İş türleri — hangi özellik ne kadar kota yiyor?
@@ -133,10 +136,28 @@ def gunluk_bitti_mi(hata: Exception) -> bool:
 
 
 def kapat(model: str, hata: Exception) -> bool:
-    """Günlük kota dolduysa modeli bugünlük kapat. Kapatıldıysa True."""
+    """Günlük kota dolduysa modeli bugünlük kapat. Kapatıldıysa True.
+
+    İşaret hem bellekte (hızlı kontrol) hem DB'de tutulur: panel ayrı bir
+    süreçte/işçide çalışabildiği için "günlük hakkı bitti" bilgisini bellekten
+    okuyamaz. DB kaydı olmadan panel her 429'u günlük bitiş sanıyordu —
+    dakikalık hız sınırı da öyle görünüyordu (İsmail 2026-07-29'da fark etti:
+    "OpenRouter ücret ödedim, neden günlük hak bitti yazıyor").
+    """
     if not gunluk_bitti_mi(hata):
         return False
     _BITTI[model] = _bugun()
+    try:
+        from catalog.database import SessionLocal
+        from catalog.services.ayarlar import set_ayar
+        session = SessionLocal()
+        try:
+            set_ayar(session, f"{BITTI_ONEK}{_bugun()}:{model}", "1")
+            session.commit()
+        finally:
+            session.close()
+    except Exception:
+        log.warning("gunluk bitti isareti yazilamadi (%s)", model, exc_info=True)
     log.warning("kota: %s bugunluk kapatildi (gunluk limit doldu)", model)
     return True
 
@@ -190,6 +211,20 @@ def _satirlari_oku(gun_sayisi: int) -> tuple[dict, dict]:
     return sayaclar, limitler
 
 
+def _bugun_bitenler() -> set[str]:
+    """Bugün GÜNLÜK hakkı gerçekten dolan modeller (dakikalık 429 sayılmaz)."""
+    from catalog.database import SessionLocal
+    from catalog.sa_models import AppAyari
+
+    onek = f"{BITTI_ONEK}{_bugun()}:"
+    session = SessionLocal()
+    try:
+        return {r.anahtar[len(onek):] for r in session.scalars(
+            select(AppAyari).where(AppAyari.anahtar.like(f"{onek}%"))).all()}
+    finally:
+        session.close()
+
+
 def ozet(gun_sayisi: int = 7) -> dict:
     """Panel için: bugünün model kırılımı + iş kırılımı + günlük geçmiş."""
     sayaclar, limitler = _satirlari_oku(gun_sayisi)
@@ -211,12 +246,23 @@ def ozet(gun_sayisi: int = 7) -> dict:
             m[sonuc] += adet
             isler[is_adi] = isler.get(is_adi, 0) + adet
 
+    try:
+        bitenler = _bugun_bitenler()
+    except Exception:
+        log.warning("gunluk biten model listesi okunamadi", exc_info=True)
+        bitenler = set()
+
     for m in modeller.values():
         m["limit"] = limitler.get(m["model"])
         # Limite sayılan istek: kota hatasıyla REDDEDİLEN istek kotadan düşmez.
         m["kullanilan"] = m["toplam"] - m["kota"]
         m["yuzde"] = (min(100, round(m["kullanilan"] * 100 / m["limit"]))
                       if m["limit"] else None)
+        # "Günlük hak bitti" YALNIZ gerçek günlük kota reddinde doğrudur.
+        # Dakikalık (RPM/TPM) 429 geçicidir — ücretli hesapta da olur, panelde
+        # "hakkın bitti" diye göstermek yanıltıcıydı.
+        m["gunluk_bitti"] = m["model"] in bitenler
+        m["gecici_sinir"] = bool(m["kota"]) and not m["gunluk_bitti"]
 
     return {
         "bugun": bugun,

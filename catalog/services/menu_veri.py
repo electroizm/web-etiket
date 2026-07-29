@@ -463,7 +463,11 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
         stmt = select(Urun).where(Urun.son_perakende_fiyat > 0)  # 0 TL/NULL elenir
         if sql_token:        # yalnız ASCII kısayollarda ("koltuk") daraltılır
             stmt = stmt.where(Urun.urun_adi_tam.ilike(f"%{sql_token}%"))
-        rows = session.scalars(stmt.order_by(Urun.son_perakende_fiyat)).all()
+        # sku ikincil ölçüt: aynı fiyatlı ürünlerde sıra aksi halde BELİRSİZ
+        # kalıyor ve aynı sorgu farklı SKU döndürebiliyordu (fiyat/ad aynı ama
+        # [gorsel:SKU] ve pazarlık o SKU'ya bağlı). Sonuç artık tekrarlanabilir.
+        rows = session.scalars(
+            stmt.order_by(Urun.son_perakende_fiyat, Urun.sku)).all()
         gorulen: set[str] = set()
         sonuc: list[dict] = []
         for u in rows:

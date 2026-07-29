@@ -67,7 +67,11 @@
         Bir müşteri mesajı <b>birden fazla istek</b> demektir — bot önce ürünü arar,
         sonra fiyatı alır, sonra cevabı yazar; her adım ayrı bir istek.
         Ücretsiz kotalar <b>model başına ve günlüktür</b>; bir model dolunca bot
-        sıradakine geçer, cevap vermeye devam eder.
+        sıradakine geçer, cevap vermeye devam eder.<br><br>
+        <b>İki tür ret vardır, karıştırma:</b> 🔴 <b>günlük hak</b> bitince o
+        model ertesi güne kadar atlanır. ⏱️ <b>anlık yoğunluk sınırı</b> ise
+        saniyelik bir durumdur, ücretli hesapta da olur ve kendiliğinden düzelir
+        — o istek sıradaki modele gider, müşteri fark etmez.
       </div>
 
       <h2>Bugün · model bazında</h2>
@@ -89,14 +93,23 @@
 
           <div class="kt-etiketler">
             <span class="kt-etiket kt-etiket--basari">✅ {{ m.basari }} başarılı</span>
-            {% if m.kota %}<span class="kt-etiket kt-etiket--kota">🚫 {{ m.kota }} kota reddi</span>{% endif %}
+            {% if m.kota %}<span class="kt-etiket kt-etiket--kota">🚫 {{ m.kota }} reddedildi</span>{% endif %}
             {% if m.hata %}<span class="kt-etiket kt-etiket--hata">⚠️ {{ m.hata }} hata</span>{% endif %}
             {% if m.bos %}<span class="kt-etiket">◻️ {{ m.bos }} boş</span>{% endif %}
           </div>
 
-          {% if m.kota %}
+          {# İki farklı 429 var; karıştırılınca ücretli hesapta bile "hakkın
+             bitti" görünüyordu. Günlük bitiş yalnız gerçek günlük kota
+             reddinde işaretlenir (bkz. bot/kota.py::kapat). #}
+          {% if m.gunluk_bitti %}
             <div class="kt-sayi" style="margin-top:8px">
-              Bu modelin günlük hakkı bitmiş; istekler sıradaki modele düşüyor.
+              🔴 Günlük hakkı doldu — bugünlük bu model atlanıyor, istekler
+              sıradakine gidiyor. Yarın kendiliğinden açılır.
+            </div>
+          {% elif m.gecici_sinir %}
+            <div class="kt-sayi" style="margin-top:8px">
+              ⏱️ Anlık yoğunluk sınırı ({{ m.kota }} istek). Günlük hakla ilgisi
+              yok, saniyeler içinde düzelir — o an istek sıradaki modele gitti.
             </div>
           {% endif %}
         </div>
