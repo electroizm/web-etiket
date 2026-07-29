@@ -36,10 +36,14 @@ SON_HATA: str | None = None
 
 # ── Model zinciri izleme (Gemini kota/yedek teşhisi) ─────────────────────────
 # Süreç içi sayaçlar — /saglik'ta gösterilir. Render restart'ında sıfırlanır
-# (baslangic damgası o yüzden var); günlük eğilim için yeterli. Alanlar:
-#   basari = model cevap üretti;  bos = model döndü ama kalkan/tur limiti
-#   cevabı düşürdü (menüye düşüldü);  kota = 429/RateLimit (Gemini ücretsiz
-#   kota doldu → zincir sıradakine geçti);  hata = diğer istisnalar.
+# (baslangic damgası o yüzden var); günlük eğilim için yeterli.
+#
+# BİRİM = TEK API ÇAĞRISI, müşteri mesajı DEĞİL. Bir mesaj araç döngüsünde 2-6
+# çağrı yapar ve sağlayıcı kotası (Google RPD) her çağrıyı ayrı sayar; mesaj
+# başına saymak sayfayı gerçeğin 2-3'te birini gösterir hâle getiriyordu.
+# Alanlar:
+#   basari = çağrı cevap ya da araç seçimi döndürdü;  bos = çağrı boş içerik
+#   döndürdü;  kota = 429/RateLimit;  hata = diğer istisnalar.
 MODEL_SAYAC: dict[str, dict[str, int]] = {}
 SAYAC_BASLANGIC: str | None = None
 
@@ -939,17 +943,19 @@ def cevapla(metin: str, platform: str, kullanici: str,
         try:
             cevap = _cevapla(metin, platform, kullanici, model, gecmissiz=gecmissiz)
         except Exception as e:
-            _sayac(model, "kota" if _kota_mu(e) else "hata")
+            # Sayaç _cevapla içinde, API çağrısı başına tutulur — burada TEKRAR
+            # sayma (yoksa aynı çağrı iki kez görünür).
             if _kota_mu(e):
-                # Google günlük limit tablosunu artık yayımlamıyor; gerçek
-                # sayıyı yalnız 429 gövdesinden öğrenebiliyoruz — sakla.
+                # 429 gövdesi gerçek günlük limiti de taşıyor — öğren ve sakla.
                 kota_modul.limiti_ogren(model, e)
                 kota_modul.kapat(model, e)   # günlükse bugünlük atla
             SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] {type(e).__name__}: {str(e)[:200]}"
             log.warning("ajan: %s başarısız (%s%s), sıradaki model deneniyor",
                         model, type(e).__name__, " — KOTA" if _kota_mu(e) else "")
             continue
-        _sayac(model, "basari" if cevap else "bos")
+        # cevap boş olabilir (fiyat kalkanı düşürdü / tur limiti) ama bu bir
+        # KOTA olayı değil — ek API çağrısı yok. Müşteri etkisi kota.musteri_ozeti
+        # içindeki "cevapsız kalan müşteri" rakamından okunur.
         if model != settings.AJAN_MODELLER[0]:
             # Yedek model devrede = birincil Gemini kotası dolmuş/hatalı demek;
             # sıklaşırsa /saglik'taki ajan_model_sayac ile teyit et.
@@ -993,14 +999,26 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
         metin, platform, kullanici)
 
     for _ in range(MAKS_TOOL_TURU):
-        yanit = litellm.completion(
-            model=model,
-            messages=mesajlar,
-            tools=TOOLS,
-            max_tokens=600,
-            timeout=15,
-        )
+        # Sayaç BURADA tutulur, cevapla()'da değil: bir müşteri mesajı bu
+        # döngüde 2-6 ayrı API çağrısı yapar (önce araç seçer, sonra cevabı
+        # yazar) ve Google'ın RPD'si her çağrıyı ayrı sayar. Dışarıda sayarken
+        # sayfamız gerçeğin 2-3'te birini gösteriyordu — AI Studio kota sayfası
+        # 17 derken bizim sayfa 9 diyordu (İsmail 2026-07-29 karşılaştırdı).
+        try:
+            yanit = litellm.completion(
+                model=model,
+                messages=mesajlar,
+                tools=TOOLS,
+                max_tokens=600,
+                timeout=15,
+            )
+        except Exception as e:
+            _sayac(model, "kota" if _kota_mu(e) else "hata")
+            raise
         secim = yanit.choices[0].message
+        _sayac(model, "basari" if (secim.content
+                                   or getattr(secim, "tool_calls", None))
+               else "bos")
 
         if not getattr(secim, "tool_calls", None):
             cevap = (secim.content or "").strip()

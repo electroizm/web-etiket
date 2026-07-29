@@ -7,10 +7,12 @@ YALNIZ 20 istek kabul ediyor, üstelik Google artık limit tablosunu kamuya
 yayımlamıyor. Yani gerçek limiti ancak 429 cevabının içinden öğrenebiliyoruz;
 bu modül onu da yakalayıp saklar.
 
-Sayım neden mesaj sayısından fazla: bot bir mesaja cevap verirken araç (tool)
-döngüsü çalıştırır ve HER tur ayrı bir model çağrısıdır. Ayrıca görsel OCR,
-sesli mesaj çözümü ve sabah özeti de aynı kotayı yer — bu yüzden "iş" boyutu
-tutulur, hangi işin ne kadar yediği görünsün.
+BİRİM = TEK API ÇAĞRISI. Bot bir mesaja cevap verirken araç (tool) döngüsü
+çalıştırır ve HER tur ayrı bir API çağrısıdır; sağlayıcı da kotayı böyle sayar.
+2026-07-29'a kadar sayaç mesaj başına 1 yazıyordu — sayfa gerçeğin 2-3'te birini
+gösteriyordu (AI Studio 17 derken sayfa 9). Artık çağrı ajan.py'deki döngünün
+İÇİNDE sayılıyor. Ayrıca görsel OCR, sesli mesaj çözümü ve sabah özeti de aynı
+kotayı yer — bu yüzden "iş" boyutu tutulur, hangi işin ne kadar yediği görünsün.
 
 Depolama: ayrı tablo YOK — mevcut `app_ayarlari` key-value tablosu kullanılır
 (İsmail'in Supabase'e elle SQL yapıştırması gerekmesin). Artırma Postgres
@@ -50,6 +52,19 @@ SONUCLAR = ("basari", "bos", "kota", "hata")
 # katmanı tek bedava kaynağımız; OpenRouter kullandıkça ödenir. Zincire yeni bir
 # ücretsiz sağlayıcı girerse öneki buraya eklenmeli (bkz. settings.AJAN_MODEL).
 UCRETSIZ_ONEKLER = ("gemini/",)
+
+# Google'ın KENDİ kota sayfasından okunan gerçek sınırlar (İsmail 2026-07-29'da
+# aistudio.google.com/rate-limit ekranını paylaştı; "Google tabloyu yayımlamıyor"
+# sanılıyordu — proje bazında yayımlıyormuş). Üç günlük limit de 429'dan
+# öğrendiğimiz değerlerle BİREBİR tuttu, yani kaynak güvenilir.
+# Buradaki değerler yalnız BAŞLANGIÇ tahminidir: 429 gövdesinden öğrenilen sayı
+# varsa o kazanır (canlı gerçek, takma ad başka modele kayabilir).
+#   (gunluk_rpd, dakikalik_rpm)
+BILINEN_SINIRLAR = {
+    "gemini/gemini-flash-latest":      (20, 5),     # AI Studio: Gemini 3.6 Flash
+    "gemini/gemini-flash-lite-latest": (500, 15),   # AI Studio: Gemini 3.5 Flash Lite
+    "gemini/gemini-2.5-flash-lite":    (20, 10),    # AI Studio: Gemini 2.5 Flash Lite
+}
 
 
 def _anahtar(gun: date, model: str, is_adi: str, sonuc: str) -> str:
@@ -302,7 +317,10 @@ def ozet(gun_sayisi: int = 7, zincir=None) -> dict:
     aktif = next((ad for ad in zincir if ad not in bitenler), None)
 
     for m in modeller.values():
-        m["limit"] = limitler.get(m["model"])
+        bilinen = BILINEN_SINIRLAR.get(m["model"])
+        # 429'dan öğrenilen sayı canlı gerçektir, bilinen tabloyu EZER.
+        m["limit"] = limitler.get(m["model"]) or (bilinen[0] if bilinen else None)
+        m["rpm"] = bilinen[1] if bilinen else None
         # Limite sayılan istek: kota hatasıyla REDDEDİLEN istek kotadan düşmez.
         m["kullanilan"] = m["toplam"] - m["kota"]
         m["yuzde"] = (min(100, round(m["kullanilan"] * 100 / m["limit"]))

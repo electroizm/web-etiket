@@ -108,7 +108,8 @@
       <div class="kt-not">
         <b>Bir müşteri mesajı = birkaç yapay zekâ isteği.</b> Bot önce ürünü arar,
         sonra fiyatı alır, sonra cevabı yazar; her adım ayrı bir istektir. Bu
-        yüzden ikinci rakam birinciden büyüktür — normaldir.<br><br>
+        yüzden ikinci rakam birinciden büyüktür — normaldir. Kotayı yiyen de
+        budur, mesaj sayısı değil.<br><br>
         Bakılacak tek kritik rakam sonuncusudur: <b>cevapsız kalan müşteri</b>.
         Diğerleri sıfır olmasa da bot çalışıyor demektir; aşağıdaki merdiven
         sayesinde bir model tükenince istek kendiliğinden sıradakine geçer.
@@ -124,7 +125,8 @@
               {% else %}<span class="kt-rozet kt-rozet--bedava">💚 ÜCRETSİZ</span>{% endif %}
             </span>
             <span class="kt-sayi">
-              {% if m.limit %}{{ m.kullanilan }} / {{ m.limit }}{% else %}{{ m.toplam }} istek{% endif %}
+              {% if m.limit %}{{ m.kullanilan }} / {{ m.limit }} bugün{% else %}{{ m.toplam }} istek{% endif %}
+              {% if m.rpm %}<br>en fazla {{ m.rpm }}/dakika{% endif %}
             </span>
           </div>
 
@@ -228,9 +230,14 @@
         <b>model başına</b> sayıldığı için üç Google modeli arka arkaya dizildi —
         toplamı günde birkaç yüz bedava istek eder. Ücretli model en sonda
         durur ki ücretsizler tükendiğinde bot susmasın.<br><br>
-        Kutucuktaki limit rakamı ancak Google bir isteği geri çevirince
-        öğrenilebiliyor (artık tabloyu yayımlamıyorlar) — o yüzden bazı
-        modellerde "/ limit" hiç görünmeyebilir.
+        Limit rakamları Google'ın kendi kota ekranından alındı; bir istek geri
+        çevrilirse gerçek sayı 429 cevabının içinden okunup bunun yerine
+        yazılır.<br>
+        Çapraz kontrol için Google'ın kendi sayfası:
+        <a href="https://aistudio.google.com/rate-limit" target="_blank"
+           rel="noopener">AI Studio · Rate limits</a> — oradaki rakam son 24
+        saatin <b>zirvesi</b>, buradaki ise bugünün toplamı; birebir aynı
+        olmazlar ama yakın olmalılar.
       </div>
 
     </div>
