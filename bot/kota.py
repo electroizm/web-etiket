@@ -46,6 +46,11 @@ ISLER = ("sohbet", "gorsel", "ses", "ozet")
 # Sonuçlar — ajan.MODEL_SAYAC ile aynı sözlük.
 SONUCLAR = ("basari", "bos", "kota", "hata")
 
+# Panelde 💚 ücretsiz / 💳 ücretli rozeti bundan çıkar. Google'ın ücretsiz
+# katmanı tek bedava kaynağımız; OpenRouter kullandıkça ödenir. Zincire yeni bir
+# ücretsiz sağlayıcı girerse öneki buraya eklenmeli (bkz. settings.AJAN_MODEL).
+UCRETSIZ_ONEKLER = ("gemini/",)
+
 
 def _anahtar(gun: date, model: str, is_adi: str, sonuc: str) -> str:
     return f"{ONEK}{gun:%Y-%m-%d}:{model}:{is_adi}:{sonuc}"
@@ -225,8 +230,43 @@ def _bugun_bitenler() -> set[str]:
         session.close()
 
 
-def ozet(gun_sayisi: int = 7) -> dict:
-    """Panel için: bugünün model kırılımı + iş kırılımı + günlük geçmiş."""
+def musteri_ozeti() -> dict:
+    """Bugün kaç müşteri mesajı geldi, kaçı CEVAPSIZ kaldı?
+
+    Kota sayfasının en önemli rakamı budur: model/kota ayrıntısı teknik detay,
+    asıl soru müşterinin cevap alıp almadığıdır. "Cevapsız" = ajan cevap
+    üretemeyip router'ın özür metnine düştüğü an (bkz. router.AI_KAPALI_METNI).
+    Hata yutulur; sayfa bu yüzden düşmesin.
+    """
+    from datetime import datetime, time, timezone
+
+    from sqlalchemy import func as _f
+
+    from bot.router import AI_KAPALI_METNI
+    from catalog.database import SessionLocal
+    from catalog.sa_models import BotMesaj
+
+    # Gün sınırı sayaçlarla aynı olsun (kota anahtarları date.today() kullanır).
+    basla = datetime.combine(date.today(), time.min, tzinfo=timezone.utc)
+    session = SessionLocal()
+    try:
+        gelen = session.scalar(select(_f.count()).select_from(BotMesaj).where(
+            BotMesaj.yon == "gelen", BotMesaj.olusturma >= basla)) or 0
+        cevapsiz = session.scalar(select(_f.count()).select_from(BotMesaj).where(
+            BotMesaj.yon == "giden", BotMesaj.olusturma >= basla,
+            BotMesaj.metin.startswith(AI_KAPALI_METNI[:40]))) or 0
+    finally:
+        session.close()
+    return {"musteri_mesaji": gelen, "cevapsiz": cevapsiz}
+
+
+def ozet(gun_sayisi: int = 7, zincir=None) -> dict:
+    """Panel için: bugünün model kırılımı + iş kırılımı + günlük geçmiş.
+
+    `zincir` verilirse (settings.AJAN_MODELLER) kartlar rastgele değil ZİNCİR
+    SIRASINA dizilir ve her modele okunur bir durum yazılır — sayfa böylece
+    "hangi model ne kadar" listesi değil, isteğin izlediği MERDİVEN olur.
+    """
     sayaclar, limitler = _satirlari_oku(gun_sayisi)
     bugun = f"{date.today():%Y-%m-%d}"
 
@@ -252,6 +292,15 @@ def ozet(gun_sayisi: int = 7) -> dict:
         log.warning("gunluk biten model listesi okunamadi", exc_info=True)
         bitenler = set()
 
+    # Zincirde olup bugün hiç kullanılmayan model de kart alsın: merdivenin
+    # tamamı görünmezse "sırada bekliyor" bilgisi verilemez.
+    zincir = list(zincir or [])
+    for ad in zincir:
+        modeller.setdefault(ad, {"model": ad, "toplam": 0,
+                                 **{s: 0 for s in SONUCLAR}})
+    # Şu an işi hangisi yapıyor: zincirde günlük hakkı BİTMEMİŞ ilk model.
+    aktif = next((ad for ad in zincir if ad not in bitenler), None)
+
     for m in modeller.values():
         m["limit"] = limitler.get(m["model"])
         # Limite sayılan istek: kota hatasıyla REDDEDİLEN istek kotadan düşmez.
@@ -264,12 +313,29 @@ def ozet(gun_sayisi: int = 7) -> dict:
         m["gunluk_bitti"] = m["model"] in bitenler
         m["gecici_sinir"] = bool(m["kota"]) and not m["gunluk_bitti"]
 
+        m["sira"] = zincir.index(m["model"]) + 1 if m["model"] in zincir else 0
+        m["ucretli"] = not m["model"].startswith(UCRETSIZ_ONEKLER)
+        # Kısa ad: "gemini/gemini-flash-latest" → "gemini-flash-latest".
+        m["kisa_ad"] = m["model"].split("/")[-1]
+        if m["gunluk_bitti"]:
+            m["durum"] = "kapandi"
+        elif m["model"] == aktif:
+            m["durum"] = "aktif"
+        elif m["sira"]:
+            m["durum"] = "bekliyor"
+        else:
+            m["durum"] = "eski"     # zincirden çıkarılmış, yalnız geçmiş veri
+
     return {
         "bugun": bugun,
-        "modeller": sorted(modeller.values(), key=lambda x: -x["toplam"]),
+        # Zincir sırası (1→2→3→4); zincir dışı eski modeller en sona.
+        "modeller": sorted(modeller.values(),
+                           key=lambda x: (x["sira"] or 99, x["model"])),
         "isler": sorted(isler.items(), key=lambda x: -x[1]),
         "gunler": sorted(gunler.values(), key=lambda x: x["gun"], reverse=True),
         "toplam_bugun": sum(m["toplam"] for m in modeller.values()),
+        "ucretli_bugun": sum(m["toplam"] for m in modeller.values()
+                             if m["ucretli"]),
     }
 
 

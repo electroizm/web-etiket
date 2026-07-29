@@ -2,8 +2,7 @@
 
 Neden veritabanında saklamıyoruz (2026-07-28 kararı): kolon açmak Supabase'de
 ELLE SQL gerektiriyor ve fotoğraf isteği seyrek (her mesajda değil). Sayfa
-saniyede geliyor, bellek önbelleği tekrarı ucuzlatıyor. İleride gerçek görsel
-eşleştirmeye (pgvector) geçilirse URL'ler kalıcı saklanacak — kolon o zaman açılır.
+saniyede geliyor, bellek önbelleği tekrarı ucuzlatıyor.
 
 Güvenlik: yalnız BİZİM veritabanımızdaki ürün sayfası çekilir ve dönen görselin
 sunucusu beyaz listeye takılır — bot/ses.py'deki SSRF kalkanıyla aynı ilke.

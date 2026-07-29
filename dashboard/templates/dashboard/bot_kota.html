@@ -13,13 +13,37 @@
               padding: 12px 14px; font-size: .85rem; line-height: 1.55; color: #1e3a30; }
     .kt-not b { color: #14513f; }
 
+    /* Günün dört rakamı — teknik ayrıntıdan önce "bugün ne oldu". */
+    .kt-ozet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+               margin-bottom: 14px; }
+    .kt-ozet__k { background: #fff; border: 1px solid #e4e6f0; border-radius: 12px;
+                  padding: 12px 8px; text-align: center; }
+    .kt-ozet__s { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+    .kt-ozet__a { font-size: .68rem; opacity: .6; margin-top: 4px; line-height: 1.3; }
+    .kt-ozet__k--iyi .kt-ozet__s { color: #0b7d57; }
+    .kt-ozet__k--kotu .kt-ozet__s { color: #b42323; }
+    @media (max-width: 520px) { .kt-ozet { grid-template-columns: repeat(2, 1fr); } }
+
     .kt-kart { background: #fff; border: 1px solid #e4e6f0; border-radius: 14px;
                padding: 14px; margin-bottom: 10px;
                box-shadow: 0 1px 2px rgba(25,28,46,.05); }
+    .kt-kart--pasif { opacity: .62; }
     .kt-kart__ust { display: flex; justify-content: space-between; align-items: baseline;
                     gap: 10px; flex-wrap: wrap; }
     .kt-model { font-weight: 800; font-size: .95rem; word-break: break-all; }
     .kt-sayi { font-size: .82rem; opacity: .7; white-space: nowrap; }
+
+    /* Merdiven basamağı: isteğin kaçıncı durakta olduğunu gösterir. */
+    .kt-basamak { display: inline-flex; align-items: center; justify-content: center;
+                  width: 22px; height: 22px; border-radius: 999px; margin-right: 7px;
+                  background: #191c2e; color: #fff; font-size: .72rem;
+                  font-weight: 800; vertical-align: 1px; }
+    .kt-rozet { font-size: .68rem; font-weight: 700; padding: 2px 8px;
+                border-radius: 999px; margin-left: 7px; white-space: nowrap; }
+    .kt-rozet--bedava { background: #d9fdd3; color: #0b7d57; }
+    .kt-rozet--ucretli { background: #fff4e0; color: #8a5a00; }
+    .kt-durum { font-size: .82rem; line-height: 1.5; margin-top: 9px; }
+    .kt-ipucu { font-size: .76rem; opacity: .65; line-height: 1.5; margin-top: 4px; }
 
     .kt-cubuk { height: 10px; border-radius: 999px; background: #eef1f5;
                 overflow: hidden; margin: 10px 0 6px; }
@@ -62,23 +86,43 @@
   <main class="content">
     <div class="kt">
 
-      <div class="kt-not">
-        Bugün toplam <b>{{ toplam_bugun }}</b> yapay zekâ isteği gitti.
-        Bir müşteri mesajı <b>birden fazla istek</b> demektir — bot önce ürünü arar,
-        sonra fiyatı alır, sonra cevabı yazar; her adım ayrı bir istek.
-        Ücretsiz kotalar <b>model başına ve günlüktür</b>; bir model dolunca bot
-        sıradakine geçer, cevap vermeye devam eder.<br><br>
-        <b>İki tür ret vardır, karıştırma:</b> 🔴 <b>günlük hak</b> bitince o
-        model ertesi güne kadar atlanır. ⏱️ <b>anlık yoğunluk sınırı</b> ise
-        saniyelik bir durumdur, ücretli hesapta da olur ve kendiliğinden düzelir
-        — o istek sıradaki modele gider, müşteri fark etmez.
+      <div class="kt-ozet">
+        <div class="kt-ozet__k">
+          <div class="kt-ozet__s">{{ musteri_mesaji|default:"—" }}</div>
+          <div class="kt-ozet__a">müşteri mesajı</div>
+        </div>
+        <div class="kt-ozet__k">
+          <div class="kt-ozet__s">{{ toplam_bugun }}</div>
+          <div class="kt-ozet__a">yapay zekâ isteği</div>
+        </div>
+        <div class="kt-ozet__k">
+          <div class="kt-ozet__s">{{ ucretli_bugun }}</div>
+          <div class="kt-ozet__a">ücretli istek</div>
+        </div>
+        <div class="kt-ozet__k {% if cevapsiz %}kt-ozet__k--kotu{% else %}kt-ozet__k--iyi{% endif %}">
+          <div class="kt-ozet__s">{{ cevapsiz|default:"0" }}</div>
+          <div class="kt-ozet__a">cevapsız kalan müşteri</div>
+        </div>
       </div>
 
-      <h2>Bugün · model bazında</h2>
+      <div class="kt-not">
+        <b>Bir müşteri mesajı = birkaç yapay zekâ isteği.</b> Bot önce ürünü arar,
+        sonra fiyatı alır, sonra cevabı yazar; her adım ayrı bir istektir. Bu
+        yüzden ikinci rakam birinciden büyüktür — normaldir.<br><br>
+        Bakılacak tek kritik rakam sonuncusudur: <b>cevapsız kalan müşteri</b>.
+        Diğerleri sıfır olmasa da bot çalışıyor demektir; aşağıdaki merdiven
+        sayesinde bir model tükenince istek kendiliğinden sıradakine geçer.
+      </div>
+
+      <h2>İstek hangi modele gidiyor?</h2>
       {% for m in modeller %}
-        <div class="kt-kart">
+        <div class="kt-kart{% if m.durum == 'eski' %} kt-kart--pasif{% endif %}">
           <div class="kt-kart__ust">
-            <span class="kt-model">{{ m.model }}</span>
+            <span class="kt-model">
+              {% if m.sira %}<span class="kt-basamak">{{ m.sira }}</span>{% endif %}{{ m.kisa_ad }}
+              {% if m.ucretli %}<span class="kt-rozet kt-rozet--ucretli">💳 ÜCRETLİ</span>
+              {% else %}<span class="kt-rozet kt-rozet--bedava">💚 ÜCRETSİZ</span>{% endif %}
+            </span>
             <span class="kt-sayi">
               {% if m.limit %}{{ m.kullanilan }} / {{ m.limit }}{% else %}{{ m.toplam }} istek{% endif %}
             </span>
@@ -86,30 +130,55 @@
 
           {% if m.yuzde is not None %}
             <div class="kt-cubuk">
-              <div class="kt-cubuk__ic{% if m.yuzde >= 100 %} kt-cubuk__ic--dolu{% elif m.yuzde >= 70 %} kt-cubuk__ic--uyari{% endif %}"
+              <div class="kt-cubuk__ic{% if m.gunluk_bitti %} kt-cubuk__ic--dolu{% elif m.yuzde >= 70 %} kt-cubuk__ic--uyari{% endif %}"
                    style="width: {{ m.yuzde }}%"></div>
             </div>
           {% endif %}
 
-          <div class="kt-etiketler">
-            <span class="kt-etiket kt-etiket--basari">✅ {{ m.basari }} başarılı</span>
-            {% if m.kota %}<span class="kt-etiket kt-etiket--kota">🚫 {{ m.kota }} reddedildi</span>{% endif %}
-            {% if m.hata %}<span class="kt-etiket kt-etiket--hata">⚠️ {{ m.hata }} hata</span>{% endif %}
-            {% if m.bos %}<span class="kt-etiket">◻️ {{ m.bos }} boş</span>{% endif %}
+          {% if m.toplam %}
+            <div class="kt-etiketler">
+              <span class="kt-etiket kt-etiket--basari">✅ {{ m.basari }} cevap üretti</span>
+              {% if m.kota %}<span class="kt-etiket kt-etiket--kota">🚫 {{ m.kota }} geri çevrildi</span>{% endif %}
+              {% if m.hata %}<span class="kt-etiket kt-etiket--hata">⚠️ {{ m.hata }} hata verdi</span>{% endif %}
+              {% if m.bos %}<span class="kt-etiket">◻️ {{ m.bos }} cevap üretemedi</span>{% endif %}
+            </div>
+          {% endif %}
+
+          {% comment %}
+            İki farklı 429 var; karıştırılınca ücretli hesapta bile "hakkın
+            bitti" görünüyordu. Günlük bitiş YALNIZ gerçek günlük kota reddinde
+            işaretlenir (bkz. bot/kota.py::kapat).
+            NOT: {# #} çok satırlı çalışmaz — Django onu düz yazı olarak basar
+            ve sayfada göründü (İsmail 2026-07-29). Bu yüzden {% templatetag
+            openblock %} comment {% templatetag closeblock %} kullanılıyor.
+          {% endcomment %}
+          <div class="kt-durum">
+            {% if m.durum == 'kapandi' %}
+              🔴 <b>Bugünlük kapandı.</b> İstekler sıradaki modele gidiyor,
+              müşteri farkı görmüyor. Yarın kendiliğinden açılır.
+            {% elif m.durum == 'aktif' %}
+              ✅ <b>Şu an işi bu yapıyor.</b>
+            {% elif m.durum == 'eski' %}
+              🗄️ Zincirden çıkarıldı — burada yalnız bugünkü geçmişi duruyor.
+            {% elif m.ucretli %}
+              🛟 <b>Emniyet ağı.</b> Ücretsizlerin hepsi tükenirse devreye girer;
+              o zaman bu istekler paralı olur.
+            {% else %}
+              ⏸️ Sırada bekliyor — üstündekiler tükenince devreye girer.
+            {% endif %}
           </div>
 
-          {# İki farklı 429 var; karıştırılınca ücretli hesapta bile "hakkın
-             bitti" görünüyordu. Günlük bitiş yalnız gerçek günlük kota
-             reddinde işaretlenir (bkz. bot/kota.py::kapat). #}
-          {% if m.gunluk_bitti %}
-            <div class="kt-sayi" style="margin-top:8px">
-              🔴 Günlük hakkı doldu — bugünlük bu model atlanıyor, istekler
-              sıradakine gidiyor. Yarın kendiliğinden açılır.
+          {% if m.durum == 'kapandi' and m.limit %}
+            <div class="kt-ipucu">
+              ⓘ Çubuk dolmadan kapanmış görünebilir: Google'ın günü bizim
+              günümüzle aynı saatte başlamıyor, o yüzden saydığımız rakam
+              Google'ınkinden az kalabilir.
             </div>
           {% elif m.gecici_sinir %}
-            <div class="kt-sayi" style="margin-top:8px">
-              ⏱️ Anlık yoğunluk sınırı ({{ m.kota }} istek). Günlük hakla ilgisi
-              yok, saniyeler içinde düzelir — o an istek sıradaki modele gitti.
+            <div class="kt-ipucu">
+              ⏱️ {{ m.kota }} istek <b>anlık yoğunluğa</b> takıldı — birkaç
+              saniyelik bir durum, günlük hakla ilgisi yok. O istekler o an
+              sıradaki modele gitti.
             </div>
           {% endif %}
         </div>
@@ -155,11 +224,13 @@
       </div>
 
       <div class="kt-not" style="margin-top:14px">
-        <b>Sıralı model zinciri:</b>
-        {% for m in modeller_sirali %}{{ m }}{% if not forloop.last %} → {% endif %}{% endfor %}<br>
-        Soldaki dolunca sağdakine geçilir. Limit rakamı ancak Google bir isteği
-        kotadan reddettiğinde öğrenilebiliyor — o yüzden bazı modellerde
-        "/ limit" görünmeyebilir.
+        <b>Sıra neden böyle?</b> Önce bedava, en sonda para. Ücretsiz haklar
+        <b>model başına</b> sayıldığı için üç Google modeli arka arkaya dizildi —
+        toplamı günde birkaç yüz bedava istek eder. Ücretli model en sonda
+        durur ki ücretsizler tükendiğinde bot susmasın.<br><br>
+        Kutucuktaki limit rakamı ancak Google bir isteği geri çevirince
+        öğrenilebiliyor (artık tabloyu yayımlamıyorlar) — o yüzden bazı
+        modellerde "/ limit" hiç görünmeyebilir.
       </div>
 
     </div>

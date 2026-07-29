@@ -2213,12 +2213,15 @@ def bot_kota(request):
     except Exception:
         logging.getLogger(__name__).exception("kota temizlik hatası")
     try:
-        veri = kota.ozet()
+        veri = kota.ozet(zincir=settings.AJAN_MODELLER)
     except Exception:
         logging.getLogger(__name__).exception("kota özeti okunamadı")
         veri = {"bugun": "", "modeller": [], "isler": [], "gunler": [],
-                "toplam_bugun": 0}
-    veri["modeller_sirali"] = settings.AJAN_MODELLER
+                "toplam_bugun": 0, "ucretli_bugun": 0}
+    try:
+        veri.update(kota.musteri_ozeti())
+    except Exception:
+        logging.getLogger(__name__).exception("müşteri özeti okunamadı")
     return render(request, "dashboard/bot_kota.html", veri)
 
 
