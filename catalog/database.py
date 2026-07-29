@@ -6,8 +6,6 @@ paralel çalışır (Django'nun kendi DB'si ayrı; SQLite varsayılanı).
 
 DATABASE_URL Django settings'ten okunur (settings.DATABASE_URL).
 """
-from collections.abc import Generator
-
 from django.conf import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -60,12 +58,3 @@ def SessionLocal() -> Session:
 class Base(DeclarativeBase):
     """Tüm SQLAlchemy modellerinin temeli."""
     pass
-
-
-def get_db() -> Generator[Session, None, None]:
-    """Context manager / dependency tarzı kullanım için."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()

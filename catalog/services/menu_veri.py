@@ -486,39 +486,6 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
         session.close()
 
 
-def skularin_fiyati(skular: list[str]) -> list[dict]:
-    """Verilen SKU'ların fiyatı — TEK çağrıda (görsel eşleştirme adayları için).
-
-    Görsel eşleştirme 3 aday döndürüyor; her biri için ayrı arama yaptırmak
-    model açısından 3 tur demek ve canlı denemede model bunu yapmayıp fiyatsız
-    isim listesi yazdı. Tek araçla hepsini vermek o boşluğu kapatır.
-    Sıra KORUNUR — eşleştirme sırası benzerlik sırasıdır.
-    """
-    temiz = [str(s).strip() for s in (skular or []) if str(s).strip()][:8]
-    if not temiz:
-        return []
-    session = SessionLocal()
-    try:
-        bulunan = {u.sku: u for u in session.scalars(
-            select(Urun).where(Urun.sku.in_(temiz),
-                               Urun.son_perakende_fiyat > 0)).all()}
-    finally:
-        session.close()
-    sonuc = []
-    for sku in temiz:                      # istenen sırayı koru
-        u = bulunan.get(sku)
-        if not u:
-            continue
-        sonuc.append({
-            "sku": u.sku,
-            "ad": u.urun_adi_tam,
-            "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
-                                           u.son_perakende_fiyat),
-            "para_birimi": "TL",
-        })
-    return sonuc
-
-
 def bilgi_ara(soru: str) -> list[dict]:
     """Mağaza bilgi kayıtlarında anahtar kelime eşleşmesi.
 

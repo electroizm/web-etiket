@@ -43,7 +43,7 @@ class Command(BaseCommand):
             sys.stderr.reconfigure(encoding="utf-8")
 
         from catalog.database import SessionLocal
-        from catalog.services.ayarlar import get_ayar, set_ayar
+        from catalog.services.ayarlar import set_ayar
 
         # --tohum: verilen token'ı DB'ye yaz (yenilemeden önce kaynak olsun).
         if opts.get("tohum"):

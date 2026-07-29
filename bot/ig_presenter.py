@@ -1,15 +1,14 @@
-"""Menü verisini Instagram (Messenger Platform) mesaj payload'larına çevirir.
+"""Bot cevabını Instagram (Messenger Platform) mesaj payload'larına çevirir.
 
-Sınırlar:
-- Quick reply başlığı ~20 karakter → kırpılır.
-- Quick reply en çok 13 adet; generic template en çok 10 kart.
-Bu yüzden uzun adlarda quick reply yerine carousel/numaralı liste tercih edilir.
+wa_presenter ile **aynı fonksiyon adlarını** sunar; router platformdan bağımsız
+kalır.
+
+Quick reply / carousel üreticileri 2026-07-29'da SİLİNDİ: bot 2026-07-21'de
+AI-only akışa geçti ve o fonksiyonlar o tarihten beri hiç çağrılmıyordu. Bugün
+router yalnız şu üçünü kullanıyor: metin_mesaji, gorsel_mesaji, yetkili_mesaji.
+Eski sürüm git geçmişinde duruyor.
 """
 from __future__ import annotations
-
-QR_BASLIK_LIMIT = 20
-QR_MAX = 13
-KART_MAX = 10
 
 
 def _kirp(s: str, n: int) -> str:
@@ -17,12 +16,8 @@ def _kirp(s: str, n: int) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def _tl(n) -> str:
-    return f"{n:,.0f} TL".replace(",", ".") if n is not None else "—"
-
-
 def metin_mesaji(govde: str) -> dict:
-    """Düz metin mesajı (router'ın hazır metinleri için)."""
+    """Düz metin mesajı (AI cevabı ve router'ın hazır metinleri için)."""
     return {"text": govde}
 
 
@@ -51,142 +46,3 @@ def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
             },
         }
     }
-
-
-def _tam_adlar_eki(metin: str, secenekler: list[tuple[str, str]]) -> str:
-    """Quick reply başlığı 20 karakterde kırpılır (platform sınırı).
-
-    Eskiden kırpılan adların tam hali "Tam adlar:" bölümüyle gövdeye eklenirdi;
-    İsmail kaldırttı (2026-07-07): mesajı kalabalıklaştırıyor, kırpılmış buton
-    başlığı zaten yeterince anlaşılır. Çağrı yerleri korunarak no-op yapıldı —
-    fikir değişirse eski davranış tek fonksiyonda geri gelir."""
-    return metin
-
-
-def quick_replies(metin: str, secenekler: list[tuple[str, str]]) -> dict:
-    """secenekler: [(baslik, payload), ...] → quick reply mesajı."""
-    qrs = [
-        {"content_type": "text",
-         "title": _kirp(baslik, QR_BASLIK_LIMIT),
-         "payload": payload}
-        for baslik, payload in secenekler[:QR_MAX]
-    ]
-    return {"text": metin, "quick_replies": qrs}
-
-
-# ─── Sayfalama ────────────────────────────────────────────────────────────────
-# Quick reply en çok 13, carousel en çok 10 kart. Aşan menüler sayfalanır;
-# sayfa numarası payload'da taşınır (KAT:48:2) — köprü stateless kalır.
-SAYFA_KART = KART_MAX - 2  # 8 kart + Devamı kartı + Ana Menü kartı
-
-ANA_MENU_QR = ("⬅️ Ana Menü", "START")
-# "📞 Beni arayın" quick reply'ı kaldırıldı (İsmail 2026-07-27) — insana
-# yönlendirme yalnız "Yetkiliyle görüş" ile olur.
-
-
-def _sayfali_qr(metin: str, secenekler: list[tuple[str, str]],
-                sayfa: int, devam_prefix: str,
-                sabit: list[tuple[str, str]]) -> dict:
-    qr_basi = QR_MAX - 1 - len(sabit)   # sabitler + Devamı hep sığsın
-    toplam = len(secenekler)
-    bas = max(0, (sayfa - 1)) * qr_basi
-    dilim = list(secenekler[bas:bas + qr_basi])
-    kalan = toplam - (bas + len(dilim))
-    metin = _tam_adlar_eki(metin, dilim)   # bu sayfada kırpılan adların tam hali gövdeye
-    if kalan > 0:
-        dilim.append(("➡️ Devamını gör", f"{devam_prefix}:{sayfa + 1}"))
-    dilim.extend(sabit)
-    return quick_replies(metin, dilim)
-
-
-def kategoriler_mesaji(kategoriler: list[dict], sayfa: int = 1) -> dict:
-    if not kategoriler:
-        return {"text": "Şu an gösterilecek kategori yok."}
-    sec = [(k["ad"], f"KAT:{k['id']}") for k in kategoriler]
-    sabit = [("👤 Yetkiliyle görüş", "YETKILI")]
-    metin = "Hangi kategoriye bakmak istersin?"
-    if sayfa == 1 and len(sec) + len(sabit) <= QR_MAX:
-        return quick_replies(_tam_adlar_eki(metin, sec), sec + sabit)
-    return _sayfali_qr(metin, sec, sayfa, "START", sabit)
-
-
-def koleksiyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
-    kols = (veri or {}).get("koleksiyonlar", [])
-    kat_bilgi = (veri or {}).get("kategori", {})
-    kat, kat_id = kat_bilgi.get("ad", ""), kat_bilgi.get("id")
-    if not kols:
-        return {"text": "Bu kategoride uygun ürün grubu yok."}
-    sec = [(k["ad"], f"KOL:{k['id']}") for k in kols]
-    metin = f"{kat} → bir ürün grubu seç:"
-    if sayfa == 1 and len(sec) + 1 <= QR_MAX:
-        return quick_replies(_tam_adlar_eki(metin, sec), sec + [ANA_MENU_QR])
-    return _sayfali_qr(metin, sec, sayfa, f"KAT:{kat_id}", [ANA_MENU_QR])
-
-
-def koleksiyon_secim_mesaji(eslesmeler: list[dict]) -> dict:
-    """Aynı ad birden fazla kategoride bulunduğunda (ör. VERMONT hem Yemek hem
-    Yatak Odası) kategorisiyle listeleyip müşteriye seçtirir."""
-    sec = [(f"{k['ad']} · {k['kategori']}" if k.get("kategori") else k["ad"],
-            f"KOL:{k['id']}") for k in eslesmeler]
-    metin = "Birden fazla grupta bulundu — hangisine bakalım?"
-    return quick_replies(_tam_adlar_eki(metin, sec), sec[:QR_MAX - 1] + [ANA_MENU_QR])
-
-
-def kombinasyonlar_mesaji(veri: dict, sayfa: int = 1) -> dict:
-    """Carousel (generic template) — her kart: ad + fiyat + 'Detay' butonu.
-    10'dan çok kombinasyon → 8 kart + 'Devamını gör' + 'Ana Menü' kartları."""
-    kombis = (veri or {}).get("kombinasyonlar", [])
-    kol_id = ((veri or {}).get("koleksiyon") or {}).get("id")
-    if not kombis:
-        return {"text": "Bu grupta hazır kombinasyon yok."}
-
-    toplam = len(kombis)
-    sayfali = toplam > KART_MAX
-    bas = max(0, (sayfa - 1)) * SAYFA_KART if sayfali else 0
-    dilim = kombis[bas:bas + (SAYFA_KART if sayfali else KART_MAX)]
-
-    kartlar = []
-    for k in dilim:
-        eski, yeni, ind = k.get("toplam_liste"), k.get("toplam_perakende"), k.get("indirim_yuzde")
-        if ind:
-            alt = f"{_tl(yeni)}  (eski {_tl(eski)} · −%{ind})"
-        else:
-            alt = _tl(yeni)
-        kartlar.append({
-            "title": _kirp(k["ad"], 80),
-            "subtitle": f"{k.get('urun_sayisi', 0)} ürün · {k.get('toplam_adet', 0)} adet\n{alt}",
-            "buttons": [{"type": "postback", "title": "Fiyat detayı",
-                         "payload": f"KOM:{k['id']}"}],
-        })
-    if sayfali:
-        kalan = toplam - (bas + len(dilim))
-        if kalan > 0:
-            kartlar.append({
-                "title": "➡️ Devamını gör",
-                "subtitle": f"{kalan} seçenek daha",
-                "buttons": [{"type": "postback", "title": "Devamını gör",
-                             "payload": f"KOL:{kol_id}:{sayfa + 1}"}],
-            })
-        kartlar.append({
-            "title": "⬅️ Ana Menü",
-            "subtitle": "Kategorilere geri dön",
-            "buttons": [{"type": "postback", "title": "Ana Menü",
-                         "payload": "START"}],
-        })
-    return {
-        "attachment": {
-            "type": "template",
-            "payload": {"template_type": "generic", "elements": kartlar},
-        }
-    }
-
-
-def kombinasyon_detay_mesaji(veri: dict) -> dict:
-    """Metin gövdesi WhatsApp ile birebir aynı (wa_presenter._detay_satirlari —
-    İsmail biçimi 2026-07-12: başlık + fiyat_cumlesi + onay sorusu).
-    Fiyat sonrası çıkmaz sokak olmasın diye quick reply'lar korunur."""
-    if not veri:
-        return {"text": "Kombinasyon bulunamadı."}
-    from bot.wa_presenter import _detay_satirlari
-    return quick_replies("\n".join(_detay_satirlari(veri)),
-                         [ANA_MENU_QR, ("👤 Yetkiliyle görüş", "YETKILI")])

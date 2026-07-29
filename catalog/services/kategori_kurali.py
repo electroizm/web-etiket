@@ -29,82 +29,10 @@ class KuralHatasi(ValueError):
     """Kural validation hatası."""
 
 
-# ─── CRUD ────────────────────────────────────────────────────────────────────
-
-
-def kurali_listele(db: Session, tur: str | None = None) -> list[KategoriKurali]:
-    """Tüm kuralları (veya belirli tür) listele."""
-    stmt = select(KategoriKurali).order_by(
-        KategoriKurali.tur, KategoriKurali.olusturma_tarihi.desc()
-    )
-    if tur:
-        stmt = stmt.where(KategoriKurali.tur == tur)
-    return list(db.scalars(stmt).all())
-
-
-def kural_olustur(
-    db: Session,
-    *,
-    tur: str,
-    kaynak_kategori: str | None,
-    hedef_kategori: str | None,
-    kelimeler: str | None,
-) -> KategoriKurali:
-    """Yeni kural ekle. Validation yapar."""
-    if tur not in GECERLI_TURLER:
-        raise KuralHatasi(f"Geçersiz tür: {tur}")
-
-    # Boş string'leri NULL'a çevir
-    kaynak = (kaynak_kategori or "").strip() or None
-    hedef = (hedef_kategori or "").strip() or None
-    kelime_csv = (kelimeler or "").strip() or None
-
-    if tur == TUR_DUPLIKASYON:
-        if not kaynak:
-            raise KuralHatasi("Duplikasyon için kaynak_kategori zorunlu")
-        if not hedef:
-            raise KuralHatasi("Duplikasyon için hedef_kategori zorunlu")
-        if not kelime_csv:
-            raise KuralHatasi("Duplikasyon için kelimeler zorunlu")
-
-    if tur == TUR_FILTRE:
-        if not kaynak and not kelime_csv:
-            raise KuralHatasi(
-                "Filtre için en az kaynak_kategori veya kelimeler dolu olmalı"
-            )
-
-    kural = KategoriKurali(
-        tur=tur,
-        kaynak_kategori=kaynak,
-        hedef_kategori=hedef if tur == TUR_DUPLIKASYON else None,
-        kelimeler=kelime_csv,
-        aktif=True,
-    )
-    db.add(kural)
-    db.commit()
-    db.refresh(kural)
-    return kural
-
-
-def kural_sil(db: Session, kural_id: int) -> bool:
-    """Kuralı sil. Yoksa False."""
-    kural = db.get(KategoriKurali, kural_id)
-    if kural is None:
-        return False
-    db.delete(kural)
-    db.commit()
-    return True
-
-
-def kural_toggle(db: Session, kural_id: int) -> KategoriKurali | None:
-    """Aktif/pasif değiştir."""
-    kural = db.get(KategoriKurali, kural_id)
-    if kural is None:
-        return None
-    kural.aktif = not kural.aktif
-    db.commit()
-    db.refresh(kural)
-    return kural
+# NOT: Kural CRUD fonksiyonları (kurali_listele / kural_olustur / kural_sil /
+# kural_toggle) 2026-07-29'da silindi — hiçbir yerden çağrılmıyorlardı. Kurallar
+# panelde değil, doğrudan veritabanından yönetiliyor; scraper yalnız aşağıdaki
+# okuma fonksiyonlarını kullanır. Gerekirse git geçmişinden geri alınabilir.
 
 
 # ─── Match logic (scraper için) ──────────────────────────────────────────────
