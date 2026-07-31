@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import String, cast, delete, func as sa_func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -66,6 +67,36 @@ BILINEN_SINIRLAR = {
     "gemini/gemini-2.5-flash-lite":    (20, 10),    # AI Studio: Gemini 2.5 Flash Lite
 }
 
+# ─── Kota günü: TAKVİM günü DEĞİL ────────────────────────────────────────────
+# Google ücretsiz günlük kotayı PASİFİK gece yarısında sıfırlar; Türkiye'de bu
+# yazın 10:00, kışın 11:00 eder. Sayaç takvim gününe göre tutulunca iki hata
+# çıkıyordu (İsmail 2026-08-01'de sordu):
+#   1) Sayfa "9 / 20" gösterirken Google "hakkın bitti" diyordu — iki farklı
+#      pencerenin sayısı karşılaştırılıyordu.
+#   2) Saat 11:00'de kotası dolan model gece yarısı AÇIK sayılıyordu; gerçek
+#      sıfırlanmaya 10 saat varken her istekte boşuna deneniyor, 429 yiyordu.
+# Çözüm: hem sayaç anahtarı hem "bugünlük kapalı" işareti Google'ın gününü
+# kullanır. Yaz/kış saatini zoneinfo hallediyor (bkz. requirements: tzdata).
+_PASIFIK = ZoneInfo("America/Los_Angeles")
+
+
+def pencere_basi(an: datetime | None = None) -> datetime:
+    """Ücretsiz günlük kotanın EN SON sıfırlandığı an (UTC)."""
+    an = an or datetime.now(timezone.utc)
+    gece = an.astimezone(_PASIFIK).replace(hour=0, minute=0, second=0,
+                                           microsecond=0)
+    return gece.astimezone(timezone.utc)
+
+
+def pencere_sonu(an: datetime | None = None) -> datetime:
+    """Kotanın BİR SONRAKİ sıfırlanma anı (UTC) — sayfada geri sayım için."""
+    return pencere_basi((an or datetime.now(timezone.utc)) + timedelta(days=1))
+
+
+def kota_gunu(an: datetime | None = None) -> date:
+    """Sayaç anahtarındaki 'gün' — Google'ın kota günü (Pasifik takvimi)."""
+    return (an or datetime.now(timezone.utc)).astimezone(_PASIFIK).date()
+
 
 def _anahtar(gun: date, model: str, is_adi: str, sonuc: str) -> str:
     return f"{ONEK}{gun:%Y-%m-%d}:{model}:{is_adi}:{sonuc}"
@@ -83,7 +114,7 @@ def say(model: str, is_adi: str, sonuc: str, gun: date | None = None) -> None:
         session = SessionLocal()
         try:
             stmt = pg_insert(AppAyari).values(
-                anahtar=_anahtar(gun or date.today(), model, is_adi, sonuc),
+                anahtar=_anahtar(gun or kota_gunu(), model, is_adi, sonuc),
                 deger="1",
             ).on_conflict_do_update(
                 index_elements=["anahtar"],
@@ -134,7 +165,8 @@ _BITTI: dict[str, str] = {}       # model -> "YYYY-MM-DD"
 
 
 def _bugun() -> str:
-    return f"{date.today():%Y-%m-%d}"
+    """Google'ın İÇİNDE BULUNDUĞUMUZ kota günü (takvim günü değil)."""
+    return f"{kota_gunu():%Y-%m-%d}"
 
 
 def gunluk_bitti_mi(hata: Exception) -> bool:
@@ -206,7 +238,7 @@ def _satirlari_oku(gun_sayisi: int) -> tuple[dict, dict]:
     from catalog.database import SessionLocal
     from catalog.sa_models import AppAyari
 
-    esik = (date.today() - timedelta(days=gun_sayisi - 1)).strftime("%Y-%m-%d")
+    esik = (kota_gunu() - timedelta(days=gun_sayisi - 1)).strftime("%Y-%m-%d")
     sayaclar: dict[tuple[str, str, str, str], int] = {}
     limitler: dict[str, int] = {}
     session = SessionLocal()
@@ -246,23 +278,22 @@ def _bugun_bitenler() -> set[str]:
 
 
 def musteri_ozeti() -> dict:
-    """Bugün kaç müşteri mesajı geldi, kaçı CEVAPSIZ kaldı?
+    """Kota penceresinde kaç müşteri mesajı geldi, kaçı CEVAPSIZ kaldı?
 
     Kota sayfasının en önemli rakamı budur: model/kota ayrıntısı teknik detay,
     asıl soru müşterinin cevap alıp almadığıdır. "Cevapsız" = ajan cevap
     üretemeyip router'ın özür metnine düştüğü an (bkz. router.AI_KAPALI_METNI).
     Hata yutulur; sayfa bu yüzden düşmesin.
     """
-    from datetime import datetime, time, timezone
-
     from sqlalchemy import func as _f
 
     from bot.router import AI_KAPALI_METNI
     from catalog.database import SessionLocal
     from catalog.sa_models import BotMesaj
 
-    # Gün sınırı sayaçlarla aynı olsun (kota anahtarları date.today() kullanır).
-    basla = datetime.combine(date.today(), time.min, tzinfo=timezone.utc)
+    # Sınır sayaçlarla AYNI olmalı: gece yarısı değil, Google'ın sıfırlama anı.
+    # Karışırsa sayfada "5 mesaj / 40 istek" gibi imkânsız oranlar çıkardı.
+    basla = pencere_basi()
     session = SessionLocal()
     try:
         gelen = session.scalar(select(_f.count()).select_from(BotMesaj).where(
@@ -283,7 +314,7 @@ def ozet(gun_sayisi: int = 7, zincir=None) -> dict:
     "hangi model ne kadar" listesi değil, isteğin izlediği MERDİVEN olur.
     """
     sayaclar, limitler = _satirlari_oku(gun_sayisi)
-    bugun = f"{date.today():%Y-%m-%d}"
+    bugun = _bugun()
 
     modeller: dict[str, dict] = {}
     isler: dict[str, int] = {}
@@ -344,6 +375,11 @@ def ozet(gun_sayisi: int = 7, zincir=None) -> dict:
         else:
             m["durum"] = "eski"     # zincirden çıkarılmış, yalnız geçmiş veri
 
+    # Pencere bilgisi sayfada AÇIKÇA yazsın: "bugün" burada takvim günü değil,
+    # Google'ın kota günü. Türkiye saatiyle gösterilir (İsmail'in saati).
+    _tr = ZoneInfo("Europe/Istanbul")
+    bas, son = pencere_basi(), pencere_sonu()
+    kalan = son - datetime.now(timezone.utc)
     return {
         "bugun": bugun,
         # Zincir sırası (1→2→3→4); zincir dışı eski modeller en sona.
@@ -354,6 +390,10 @@ def ozet(gun_sayisi: int = 7, zincir=None) -> dict:
         "toplam_bugun": sum(m["toplam"] for m in modeller.values()),
         "ucretli_bugun": sum(m["toplam"] for m in modeller.values()
                              if m["ucretli"]),
+        "pencere_bas": bas.astimezone(_tr),
+        "pencere_son": son.astimezone(_tr),
+        "pencere_kalan_saat": int(kalan.total_seconds() // 3600),
+        "pencere_kalan_dk": int(kalan.total_seconds() % 3600 // 60),
     }
 
 
@@ -362,7 +402,7 @@ def temizle() -> int:
     from catalog.database import SessionLocal
     from catalog.sa_models import AppAyari
 
-    esik = (date.today() - timedelta(days=SAKLAMA_GUN)).strftime("%Y-%m-%d")
+    esik = (kota_gunu() - timedelta(days=SAKLAMA_GUN)).strftime("%Y-%m-%d")
     session = SessionLocal()
     try:
         sonuc = session.execute(delete(AppAyari).where(

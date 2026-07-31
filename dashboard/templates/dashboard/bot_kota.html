@@ -106,6 +106,14 @@
       </div>
 
       <div class="kt-not">
+        <b>⏰ Kota günü {{ pencere_bas|date:"d.m H:i" }}'da başladı,
+        {{ pencere_son|date:"d.m H:i" }}'da sıfırlanacak</b>
+        (kaldı: {{ pencere_kalan_saat }} sa {{ pencere_kalan_dk }} dk).
+        Yukarıdaki rakamlar <b>gece yarısından değil, bu saatten</b> beri
+        sayılıyor — çünkü Google ücretsiz hakkı Pasifik gece yarısında
+        sıfırlıyor, bizde yazın 10:00'a kışın 11:00'e denk geliyor. Sayaç bu
+        yüzden Google'ın günüyle aynı pencereyi kullanır; ikisi ayrı olsaydı
+        "9/20 ama hakkın bitti" gibi tutarsız rakamlar görürdün.<br><br>
         <b>Bir müşteri mesajı = birkaç yapay zekâ isteği.</b> Bot önce ürünü arar,
         sonra fiyatı alır, sonra cevabı yazar; her adım ayrı bir istektir. Bu
         yüzden ikinci rakam birinciden büyüktür — normaldir. Kotayı yiyen de
@@ -125,7 +133,7 @@
               {% else %}<span class="kt-rozet kt-rozet--bedava">💚 ÜCRETSİZ</span>{% endif %}
             </span>
             <span class="kt-sayi">
-              {% if m.limit %}{{ m.kullanilan }} / {{ m.limit }} bugün{% else %}{{ m.toplam }} istek{% endif %}
+              {% if m.limit %}{{ m.kullanilan }} / {{ m.limit }} günlük{% else %}{{ m.toplam }} istek{% endif %}
               {% if m.rpm %}<br>en fazla {{ m.rpm }}/dakika{% endif %}
             </span>
           </div>
@@ -156,8 +164,8 @@
           {% endcomment %}
           <div class="kt-durum">
             {% if m.durum == 'kapandi' %}
-              🔴 <b>Bugünlük kapandı.</b> İstekler sıradaki modele gidiyor,
-              müşteri farkı görmüyor. Yarın kendiliğinden açılır.
+              🔴 <b>Bu kota gününde kapandı.</b> İstekler sıradaki modele
+              gidiyor, müşteri farkı görmüyor.
             {% elif m.durum == 'aktif' %}
               ✅ <b>Şu an işi bu yapıyor.</b>
             {% elif m.durum == 'eski' %}
@@ -172,9 +180,7 @@
 
           {% if m.durum == 'kapandi' and m.limit %}
             <div class="kt-ipucu">
-              ⓘ Çubuk dolmadan kapanmış görünebilir: Google'ın günü bizim
-              günümüzle aynı saatte başlamıyor, o yüzden saydığımız rakam
-              Google'ınkinden az kalabilir.
+              ⓘ {{ pencere_son|date:"H:i" }}'da kendiliğinden açılır.
             </div>
           {% elif m.gecici_sinir %}
             <div class="kt-ipucu">
@@ -189,7 +195,7 @@
       {% endfor %}
 
       {% if isler %}
-        <h2>Bugün · kotayı ne yedi?</h2>
+        <h2>Bu kota gününde · kotayı ne yedi?</h2>
         <div class="kt-kart">
           <table class="kt-tablo">
             <tr><th>İş</th><th class="sag">İstek</th></tr>
@@ -209,10 +215,10 @@
         </div>
       {% endif %}
 
-      <h2>Son günler</h2>
+      <h2>Son kota günleri</h2>
       <div class="kt-kart">
         <table class="kt-tablo">
-          <tr><th>Gün</th><th class="sag">İstek</th><th class="sag">Kota reddi</th></tr>
+          <tr><th>Kota günü</th><th class="sag">İstek</th><th class="sag">Geri çevrilen</th></tr>
           {% for g in gunler %}
             <tr>
               <td>{{ g.gun }}</td>

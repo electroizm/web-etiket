@@ -24,3 +24,8 @@ sentry-sdk[django]>=2.0
 
 # AI ajan (bot/ajan.py) — sağlayıcı-bağımsız model çağrısı (Gemini/Claude/...)
 litellm>=1.60
+
+# Saat dilimi veritabanı — bot/kota.py Google'ın kota gününü Pasifik gece
+# yarısına göre hesaplar (yaz/kış saati otomatik). Linux'ta sistemde vardır ama
+# imaja güvenmiyoruz: yanlış hesap "kota bitti" işaretini yanlış saatte açar.
+tzdata>=2024.1
