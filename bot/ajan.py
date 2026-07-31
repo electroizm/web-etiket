@@ -28,7 +28,13 @@ from catalog.services import menu_veri
 
 log = logging.getLogger("bot.ajan")
 
-MAKS_TOOL_TURU = 6      # tool çağrısı döngüsü üst sınırı (sonsuz döngü emniyeti)
+# Tool döngüsü üst sınırı (sonsuz döngü emniyeti). 6 iken canlıda pazarlığın
+# 2. adımı öldü: ürünü bulmak koleksiyon_ara → kombinasyonlari_listele →
+# fiyat_detay = 3 tur yiyor, cevabı yazmak 4. tur; aynı adı taşıyan birden çok
+# koleksiyon varsa (MILENA'da 4 tane) model yoklarken 6'yı aşıyordu ve müşteri
+# özür metni alıyordu. Asıl israf düzeltildi (fiyat_detay artık koleksiyon
+# numarasını da kurtarıyor); 8 onun üstüne emniyet payıdır.
+MAKS_TOOL_TURU = 8
 MAKS_CEVAP_KR = 900     # WA/IG'de rahat okunur üst sınır (tek mesaj)
 
 # Son ajan hatası — Render loguna erişim olmadan teşhis için /saglik'ta gösterilir.
@@ -397,8 +403,36 @@ def _tool_calistir(ad: str, argumanlar: dict,
                             "EKLEME — müşteri bir kombinasyon seçince ekle.")
         return sonuc
     if ad == "fiyat_detay":
-        return _ham_fiyat_gizle(menu_veri.kombinasyon(
-            int(argumanlar["kombinasyon_id"])))
+        kid = int(argumanlar["kombinasyon_id"])
+        sonuc = menu_veri.kombinasyon(kid)
+        if sonuc is None:
+            # Model buraya KOLEKSİYON numarasını yolluyor: koleksiyon_ara "id"
+            # döndürüyor, bu araç ise kombinasyon id'si istiyor — ikisi
+            # karışıyor ve HER pazarlıkta bir tur yanıyordu. Canlıda MILENA
+            # pazarlığı bu yüzden 6 turu aştı ve müşteri cevapsız kaldı
+            # (2026-08-01 01:49, /saglik: "ToolTuruAsildi"). Hata dönmek yerine
+            # kurtar: tek kombinasyonluysa doğrudan onun detayını ver.
+            # (Yanlış ürün riski YOK: bu dal ancak kombinasyon bulunamayınca
+            # çalışır; geçerli bir kombinasyon id'si zaten yukarıda dönerdi.)
+            kolek = menu_veri.kombinasyonlar(kid)
+            kombiler = (kolek or {}).get("kombinasyonlar") or []
+            if len(kombiler) == 1:
+                sonuc = menu_veri.kombinasyon(kombiler[0]["id"])
+            elif kombiler:
+                liste = _ham_fiyat_gizle(kolek)
+                liste["not"] = (
+                    "Verdiğin numara bir KOLEKSİYON numarasıydı; bu koleksiyonun "
+                    "kombinasyonları aşağıda. Müşterinin istediğini seç ve o "
+                    "kombinasyonun 'id' değeriyle fiyat_detay'ı çağır. Birden "
+                    "fazlaysa hangisini istediğini SOR; 'Size özel bir fiyat "
+                    "çalışması' cümlesini BU cevaba EKLEME.")
+                return liste
+        if sonuc is None:
+            return {"bulunamadi": True,
+                    "not": "Bu numarada kombinasyon yok — fiyat UYDURMA. Ürünü "
+                           "koleksiyon_ara ile bul, sonra kombinasyonlari_listele "
+                           "ile kombinasyon id'sini al."}
+        return _ham_fiyat_gizle(sonuc)
     if ad == "parca_ara":
         # Tekil parça fiyatı: kayıtlarda yalnız fiyat_cumlesi var (ham rakam alanı yok).
         parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")))
