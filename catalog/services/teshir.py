@@ -16,6 +16,11 @@ from catalog.database import SessionLocal
 from catalog.sa_models import Kategori, Koleksiyon, Kombinasyon, KombinasyonUrun, Teshir
 from catalog.services.kombinasyon import hesapla_kombinasyon_toplam
 
+# Kayıt başına fotoğraf sınırı. İsmail kararı 2026-08-02: 2-4 açı — teşhir malı
+# sergilenmiş/kullanılmış olabildiği için müşteri kolunu, arkasını, yakın
+# çekimini görmek ister. Üst sınır müşteriye 10 fotoğraf yağdırmayı engeller.
+MAKS_FOTOGRAF = 4
+
 
 def _kombi_yukle(session, kombi_id: int) -> Kombinasyon | None:
     return session.scalar(
@@ -76,6 +81,7 @@ def _coz(session, t: Teshir) -> dict:
         "ham_perakende": t.perakende_fiyat,
         "ham_koleksiyon_adi": t.koleksiyon_adi or "",
         "notlar": t.notlar or "",
+        "fotograflar": list(t.fotograflar or []),
         "guncelleme": t.guncelleme,
     }
 
@@ -88,6 +94,71 @@ def listele() -> list[dict]:
         data = [_coz(session, t) for t in rows]
         data.sort(key=lambda d: (d["kategori"], d["koleksiyon"], d["baslik"]))
         return data
+    finally:
+        session.close()
+
+
+def fotograflar(teshir_id: int) -> list[str]:
+    """Bir teşhir kaydının fotoğraf URL'leri (sıralı, ilki ana fotoğraf).
+
+    Router müşteriye göndermek için çağırır. Kayıt yoksa ya da fotoğrafı yoksa
+    boş liste — akış bozulmaz, metin yine gider.
+    """
+    session = SessionLocal()
+    try:
+        kayit = session.get(Teshir, int(teshir_id))
+        return [u for u in (kayit.fotograflar or []) if isinstance(u, str) and u] \
+            if kayit else []
+    except (TypeError, ValueError):
+        return []
+    finally:
+        session.close()
+
+
+def foto_ekle(teshir_id: int, baytlar: bytes) -> str:
+    """Fotoğrafı depoya yükle ve kayda ekle; eklenen URL'i döner.
+
+    Depoya yükleme ile DB güncellemesi ayrı iki adım: yükleme başarısızsa
+    DepoHatasi yükselir ve kayda hiçbir şey yazılmaz. Tersi (yüklendi ama DB
+    yazılamadı) durumunda depoda sahipsiz dosya kalır — zararsız, yer kaplar.
+    """
+    from catalog.services import depo
+
+    session = SessionLocal()
+    try:
+        kayit = session.get(Teshir, int(teshir_id))
+        if kayit is None:
+            raise depo.DepoHatasi("Teşhir kaydı bulunamadı.")
+        if len(kayit.fotograflar or []) >= MAKS_FOTOGRAF:
+            raise depo.DepoHatasi(
+                f"En fazla {MAKS_FOTOGRAF} fotoğraf eklenebilir. "
+                "Yeni eklemek için birini sil.")
+        url = depo.yukle(baytlar, f"teshir/{kayit.id}")
+        # JSONB listesi YERİNDE değiştirilirse SQLAlchemy değişikliği görmez
+        # (mutable izleme yok) ve commit sessizce hiçbir şey yazmaz.
+        kayit.fotograflar = list(kayit.fotograflar or []) + [url]
+        session.commit()
+        return url
+    finally:
+        session.close()
+
+
+def foto_sil(teshir_id: int, url: str) -> bool:
+    """Fotoğrafı kayıttan çıkar ve depodan sil. Kayıtta yoksa False."""
+    from catalog.services import depo
+
+    session = SessionLocal()
+    try:
+        kayit = session.get(Teshir, int(teshir_id))
+        mevcut = list(kayit.fotograflar or []) if kayit else []
+        if not kayit or url not in mevcut:
+            return False
+        kayit.fotograflar = [u for u in mevcut if u != url]
+        session.commit()
+        # Önce kayıt güncellenir: depodan silinemese bile müşteriye ARTIK
+        # gitmez. Ters sırada olsaydı silinmiş dosyanın linki kayıtta kalırdı.
+        depo.sil(url)
+        return True
     finally:
         session.close()
 
@@ -116,6 +187,9 @@ def ajan_icin(koleksiyon_id: int | None = None,
         for t in rows:
             d = _coz(session, t)
             kayit = {
+                # id ŞART: müşteri fotoğrafı isteyince ajan [gorsel:teshir:<id>]
+                # işaretini bu numarayla kurar (bkz. bot/router.py).
+                "id": d["id"],
                 "ad": d["baslik"],
                 "kategori": d["kategori"],
                 "koleksiyon": d["koleksiyon"],
@@ -123,6 +197,10 @@ def ajan_icin(koleksiyon_id: int | None = None,
                 "liste_fiyat": d["liste_fiyat"],
                 "perakende_fiyat": d["perakende_fiyat"],
                 "para_birimi": "TL",
+                # Yalnız SAYI gider, URL DEĞİL — adresi router çözer. Model uzun
+                # bir CDN adresini kopyalarken bozabilir (ürün fotoğrafında da
+                # aynı sebeple SKU verilmişti, İsmail kararı 2026-07-28).
+                "fotograf_sayisi": len(d["fotograflar"]),
             }
             cumle = menu_veri.fiyat_cumlesi(d["liste_fiyat"], d["perakende_fiyat"])
             if cumle:

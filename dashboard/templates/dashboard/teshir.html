@@ -59,6 +59,45 @@
     .teshir-duzenle.acik { display: block; }
     .teshir-duzenle .teshir-form__grid { padding: 12px 0; }
     .teshir-duzenle .teshir-form__actions { padding: 0; }
+
+    /* ── Mağaza fotoğrafları ── */
+    .foto-alani { margin: 10px 0 4px; }
+    .foto-alani__ust { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .foto-rozet {
+      font-size: 10px; font-weight: 700; letter-spacing: .04em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
+    }
+    .foto-rozet--var { background: rgba(34,197,94,.14); color: #15803d; }
+    .foto-rozet--yok { background: rgba(148,163,184,.18); color: #64748b; }
+    .foto-serit {
+      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+      scrollbar-width: thin;
+    }
+    .foto-kutu { position: relative; flex: 0 0 auto; }
+    .foto-kutu img {
+      width: 96px; height: 96px; object-fit: cover; border-radius: 10px;
+      border: 1px solid rgba(148,163,184,.35); display: block;
+    }
+    .foto-ana {
+      position: absolute; left: 4px; bottom: 4px; font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px;
+      border-radius: 999px; background: rgba(15,23,42,.72); color: #fff;
+    }
+    .foto-sil { position: absolute; top: 3px; right: 3px; margin: 0; }
+    .foto-sil button {
+      width: 22px; height: 22px; border-radius: 50%; border: 0; cursor: pointer;
+      background: rgba(15,23,42,.72); color: #fff; font-size: 12px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .foto-sil button:hover { background: #dc2626; }
+    /* Dosya seçici gizlenir, tıklanan şey <label> — tarayıcının çirkin
+       "Dosya seç" düğmesi yerine panelin kendi düğmesi görünsün. */
+    .foto-yukle { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .foto-yukle input[type="file"] {
+      position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+    }
+    .foto-yukle label { cursor: pointer; }
+    .foto-ipucu { font-size: 11px; color: #94a3b8; }
   </style>
 {% endblock %}
 
@@ -193,6 +232,60 @@
         {% if t.notlar %}
           <p class="teshir-kart__not">📝 {{ t.notlar }}</p>
         {% endif %}
+
+        {% comment %}
+          Mağazadaki gerçek malın fotoğrafları. Katalog fotoğrafı fabrika
+          çekimidir; teşhir sergilenmiş/kullanılmış olabilir. Müşteri isterse
+          bot BU fotoğrafları gönderir.
+          NOT: çok satırlı yorum {% comment %} olmalı — {# #} tek satırlıktır,
+          çok satırlısı sayfada DÜZ METİN olarak görünür (canlıda yaşandı).
+        {% endcomment %}
+        <div class="foto-alani">
+          <div class="foto-alani__ust">
+            <span class="field-label">📷 Mağaza fotoğrafı</span>
+            {% if t.fotograflar %}
+              <span class="foto-rozet foto-rozet--var">{{ t.fotograflar|length }} fotoğraf</span>
+            {% else %}
+              <span class="foto-rozet foto-rozet--yok">yok — bot gönderemez</span>
+            {% endif %}
+          </div>
+
+          {% if t.fotograflar %}
+            <div class="foto-serit">
+              {% for u in t.fotograflar %}
+                <div class="foto-kutu">
+                  <a href="{{ u }}" target="_blank" rel="noopener">
+                    <img src="{{ u }}" alt="{{ t.baslik }} fotoğrafı {{ forloop.counter }}" loading="lazy">
+                  </a>
+                  {% if forloop.first %}<span class="foto-ana">ana</span>{% endif %}
+                  <form method="post" class="foto-sil"
+                        onsubmit="return confirm('Bu fotoğraf silinsin mi?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="islem" value="foto_sil">
+                    <input type="hidden" name="id" value="{{ t.id }}">
+                    <input type="hidden" name="url" value="{{ u }}">
+                    <button type="submit" title="Fotoğrafı sil">✕</button>
+                  </form>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          {% if t.fotograflar|length < maks_fotograf %}
+            <form method="post" enctype="multipart/form-data" class="foto-yukle">
+              {% csrf_token %}
+              <input type="hidden" name="islem" value="foto_ekle">
+              <input type="hidden" name="id" value="{{ t.id }}">
+              {# accept="image/*": telefonda "Kamera / Galeri" seçeneği çıkar. #}
+              <input type="file" name="fotograf" accept="image/*" multiple
+                     id="foto{{ t.id }}" onchange="this.form.submit()">
+              <label for="foto{{ t.id }}" class="btn-ghost btn-ghost--sm">
+                📷 Fotoğraf ekle
+              </label>
+              <span class="foto-ipucu">en fazla {{ maks_fotograf }} açı</span>
+            </form>
+          {% endif %}
+        </div>
 
         <div class="teshir-kart__ops">
           <button type="button" class="btn-ghost btn-ghost--sm"

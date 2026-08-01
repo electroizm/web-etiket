@@ -154,12 +154,15 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   ürün istenince ad="<ürün adı>" ile çağır — fiyat ve pazarlık notu orada.
 
 ÜRÜN FOTOĞRAFI
-- Müşteri görsel isterse ("fotoğrafı var mı", "görebilir miyim") ya da TEK bir
-  ürünün fiyatını verdiysen: cevabın EN SONUNA [gorsel:<SKU>] yaz. SKU araç
-  sonucundaki "sku" alanından AYNEN kopyalanır — uydurma, yoksa işareti KOYMA.
-- Yalnız TEK ürün konuşulurken, cevapta EN FAZLA BİR kez. ÇOKLU listede
+- Müşteri görsel isterse ("fotoğrafı var mı") ya da TEK bir ürünün fiyatını
+  verdiysen: cevabın EN SONUNA [gorsel:<SKU>] yaz. SKU araç sonucundan AYNEN
+  kopyalanır — uydurma, yoksa KOYMA. Cevapta EN FAZLA BİR kez; ÇOKLU listede
   KULLANMA (müşteri birini seçince kullan). İşaret müşteriye görünmez, sistem
   fotoğrafa çevirir — "fotoğraf aşağıda" gibi bir şey yazma.
+- TEŞHİR: teshir_bilgi'de fotograf_sayisi>0 ise fiyatla "Mağazadaki halinin
+  fotoğrafını göndereyim mi?" diye SOR, işareti O CEVAPTA KOYMA. İsteyince
+  teshir_bilgi'yi TEKRAR çağır, sona [gorsel:teshir:<id>] yaz (id araç
+  sonucundan). fotograf_sayisi 0 ise fotoğraftan BAHSETME.
 
 PAZARLIK
 - DAVET: yalnız TEK bir ürün/kombinasyon fiyatı verdiğin cevabın sonuna BİR KEZ
@@ -480,6 +483,18 @@ def _tool_calistir(ad: str, argumanlar: dict,
             gorunum = _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",))
             araliklar = []
             for ham, gk in zip(kayitlar, gorunum):
+                # Fotoğraf talimatı BURADA veriliyor (sistem promptunda değil):
+                # id'yi ve kaç fotoğraf olduğunu ancak araç sonucu bilir. Canlı
+                # denemede (2026-08-02) model "Görseli gönderiyorum" deyip
+                # işareti KOYMADI — talimat rakamla birlikte gelmezse uygulamıyor.
+                if gk.get("fotograf_sayisi"):
+                    gk["fotograf_notu"] = (
+                        f"Bu üründe {gk['fotograf_sayisi']} mağaza fotoğrafı var. "
+                        f"Müşteri fotoğraf İSTEDİYSE cevabının EN SONUNA "
+                        f"[gorsel:teshir:{gk['id']}] yaz — fotoğrafı sen "
+                        f"gönderemezsin, bu işaret olmadan müşteriye hiçbir "
+                        f"görsel GİTMEZ. Henüz istemediyse yalnız "
+                        f"'Mağazadaki halinin fotoğrafını göndereyim mi?' diye SOR.")
                 taban = ham.get("pazarlik_taban_fiyat")
                 perakende = ham.get("perakende_fiyat")
                 if taban:
@@ -718,6 +733,36 @@ def _davete_olumlu_mu(metin: str, platform: str, kullanici: str) -> bool:
     for yon, mt in _son_mesajlar(platform, kullanici):
         if yon == "giden":                       # en yeni giden mesaj
             return _DAVET_ISARETI in mt
+    return False
+
+
+# Teşhir fotoğrafı teklifinin gönderilen metinde bıraktığı iz. Prompt bu
+# cümleyi aynen yazdırır; "göndereyim mi" çekirdeği yeterince ayırt edici.
+_FOTO_TEKLIF_IZI = "fotoğrafını göndereyim mi"
+# Teklife olumlu dönüş. Uzun cümle elenir (len sınırı): "evet ama önce fiyatı
+# söyleyin" gibi mesajlarda asıl istek fotoğraf değildir.
+_FOTO_ONAY_KELIMELERI = ("evet", "olur", "gonder", "gönder", "yolla", "tabi",
+                         "tamam", "isterim", "istiyorum", "lutfen", "lütfen",
+                         "gorebilir", "görebilir", "fotograf", "fotoğraf",
+                         "gorsel", "görsel", "at")
+
+
+def _foto_istegi_mi(metin: str, platform: str, kullanici: str) -> bool:
+    """Bot fotoğrafı teklif etti ve müşteri olumlu mu döndü?
+
+    Neden bu kontrol var: bağlamda önceki araç sonuçları YOKTUR (her mesaj
+    aramayı sıfırdan yapar). İkinci turda model teşhir kaydının id'sini
+    bilmediği için teshir_bilgi'yi yeniden çağırması ŞART; canlı denemede
+    (2026-08-02) çağırmadı ve "Görseli gönderiyorum" deyip hiçbir şey
+    göndermedi. Bu işlev o anı yakalar, döngü modeli araca zorlar —
+    pazarlıktaki _davete_olumlu_mu ile birebir aynı desen.
+    """
+    m = (metin or "").strip().lower()
+    if not m or len(m) > 40 or not any(k in m for k in _FOTO_ONAY_KELIMELERI):
+        return False
+    for yon, mt in _son_mesajlar(platform, kullanici):
+        if yon == "giden":                       # en yeni giden mesaj
+            return _FOTO_TEKLIF_IZI in (mt or "").lower()
     return False
 
 
@@ -1031,6 +1076,9 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     # davete kısa olumlu dönüş ("olur", "evet" — menü akışından gelen müşteri).
     pazarlik_niyeti = _pazarlik_istegi_mi(metin) or _davete_olumlu_mu(
         metin, platform, kullanici)
+    # Az önce teklif edilen teşhir fotoğrafına olumlu dönüş (bkz. _foto_istegi_mi).
+    foto_niyeti = _foto_istegi_mi(metin, platform, kullanici)
+    foto_zorlandi = False              # araçsız fotoğraf cevabına tek zorlama hakkı
 
     for _ in range(MAKS_TOOL_TURU):
         # Sayaç BURADA tutulur, cevapla()'da değil: bir müşteri mesajı bu
@@ -1071,6 +1119,22 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     "parca_ara (tek parça) aracını çağır; pazarlik_notu'nun "
                     "sonundaki ADIM DURUMU satırı ne diyorsa AYNEN onu yap — "
                     "teklif edilecek fiyat orada hazır yazıyor."})
+                continue
+            # Fotoğraf isteğine ARAÇSIZ cevap yasak: model teşhir kaydının
+            # id'sini ancak teshir_bilgi'den öğrenir. Canlıda (2026-08-02)
+            # araç çağırmadan "Görseli gönderiyorum" dedi ve müşteriye hiçbir
+            # fotoğraf gitmedi — pazarlıktaki zorlamayla aynı çare.
+            if (cevap and foto_niyeti and not arac_cagrildi
+                    and not foto_zorlandi):
+                foto_zorlandi = True
+                mesajlar.append({"role": "assistant", "content": cevap})
+                mesajlar.append({"role": "user", "content":
+                    "DUR: Müşteri az önce teklif ettiğin TEŞHİR FOTOĞRAFINI "
+                    "istedi. Konuşulan ürünün adıyla teshir_bilgi aracını "
+                    "ŞİMDİ çağır ve cevabının EN SONUNA araç sonucundaki "
+                    "fotograf_notu'nun söylediği [gorsel:teshir:<id>] işaretini "
+                    "yaz. Fotoğrafı sen gönderemezsin; işaret olmadan müşteriye "
+                    "hiçbir görsel GİTMEZ, 'gönderiyorum' demen yetmez."})
                 continue
             # Oyalama cevabı ("hemen kontrol ediyorum") = cevapsız müşteri:
             # bot tek atımlıktır, sonraki mesajı kendi gönderemez. Bir kez zorla.

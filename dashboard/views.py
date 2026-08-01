@@ -2612,10 +2612,40 @@ def teshir(request):
                     kayit.guncelleme = _dt.now(_tz.utc)
                     session.commit()
                     _messages.success(request, "Teşhir kaydı güncellendi.")
+            elif islem == "foto_ekle":
+                tid = request.POST.get("id") or ""
+                dosyalar = request.FILES.getlist("fotograf")
+                if not tid.isdigit() or not dosyalar:
+                    _messages.error(request, "Fotoğraf seçilmedi.")
+                else:
+                    eklendi = 0
+                    for f in dosyalar:
+                        try:
+                            teshir_servis.foto_ekle(int(tid), f.read())
+                            eklendi += 1
+                        except Exception as e:
+                            # Bir dosya patlarsa diğerleri yüklenmeye devam
+                            # etsin; İsmail mağazada 4 fotoğraf seçiyor,
+                            # biri bozuk diye hepsini eletmek işkence olur.
+                            _messages.error(request, f"{f.name}: {e}")
+                    if eklendi:
+                        _messages.success(
+                            request, f"{eklendi} fotoğraf yüklendi.")
+            elif islem == "foto_sil":
+                tid = request.POST.get("id") or ""
+                url = (request.POST.get("url") or "").strip()
+                if tid.isdigit() and teshir_servis.foto_sil(int(tid), url):
+                    _messages.success(request, "Fotoğraf silindi.")
+                else:
+                    _messages.error(request, "Fotoğraf bulunamadı.")
             elif islem == "sil":
                 tid = request.POST.get("id") or ""
                 kayit = session.get(Teshir, int(tid)) if tid.isdigit() else None
                 if kayit is not None:
+                    # Kayıt gidince fotoğrafları depoda sahipsiz kalmasın.
+                    from catalog.services import depo
+                    for u in list(kayit.fotograflar or []):
+                        depo.sil(u)
                     session.delete(kayit)
                     session.commit()
                     _messages.success(request, "Teşhir kaydı silindi.")
@@ -2639,6 +2669,7 @@ def teshir(request):
     return render(request, "dashboard/teshir.html", {
         "kayitlar": teshir_servis.listele(),
         "kategoriler": kategoriler,
+        "maks_fotograf": teshir_servis.MAKS_FOTOGRAF,
     })
 
 

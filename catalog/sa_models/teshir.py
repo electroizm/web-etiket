@@ -15,7 +15,8 @@ AI ajan teşhir fiyatını YALNIZCA müşteri özellikle mağazadaki/teşhirdeki
 """
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Text, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from catalog.database import Base
@@ -45,6 +46,11 @@ class Teshir(Base):
     perakende_fiyat: Mapped[int | None] = mapped_column(Integer)
     pazarlik_payi: Mapped[int | None] = mapped_column(Integer)  # TL — ajanın inebileceği pay
     notlar: Mapped[str | None] = mapped_column(Text)          # iç not — ajana/müşteriye gitmez
+    # Mağazadaki gerçek malın fotoğrafları (Supabase Storage public URL'leri).
+    # Sıralı: ilk eleman ana fotoğraf. Boş dizi = fotoğraf yok. Ajana URL
+    # GİTMEZ, yalnız "kaç tane var" bilgisi gider; adresi router çözer.
+    fotograflar: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     guncelleme: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

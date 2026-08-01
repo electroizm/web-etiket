@@ -83,19 +83,40 @@ def _duzle(s: str) -> str:
 
 
 # ── AI cevabı ────────────────────────────────────────────────────────────────
-# Ajan tek bir ürünün fotoğrafını göstermek istediğinde cevabın SONUNA bu
-# işareti koyar: [gorsel:<SKU>]. Neden URL değil SKU (İsmail isteği 2026-07-28):
-# uzun CDN adresini model kopyalarken bozabilir; SKU kısa ve zaten araç
-# sonucunda birebir duruyor. Adresi router çözer, müşteri işareti GÖRMEZ.
-GORSEL_ISARETI = re.compile(r"\s*\[gorsel:\s*([A-Za-z0-9\-_.]{4,40})\s*\]\s*")
+# Ajan fotoğraf göstermek istediğinde cevabın SONUNA bu işareti koyar.
+# İki biçim var:
+#   [gorsel:<SKU>]          → katalog fotoğrafı (dogtas.com fabrika çekimi)
+#   [gorsel:teshir:<id>]    → MAĞAZADAKİ gerçek malın fotoğrafları (2-4 açı)
+# Neden URL değil kısa kod (İsmail isteği 2026-07-28): uzun CDN adresini model
+# kopyalarken bozabilir; SKU/id kısa ve zaten araç sonucunda birebir duruyor.
+# Adresi router çözer, müşteri işareti GÖRMEZ.
+GORSEL_ISARETI = re.compile(r"\s*\[gorsel:\s*((?:teshir:)?[A-Za-z0-9\-_.]{1,40})\s*\]\s*")
 
 
 def _gorsel_ayikla(cevap: str) -> tuple[str, str | None]:
-    """Cevaptan [gorsel:SKU] işaretini çıkar; (temiz metin, sku) döner."""
+    """Cevaptan [gorsel:...] işaretini çıkar; (temiz metin, kod) döner."""
     bulunan = GORSEL_ISARETI.search(cevap or "")
     if not bulunan:
         return cevap, None
     return GORSEL_ISARETI.sub(" ", cevap).strip(), bulunan.group(1)
+
+
+def _gorsel_urlleri(kod: str) -> list[str]:
+    """İşaretteki kodu gönderilecek fotoğraf adreslerine çevir.
+
+    Teşhirde birden fazla açı olabilir (İsmail kararı 2026-08-02), katalogda
+    tek fotoğraf. Bulunamazsa boş liste — metin yine gider, müşteri cevapsız
+    kalmaz.
+    """
+    if kod.startswith("teshir:"):
+        ham = kod.split(":", 1)[1]
+        if not ham.isdigit():
+            return []
+        from catalog.services import teshir as teshir_servis
+        return teshir_servis.fotograflar(int(ham))
+    from bot import urun_gorsel
+    url = urun_gorsel.url_bul(kod)
+    return [url] if url else []
 
 
 def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
@@ -103,26 +124,31 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     """AI'dan cevap iste; üretemezse None (çağıran metin fallback'ine düşer).
 
     Normalde TEK düz metin mesajı döner — menü/karşılama eklenmez (İsmail
-    kararı 2026-07-21). İSTİSNA: ajan cevabın sonuna [gorsel:SKU] koyduysa
-    metnin ARDINDAN o ürünün fotoğrafı da gönderilir (İsmail kararı
-    2026-07-28: fotoğraf yalnız TEK ürün konuşulurken gitsin, listede değil).
+    kararı 2026-07-21). İSTİSNA: ajan cevabın sonuna [gorsel:...] koyduysa
+    metnin ARDINDAN fotoğraf(lar) da gönderilir (İsmail kararı 2026-07-28:
+    fotoğraf yalnız TEK ürün konuşulurken gitsin, listede değil).
+    Teşhir işaretinde birden fazla açı olabilir (2026-08-02).
     Fotoğraf alınamazsa metin yine gider — müşteri cevapsız kalmaz.
     """
     from bot import ajan  # geç import: testlerde/ajan kapalıyken yük yok
     cevap = ajan.cevapla(tetik, platform, kullanici, gecmissiz=gecmissiz)
     if not cevap:
         return None
-    cevap, sku = _gorsel_ayikla(cevap)
-    if not cevap:                       # işaret dışında bir şey kalmadıysa
+    cevap, kod = _gorsel_ayikla(cevap)
+    if not cevap and not kod:           # işaret de yok, metin de yok
         return None
+    if not cevap:
+        # Model YALNIZ işareti yazdı — "evet gönderin" gibi kısa isteklerde
+        # doğal davranış (canlıda görüldü 2026-08-02). Eskiden burada None
+        # dönülüyordu: fotoğraf da metin de gitmiyor, müşteri boş kalıyordu.
+        cevap = "Buyurun, mağazadaki hâli 👇"
     metin = P.metin_mesaji(cevap)
-    if not sku or not hasattr(P, "gorsel_mesaji"):
+    if not kod or not hasattr(P, "gorsel_mesaji"):
         return metin
-    from bot import urun_gorsel
-    url = urun_gorsel.url_bul(sku)
-    if not url:
+    urller = _gorsel_urlleri(kod)
+    if not urller:
         return metin
-    return [metin, P.gorsel_mesaji(url)]
+    return [metin] + [P.gorsel_mesaji(u) for u in urller]
 
 
 def yanit_uret(tetik: str, P=_default_P, platform: str = "",
