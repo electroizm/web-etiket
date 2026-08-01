@@ -183,9 +183,53 @@ def kombinasyonlar(koleksiyon_id: int, toptan_dahil: bool = False) -> dict | Non
         session.close()
 
 
+# ─── Türkçe karakter duyarsız arama ──────────────────────────────────────────
+# Postgres'in lower()'ı Türkçe bilmez: lower('Şifonyer') = 'şifonyer', dolayısıyla
+# ilike('%sifonyer%') TUTMAZ. Aynı şekilde lower('MASSİMO') = 'massi̇mo' olduğu
+# için ASCII yazılmış 'MASSIMO' ile eşleşmez. Tuzak İKİ YÖNLÜ ve büyük:
+#
+#   Ölçüm (2026-08-02, canlı katalog):
+#     • Fiyatlı 1.783 üründen 876'sı (yarısı) müşteri Türkçe karakter
+#       yazmadan arayınca ERİŞİLEMİYORDU — "sifonyer", "tv unitesi",
+#       "calisma masasi", "genc odasi" hepsi 0 sonuç.
+#     • Ters yönde 124 koleksiyon varyantı boş dönüyordu: katalogdaki ASCII
+#       'FIOREN/CALISTA/LILY/KALIA/ARIANE' adlarını Türkçe klavyeyle yazan
+#       müşteri ('FİOREN') bulamıyordu.
+#     • Canlı kayıp müşteri (28.07): "MASSİMO Fiyat ogrenebilirmiyim" →
+#       "sistemimizde bulunamadı", oysa MASSIMO katalogda var.
+#
+# Çözüm: karşılaştırmanın İKİ tarafını da tr_norm() ile ASCII'ye katla.
+# tr_norm() Postgres tarafında migration 0006 ile tanımlı; Python karşılığı
+# _duz(). İkisinin aynı sonucu verdiğini test tüm katalog adlarında doğrular.
+#
+# Bu bir BENZERLİK/fuzzy araması DEĞİL (İsmail kararı 2026-07-12): normalize
+# edilmiş metinde KESİN alt dize eşleşmesi. 'kira' → 'KIERA' hâlâ eşleşmez.
+_TR_DUZLE = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosucgiosu")
+
+
+def _duz(s: str) -> str:
+    """Türkçe karakterleri ASCII'ye katla + küçült. SQL tr_norm() ile aynı sonuç."""
+    s = (s or "").strip().translate(_TR_DUZLE).lower().translate(_TR_DUZLE)
+    return s.replace("̇", "")   # İ.lower() birleşik noktası (U+0307)
+
+
+def _kalip(ifade: str) -> str:
+    """Kullanıcı metnini LIKE kalıbına çevirir; % ve _ arama karakteri sayılmaz."""
+    d = _duz(ifade).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{d}%"
+
+
+def _ad_gibi(kolon, ifade: str):
+    """`kolon` içinde `ifade` geçiyor mu — Türkçe karakter farkını yok sayarak."""
+    return func.tr_norm(kolon).like(_kalip(ifade), escape="\\")
+
+
 def koleksiyon_ara(q: str) -> list[dict]:
     """Ad içinde arama — AI ajanın 'MARIZA fiyatı?' gibi serbest metinden koleksiyon
     bulması için. Kombinasyonu olan koleksiyonlarda, büyük/küçük harf duyarsız.
+
+    Eşleşme Türkçe karakterden bağımsızdır (_ad_gibi): müşteri 'FİOREN' yazsa da
+    katalogdaki 'FIOREN' bulunur, tersi de geçerlidir.
 
     Model bazen tüm cümleyi arıyor ("charm genç odası" — canlıda görüldü, boş
     döndü). Tam ifade eşleşmezse kelime kelime yedek arama yapılır: sorgunun
@@ -205,7 +249,7 @@ def koleksiyon_ara(q: str) -> list[dict]:
         return session.execute(
             select(Koleksiyon.id, Koleksiyon.ad, Koleksiyon.kategori_id,
                    kombi_say.label("ks"))
-            .where(Koleksiyon.ad.ilike(f"%{ifade}%"))
+            .where(_ad_gibi(Koleksiyon.ad, ifade))
             .order_by(Koleksiyon.ad)
             .limit(10)
         ).all()
@@ -231,16 +275,6 @@ def koleksiyon_ara(q: str) -> list[dict]:
         session.close()
 
 
-# ─── Mağaza bilgi tabanı (bot_bilgi) ─────────────────────────────────────────
-# Türkçe karakter sadeleştirme — "mesai" / "MESAİ" / "mesaı" hepsi eşleşsin.
-_TR_DUZLE = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosucgiosu")
-
-
-def _duz(s: str) -> str:
-    s = (s or "").strip().translate(_TR_DUZLE).lower().translate(_TR_DUZLE)
-    return s.replace("̇", "")   # İ.lower() birleşik noktası (U+0307)
-
-
 # Ürün aramasında anlam taşımayan dolgu kelimeler (_duz'lanmış halleriyle).
 # Model bazen tüm cümleyi aratıyor ("zigon sehpa fiyatı" gibi); her token'ı
 # adda arayan kesin eşleşme dolgu kelime yüzünden boş dönüyordu.
@@ -258,11 +292,9 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
     Müşteri "sadece 5 kapaklı dolap" gibi TEK parça fiyatı sorduğunda kullanılır;
     ürünün kendi son_liste/son_perakende fiyatını döner. Kombinasyon toplamı değil.
 
-    Türkçe i/ı sorunu: Postgres lower() 'KAPAKLI'yı 'kapakli'ye çevirir ama
-    kullanıcı 'kapaklı' (dotless ı) yazar → ilike eşleşmez. Bu yüzden SQL'i
-    yalnız ASCII-güvenli token'larla daraltır, kesin çok-kelimeli eşleşmeyi
-    Python'da _duz ile yaparız (bilgi_ara ile aynı sadeleştirme). Fiyatı
-    olmayan ürünler elenir; en fazla 10 sonuç.
+    Eşleşme Türkçe karakterden bağımsızdır (_ad_gibi → tr_norm): müşteri
+    "sifonyer" yazsa da katalogdaki "Şifonyer" bulunur. Her token adda GEÇMEK
+    ZORUNDA (AND). Fiyatı olmayan ürünler elenir; en fazla 10 sonuç.
 
     Tam eşleşme boş kalırsa kelime kelime KESİN yedek devreye girer
     (benzerlik/fuzzy DEĞİL — İsmail kararı 2026-07-12): eşleşen token'lar
@@ -276,15 +308,13 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
     tokens = [t for t in tokens if _duz(t) not in _ARAMA_GURULTU] or tokens
     if not tokens:
         return []
-    ascii_tokens = [t for t in tokens if t == t.encode("ascii", "ignore").decode()]
     session = SessionLocal()
     try:
         stmt = select(Urun).where(Urun.son_perakende_fiyat.isnot(None))
-        for t in (ascii_tokens or tokens[:1]):
-            stmt = stmt.where(Urun.urun_adi_tam.ilike(f"%{t}%"))
+        for t in tokens:
+            stmt = stmt.where(_ad_gibi(Urun.urun_adi_tam, t))
         rows = session.scalars(stmt.order_by(Urun.urun_adi_tam).limit(80)).all()
         istek = [_duz(t) for t in tokens]
-        rows = [u for u in rows if all(t in _duz(u.urun_adi_tam) for t in istek)]
         if not rows:
             # Kelime kelime KESİN yedek (benzerlik DEĞİL): "milana zigon sehpa"
             # hiçbir adla tam eşleşmez (canlı vaka 2026-07-12: sesli mesaj
@@ -293,13 +323,13 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
             # gelir; model müşteriye hangisini kastettiğini sorar
             # (koleksiyon_ara'daki tam-ifade yedeğiyle aynı desen).
             aday = {}
-            for t in (ascii_tokens or tokens):
+            for t in tokens:
                 if len(t) < 3:
                     continue
                 for u in session.scalars(
                         select(Urun)
                         .where(Urun.son_perakende_fiyat.isnot(None),
-                               Urun.urun_adi_tam.ilike(f"%{t}%"))
+                               _ad_gibi(Urun.urun_adi_tam, t))
                         .limit(40)).all():
                     aday[u.id] = u
 
@@ -346,16 +376,15 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
 #   • Aynı model onlarca SKU ile tekrarlıyor (LEA Üçlü Yataklı Koltuk 12 kayıt)
 #     → ada göre tekilleştirilmezse liste aynı ismi 3 kez yazar.
 #
-# Değer: (SQL daraltma token'ı, Python'da aranan token'lar).
-# SQL token'ı ASCII olmalı: Postgres lower() 'Yataklı'yı 'yataklı' yapar,
-# ilike('%yatakli%') tutmaz (urun_ara'daki i/ı sorunuyla aynı) — bu yüzden
-# daraltmayı ASCII "koltuk" ile yapıp kesin eşleşmeyi _duz ile Python'da veririz.
+# Değer: adda AYNI ANDA geçmesi gereken token'lar (_duz'lanmış hâlleriyle).
+# Türkçe karakter derdi yok — eşleşme _ad_gibi/tr_norm ile yapılır, "yatakli"
+# katalogdaki "Yataklı" ile eşleşir.
 # "uclu" her ikisinde de var: İsmail kararı (2026-07-28) çekyatta da yalnız
 # ÜÇLÜ modeller listelensin — İkili modeller daha ucuz olduğu için listeyi
 # domine ediyordu (ilk üç sıra ikiliydi), oysa müşteriye üçlü sunulmak isteniyor.
-EN_UYGUN_TIPLERI: dict[str, tuple[str, tuple[str, ...]]] = {
-    "cekyat": ("koltuk", ("uclu", "yatakli", "koltuk")),
-    "koltuk": ("koltuk", ("uclu", "koltuk")),
+EN_UYGUN_TIPLERI: dict[str, tuple[str, ...]] = {
+    "cekyat": ("uclu", "yatakli", "koltuk"),
+    "koltuk": ("uclu", "koltuk"),
 }
 # "çekyat" niyetini ele veren kelimeler (_duz'lanmış). Bunlar YOKSA ve mesajda
 # "koltuk/oturma" varsa düz üçlü koltuk listesi verilir.
@@ -414,7 +443,7 @@ _KOLTUK_GENEL_TOKENLARI = frozenset(("koltuk", "oturma", "grubu", "grup",
                                      "takim", "takimi"))
 
 
-def _en_uygun_tip(tip: str) -> tuple[str, tuple[str, ...]] | None:
+def _en_uygun_tip(tip: str) -> tuple[str, ...] | None:
     """Müşterinin dediği tipi katalog token'larına çevir; tanımadıysa None."""
     d = _duz(tip)
     if any(k in d for k in _CEKYAT_KELIMELERI):
@@ -424,15 +453,7 @@ def _en_uygun_tip(tip: str) -> tuple[str, tuple[str, ...]] | None:
         return EN_UYGUN_TIPLERI["koltuk"]
     # Bilinen kısayol yoksa serbest tarifle ara (görselden gelen "şifonyer",
     # "tv ünitesi", "yemek masası" gibi tipler buraya düşer).
-    # SQL daraltması YOK — token'lar _duz'lanmış (ASCII'ye katlanmış) haldedir
-    # ve Postgres lower('Şifonyer')='şifonyer', ilike('%sifonyer%') TUTMAZ
-    # (i/ı sorununun ş/s hâli; canlıda 4 tip hiç bulunamıyordu). Süzme tamamen
-    # Python'da _duz ile yapılır: 1.764 fiyatlı satır, fiyata göre sıralı gelir
-    # ve limit dolunca döngü kırılır — maliyeti ihmal edilebilir.
-    tokenlar = _tip_tokenlari(tip)
-    if not tokenlar:
-        return None
-    return ("", tuple(tokenlar))
+    return tuple(_tip_tokenlari(tip)) or None
 
 
 def en_uygun(tip: str, limit: int = 3) -> list[dict]:
@@ -446,10 +467,9 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
     üzerine olacağı belirsiz kalır (kombinasyonlari_listele ile aynı ilke).
     Müşteri birini seçince model parca_ara'yı çağırır, merdiven orada gelir.
     """
-    eslesme = _en_uygun_tip(tip)
-    if not eslesme:
+    tokenlar = _en_uygun_tip(tip)
+    if not tokenlar:
         return []
-    sql_token, tokenlar = eslesme
     # Bahçe ürünleri normalde elenir (ucuz oldukları için salon listesinin
     # başına geçiyorlardı), AMA müşteri/görsel açıkça bahçe diyorsa elenmemeli.
     haric = () if "bahce" in _duz(tip) else _EN_UYGUN_HARIC
@@ -461,8 +481,8 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
     session = SessionLocal()
     try:
         stmt = select(Urun).where(Urun.son_perakende_fiyat > 0)  # 0 TL/NULL elenir
-        if sql_token:        # yalnız ASCII kısayollarda ("koltuk") daraltılır
-            stmt = stmt.where(Urun.urun_adi_tam.ilike(f"%{sql_token}%"))
+        for t in tokenlar:   # daraltma SQL'de — Türkçe karakter sorun değil
+            stmt = stmt.where(_ad_gibi(Urun.urun_adi_tam, t))
         # sku ikincil ölçüt: aynı fiyatlı ürünlerde sıra aksi halde BELİRSİZ
         # kalıyor ve aynı sorgu farklı SKU döndürebiliyordu (fiyat/ad aynı ama
         # [gorsel:SKU] ve pazarlık o SKU'ya bağlı). Sonuç artık tekrarlanabilir.

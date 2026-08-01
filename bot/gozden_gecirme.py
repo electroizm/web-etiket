@@ -127,16 +127,79 @@ def _soru_metni(metin: str) -> str:
     return t
 
 
+def isaretler(soru: str, cevap: str, adlar: set[str]) -> list[tuple[str, str]]:
+    """Tek bir soru/cevap çiftinin arıza işaretleri — SAF fonksiyon, DB YOK.
+
+    Kural motorunun TAMAMI burada; olaylar() yalnızca veriyi buraya taşır.
+    Ayrı durmasının sebebi test edilebilirlik: panel 7 günden eski okunmuş
+    konuşmaları siliyor (_bot_temizlik), bu yüzden canlı bir konuşmaya
+    çıpalanan test birkaç gün sonra kaçınılmaz olarak kırılıyor — 2026-08-02'de
+    Luxembourg çıpası tam böyle kayboldu. Kurallar artık KURGU veriyle
+    sınanır. Bkz. hafıza: bayat-test-canli-veri.
+
+    Döner: (tür, panelde gösterilecek cevap metni) çiftleri.
+    """
+    from bot.router import AI_KAPALI_METNI, YETKILI_URL
+    from catalog.services import menu_veri
+
+    cevap = cevap or ""
+    soru = soru or ""
+
+    # 1) Ajan cevap üretemedi → özür metni gitti. Kesin arıza.
+    #    Tek başına döner: aşağıdaki dallar aynı olayı TEKRAR saymasın.
+    if cevap.startswith(AI_KAPALI_METNI[:40]):
+        return [("cevapsiz", cevap)]
+
+    bulunan: list[tuple[str, str]] = []
+    yok_diyor = any(k in cevap.lower() for k in _YOK_KALIPLARI)
+    fiyat_var = bool(_FIYAT.search(cevap))
+
+    # 2) Pazarlık istendi ama fiyat gelmedi.
+    if not fiyat_var and any(p in soru.lower() for p in _PAZARLIK):
+        # Merdiven bitmişse "daha fazla inemem" DOĞRU cevaptır.
+        if not any(b in cevap.lower() for b in _MERDIVEN_BITTI):
+            bulunan.append(("pazarlik_oldu", cevap))
+
+    if yok_diyor and not fiyat_var:
+        soru_kel = _kelimeler(soru)
+        # 3) Müşterinin sorduğu ad KATALOGDA VAR ama bot "yok" dedi.
+        #    AMA: "Calmera SERİSİNDE orta sehpa bulunmuyor" bir kaçırma
+        #    DEĞİL — bot seriyi bulmuş, o seride o parça gerçekten yok.
+        #    Kaçırma, serinin KENDİSİNİN yok sayılmasıdır ("Massimo
+        #    isimli ürünümüz bulunamadı" — oysa MASSIMO katalogda var).
+        duz_cevap = menu_veri._duz(cevap)
+        eslesen = [a for a in adlar
+                   if _ad_geciyor_mu(a, soru_kel)
+                   and not any(f"{a} {k}" in duz_cevap for k in
+                               ("serisinde", "serisinin", "koleksiyonunda",
+                                "takiminda", "serimizde"))]
+        if eslesen:
+            bulunan.append((
+                "urun_kacirildi",
+                f"[katalogda var: {', '.join(sorted(eslesen)[:3]).upper()}] {cevap}"))
+        else:
+            # 4) Bot, ne müşterinin yazdığı ne katalogda olan bir ad uydurup
+            #    "yok" demiş (canlı: BEND soruldu, "Luxembourg bulunmuyor").
+            for aday in _ADAY_AD.findall(cevap):
+                d = menu_veri._duz(aday)
+                if len(d) >= 4 and d not in adlar and d not in soru_kel:
+                    bulunan.append(("uydurma_ad", f"[uydurulan: {aday}] {cevap}"))
+                    break
+
+    # 5) Yetkiliye yönlendirme — bilgi amaçlı, arıza olmayabilir.
+    elif YETKILI_URL and YETKILI_URL in cevap:
+        bulunan.append(("yetkiliye_atti", cevap))
+
+    return bulunan
+
+
 def olaylar(gun_sayisi: int = 7) -> list[dict]:
     """Son N günün konuşmalarından arıza olaylarını çıkar (önem sırasında)."""
     from sqlalchemy import select
 
-    from bot.router import AI_KAPALI_METNI, YETKILI_URL
     from catalog.database import SessionLocal
-    from catalog.services import menu_veri
 
     esik = datetime.now(timezone.utc) - timedelta(days=gun_sayisi)
-    ozur = AI_KAPALI_METNI[:40]
     session = SessionLocal()
     try:
         from catalog.sa_models import BotMesaj
@@ -167,58 +230,13 @@ def olaylar(gun_sayisi: int = 7) -> list[dict]:
         for i, m in enumerate(msjlar):
             if m.yon != "giden":
                 continue
-            cevap = m.metin or ""
             # Bu cevaptan ÖNCEKİ gerçek müşteri sorusu
             soru_msj = next((x for x in reversed(msjlar[:i])
                              if x.yon == "gelen" and _musteri_sorusu_mu(x.metin)),
                             None)
             soru = _soru_metni(soru_msj.metin) if soru_msj else ""
-
-            # 1) Ajan cevap üretemedi → özür metni gitti. Kesin arıza.
-            if cevap.startswith(ozur):
-                ekle("cevapsiz", m, soru, cevap)
-                continue        # aşağıdaki dallar bunu TEKRAR saymasın
-
-            yok_diyor = any(k in cevap.lower() for k in _YOK_KALIPLARI)
-            fiyat_var = bool(_FIYAT.search(cevap))
-
-            # 2) Pazarlık istendi ama fiyat gelmedi.
-            if soru_msj and not fiyat_var:
-                s = soru.lower()
-                if any(p in s for p in _PAZARLIK):
-                    # Merdiven bitmişse "daha fazla inemem" DOĞRU cevaptır.
-                    if not any(b in cevap.lower() for b in _MERDIVEN_BITTI):
-                        ekle("pazarlik_oldu", m, soru, cevap)
-
-            if yok_diyor and not fiyat_var:
-                soru_kel = _kelimeler(soru)
-                # 3) Müşterinin sorduğu ad KATALOGDA VAR ama bot "yok" dedi.
-                #    AMA: "Calmera SERİSİNDE orta sehpa bulunmuyor" bir kaçırma
-                #    DEĞİL — bot seriyi bulmuş, o seride o parça gerçekten yok.
-                #    Kaçırma, serinin KENDİSİNİN yok sayılmasıdır ("Massimo
-                #    isimli ürünümüz bulunamadı" — oysa MASSIMO katalogda var).
-                duz_cevap = menu_veri._duz(cevap)
-                eslesen = [a for a in adlar
-                           if _ad_geciyor_mu(a, soru_kel)
-                           and not any(f"{a} {k}" in duz_cevap for k in
-                                       ("serisinde", "serisinin", "koleksiyonunda",
-                                        "takiminda", "serimizde"))]
-                if eslesen:
-                    ekle("urun_kacirildi", m, soru,
-                         f"[katalogda var: {', '.join(sorted(eslesen)[:3]).upper()}] {cevap}")
-                else:
-                    # 4) Bot, ne müşterinin yazdığı ne katalogda olan bir ad
-                    #    uydurup "yok" demiş (canlı: BEND soruldu, "Luxembourg
-                    #    bulunmuyor" cevabı geldi).
-                    for aday in _ADAY_AD.findall(cevap):
-                        d = menu_veri._duz(aday)
-                        if len(d) >= 4 and d not in adlar and d not in soru_kel:
-                            ekle("uydurma_ad", m, soru, f"[uydurulan: {aday}] {cevap}")
-                            break
-
-            # 5) Yetkiliye yönlendirme — bilgi amaçlı, arıza olmayabilir.
-            elif YETKILI_URL and YETKILI_URL in cevap:
-                ekle("yetkiliye_atti", m, soru, cevap)
+            for tur, gosterim in isaretler(soru, m.metin or "", adlar):
+                ekle(tur, m, soru, gosterim)
 
     cikti.sort(key=lambda o: (o["onem"], -o["tarih"].timestamp()))
     return cikti
