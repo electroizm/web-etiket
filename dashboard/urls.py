@@ -11,6 +11,7 @@ urlpatterns = [
     path('bot/sil/', views.bot_sil, name='bot_sil'),
     path('bot/bilgi/', views.bot_bilgi, name='bot_bilgi'),
     path('bot/kota/', views.bot_kota, name='bot_kota'),
+    path('bot/gozden-gecirme/', views.bot_gozden_gecirme, name='bot_gozden_gecirme'),
     path('ayarlar/', views.ayarlar, name='ayarlar'),
     path('ayarlar/slogan/', views.ayarlar_slogan, name='ayarlar_slogan'),
     path('ayarlar/yerli-uretim/', views.ayarlar_yerli_uretim, name='ayarlar_yerli_uretim'),

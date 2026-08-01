@@ -98,6 +98,20 @@ class Command(BaseCommand):
                              "cevaplamak için: etiket.gunesler.info/app/bot/bilgi"]
             satirlar += [f"- {s.soru}" for s in sorular[:15]]
 
+        # Haftalık gözden geçirme — YALNIZ pazartesi. Her gün gitse gürültü
+        # olur ve okunmaz hâle gelir; haftada bir bakış zaten yeterli
+        # (bkz. projects/plan-haftalik-gozden-gecirme). Hata özeti düşürmesin.
+        if simdi.weekday() == 0 or opts["kuru"]:
+            try:
+                from bot import gozden_gecirme
+                gg_satir = gozden_gecirme.haftalik_satirlar(7)
+                if gg_satir:
+                    satirlar += [""] + gg_satir
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "haftalık gözden geçirme satırı üretilemedi")
+
         satirlar += ["", "Panel: etiket.gunesler.info/app/bot"]
         govde = "\n".join(satirlar)
 

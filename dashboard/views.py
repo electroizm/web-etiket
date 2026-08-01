@@ -2197,6 +2197,30 @@ def _pencere_durumu(platform: str, kullanici: str) -> dict:
 
 
 @login_required_supabase
+def bot_gozden_gecirme(request):
+    """Gözden geçirme — botun tökezlediği anlar (kural tabanlı, LLM yok).
+
+    Neden var: 2026-08-01'de bulunan üç hatanın üçü de İsmail'in panele bakıp
+    fark etmesiyle çıktı, testler görmüyordu. Bu sayfa o bakışı otomatikleştirir
+    (bkz. bot/gozden_gecirme.py — süzgeçler gerçek veriyle ölçülerek tasarlandı).
+    `?gun=N` ile pencere değiştirilir (varsayılan 7).
+    """
+    from bot import gozden_gecirme
+
+    try:
+        gun = max(1, min(90, int(request.GET.get("gun", 7))))
+    except (TypeError, ValueError):
+        gun = 7
+    try:
+        veri = gozden_gecirme.ozet(gun)
+    except Exception:
+        logging.getLogger(__name__).exception("gözden geçirme okunamadı")
+        veri = {"olaylar": [], "sayim": {}, "gun_sayisi": gun, "toplam": 0,
+                "kritik": 0, "turler": gozden_gecirme.TURLER, "hata": True}
+    return render(request, "dashboard/bot_gozden_gecirme.html", veri)
+
+
+@login_required_supabase
 def bot_kota(request):
     """Gemini kota sayfası — hangi model ne kadar istek yedi, limit ne?
 

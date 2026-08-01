@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Gözden Geçirme · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  <style>
+    /* Kota sayfasıyla aynı görsel dil — iki sayfa kardeş. */
+    .gg { max-width: 760px; margin: 0 auto; padding: 12px; color: #191c2e; }
+    .gg h2 { font-size: 1.05rem; margin: 18px 4px 10px; }
+    .gg-not { background: #e9f6f1; border: 1px solid #c4e8da; border-radius: 12px;
+              padding: 12px 14px; font-size: .85rem; line-height: 1.55; color: #1e3a30; }
+    .gg-not b { color: #14513f; }
+
+    .gg-ozet { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+               margin-bottom: 14px; }
+    .gg-ozet__k { background: #fff; border: 1px solid #e4e6f0; border-radius: 12px;
+                  padding: 12px 8px; text-align: center; }
+    .gg-ozet__s { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+    .gg-ozet__a { font-size: .68rem; opacity: .6; margin-top: 4px; line-height: 1.3; }
+    .gg-ozet__k--iyi .gg-ozet__s { color: #0b7d57; }
+    .gg-ozet__k--kotu .gg-ozet__s { color: #b42323; }
+
+    .gg-suz { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 14px; }
+    .gg-suz a { font-size: .76rem; font-weight: 700; padding: 5px 11px;
+                border-radius: 999px; background: #eef1f5; color: #4a5162;
+                text-decoration: none; }
+    .gg-suz a.acik { background: #191c2e; color: #fff; }
+
+    .gg-olay { background: #fff; border: 1px solid #e4e6f0; border-radius: 14px;
+               padding: 13px 14px; margin-bottom: 9px;
+               box-shadow: 0 1px 2px rgba(25,28,46,.05);
+               border-left: 4px solid #c8ccd8; }
+    .gg-olay--1 { border-left-color: #e0544f; }
+    .gg-olay--2 { border-left-color: #f0a336; }
+    .gg-olay--3 { border-left-color: #c8ccd8; }
+    .gg-olay__ust { display: flex; justify-content: space-between; gap: 10px;
+                    align-items: baseline; flex-wrap: wrap; }
+    .gg-baslik { font-weight: 800; font-size: .88rem; }
+    .gg-zaman { font-size: .74rem; opacity: .55; white-space: nowrap; }
+    .gg-satir { font-size: .84rem; line-height: 1.5; margin-top: 7px;
+                word-break: break-word; }
+    .gg-etiket { font-size: .68rem; font-weight: 800; opacity: .5;
+                 text-transform: uppercase; letter-spacing: .4px; }
+    .gg-metin { background: #f6f8fa; border-radius: 8px; padding: 6px 9px;
+                margin-top: 2px; }
+    .gg-git { display: inline-block; margin-top: 9px; font-size: .78rem;
+              font-weight: 700; color: #0b7d57; text-decoration: none; }
+    .gg-bos { opacity: .55; font-size: .86rem; padding: 18px 4px; text-align: center; }
+    .gg-kutlama { background: #d9fdd3; border: 1px solid #a9e8a0; color: #0b7d57;
+                  border-radius: 12px; padding: 16px; text-align: center;
+                  font-size: .9rem; font-weight: 700; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="app-shell">
+  <header class="topbar glass">
+    <div class="topbar__brand">
+      <a href="{% url 'dashboard:bot_konusmalar' %}" class="btn-ghost" title="Ajan Konuşmalarına dön">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <span>Konuşmalar</span>
+      </a>
+      <span class="topbar__title">🔍 Gözden Geçirme</span>
+    </div>
+    <div class="topbar__user">
+      <a href="{% url 'dashboard:home' %}" class="user-link">{{ request.supabase_user.display_name }}</a>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="gg">
+
+      <div class="gg-ozet">
+        <div class="gg-ozet__k {% if kritik %}gg-ozet__k--kotu{% else %}gg-ozet__k--iyi{% endif %}">
+          <div class="gg-ozet__s">{{ kritik }}</div>
+          <div class="gg-ozet__a">müşteri cevapsız kaldı</div>
+        </div>
+        <div class="gg-ozet__k">
+          <div class="gg-ozet__s">{{ toplam }}</div>
+          <div class="gg-ozet__a">incelenecek olay</div>
+        </div>
+      </div>
+
+      <div class="gg-suz">
+        <a href="?gun=7"  {% if gun_sayisi == 7 %}class="acik"{% endif %}>Son 7 gün</a>
+        <a href="?gun=14" {% if gun_sayisi == 14 %}class="acik"{% endif %}>14 gün</a>
+        <a href="?gun=30" {% if gun_sayisi == 30 %}class="acik"{% endif %}>30 gün</a>
+        <a href="{% url 'dashboard:bot_kota' %}">📊 Kota</a>
+      </div>
+
+      <div class="gg-not">
+        Bu sayfa <b>müşteri konuşmalarını tarayıp botun tökezlediği anları</b>
+        önüne getirir. Yapay zekâ kullanmaz — sabit kurallarla çalışır, kotadan
+        bir şey götürmez.<br><br>
+        Bakılacak ilk rakam <b>cevapsız kalan müşteri</b>: bot cevap üretemedi,
+        müşteriye özür mesajı gitti. Diğer olaylar "kesin hata" değil,
+        <b>incelenmeye değer</b> demektir — karar senin.
+      </div>
+
+      {% if olaylar %}
+        <h2>Olaylar · önemliden başlayarak</h2>
+        {% for o in olaylar %}
+          <div class="gg-olay gg-olay--{{ o.onem }}">
+            <div class="gg-olay__ust">
+              <span class="gg-baslik">{{ o.simge }} {{ o.baslik }}</span>
+              <span class="gg-zaman">{{ o.tarih|date:"d.m H:i" }} ·
+                {% if o.platform == 'whatsapp' %}WhatsApp{% else %}Instagram{% endif %}</span>
+            </div>
+            {% if o.soru %}
+              <div class="gg-satir">
+                <span class="gg-etiket">Müşteri</span>
+                <div class="gg-metin">{{ o.soru }}</div>
+              </div>
+            {% endif %}
+            <div class="gg-satir">
+              <span class="gg-etiket">Bot</span>
+              <div class="gg-metin">{{ o.cevap }}</div>
+            </div>
+            <a class="gg-git" href="{% url 'dashboard:bot_konusmalar' %}?k={{ o.anahtar|urlencode }}">
+              Konuşmayı aç →
+            </a>
+          </div>
+        {% endfor %}
+      {% elif hata %}
+        <div class="gg-bos">Olaylar okunamadı — kayıtlara erişilemedi.</div>
+      {% else %}
+        <div class="gg-kutlama">
+          ✅ Son {{ gun_sayisi }} günde tökezleme bulunamadı.
+        </div>
+      {% endif %}
+
+      {% if sayim %}
+        <h2>Ne tür olaylar?</h2>
+        <div class="gg-olay" style="border-left-color:#c8ccd8">
+          {% for tur, adet in sayim.items %}
+            <div class="gg-satir">
+              <b>{{ adet }}</b> ·
+              {% if tur == 'cevapsiz' %}🔴 Müşteri cevapsız kaldı — bot cevap üretemedi, özür mesajı gitti
+              {% elif tur == 'pazarlik_oldu' %}🤝 Müşteri indirim istedi, cevapta fiyat yok
+              {% elif tur == 'urun_kacirildi' %}📦 Sorulan ürün katalogda var ama bot "yok" dedi
+              {% elif tur == 'uydurma_ad' %}👻 Bot, olmayan bir ürün adı uydurup "bulunmuyor" dedi
+              {% elif tur == 'yetkiliye_atti' %}🙋 Yetkiliye yönlendirdi (her zaman hata değil)
+              {% else %}{{ tur }}{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    </div>
+  </main>
+</div>
+{% endblock %}
