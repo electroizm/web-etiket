@@ -138,11 +138,28 @@ _LIMIT_KALIBI = re.compile(r'limit:\s*(\d+)|"quotaValue":\s*"(\d+)"')
 
 
 def limiti_ogren(model: str, hata: Exception) -> int | None:
-    """429 metninden günlük limiti oku ve sakla (Google artık yayımlamıyor)."""
+    """429 metninden GÜNLÜK limiti oku ve sakla.
+
+    ⚠️ Yalnız GÜNLÜK 429'dan öğrenilir. Dakikalık (RPM) 429'un gövdesinde de
+    "limit: 15" yazıyor ve eskiden o değer günlük limit sanılıp kaydediliyordu:
+    2026-08-02'de art arda test koşarken flash-lite'ın günlük limiti 500 iken
+    15'e düştü ve kota sayfası "397/15, %100" gibi anlamsız bir tablo gösterdi.
+    Sayfa İsmail'in modele bakıp karar verdiği yer — yanlış rakam yanlış karar
+    demek. Ayrımı gunluk_bitti_mi() zaten biliyor, ona sor.
+    """
+    if not gunluk_bitti_mi(hata):
+        return None
     m = _LIMIT_KALIBI.search(str(hata))
     if not m:
         return None
     deger = int(m.group(1) or m.group(2))
+    # Ek emniyet: günlük limit dakikalık limitten küçük olamaz. Sağlayıcı
+    # gövdeyi beklenmedik biçimde yazarsa saçma değer kaydedilmesin.
+    rpm = (BILINEN_SINIRLAR.get(model) or (None, None))[1]
+    if rpm and deger <= rpm:
+        log.warning("kota: %s icin gunluk limit %s dakikalik sinirdan (%s) "
+                    "kucuk geldi — YOK SAYILDI", model, deger, rpm)
+        return None
     try:
         from catalog.database import SessionLocal
         from catalog.services.ayarlar import set_ayar

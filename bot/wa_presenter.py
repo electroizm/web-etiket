@@ -22,6 +22,21 @@ def metin_mesaji(govde: str) -> dict:
     return _metin(govde)
 
 
+def video_mesaji(url: str) -> dict:
+    """YouTube videosu — LİNK olarak gider, dosya olarak değil.
+
+    preview_url=true: WhatsApp linki kendisi çekip küçük resim + başlık taşıyan
+    önizleme kartı çizer; müşteri çıplak mavi link yerine videonun karesini
+    görür ve karta dokununca YouTube açılır. YALNIZ bu mesajda açılıyor —
+    diğer metin mesajlarının görünümü değişmesin.
+
+    Neden video dosyası gönderilmiyor: Cloud API linkten çekilen videoda 16 MB
+    ve H.264/AAC sınırı var, Render'da sıkıştırma aracı yok (bkz.
+    catalog/services/video.py).
+    """
+    return {"type": "text", "text": {"preview_url": True, "body": url}}
+
+
 def gorsel_mesaji(url: str, altyazi: str = "") -> dict:
     """Ürün fotoğrafı. Cloud API görseli PUBLIC LINKTEN kendisi çeker —
     dosya yüklemeye gerek yok. Altyazı (caption) 1024 karakterle sınırlı."""

@@ -159,10 +159,9 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   kopyalanır — uydurma, yoksa KOYMA. Cevapta EN FAZLA BİR kez; ÇOKLU listede
   KULLANMA (müşteri birini seçince kullan). İşaret müşteriye görünmez, sistem
   fotoğrafa çevirir — "fotoğraf aşağıda" gibi bir şey yazma.
-- TEŞHİR: teshir_bilgi'de fotograf_sayisi>0 ise fiyatla "Mağazadaki halinin
-  fotoğrafını göndereyim mi?" diye SOR, işareti O CEVAPTA KOYMA. İsteyince
-  teshir_bilgi'yi TEKRAR çağır, sona [gorsel:teshir:<id>] yaz (id araç
-  sonucundan). fotograf_sayisi 0 ise fotoğraftan BAHSETME.
+- MAĞAZA FOTOĞRAFI/VİDEOSU: araç sonucunda medya_notu varsa AYNEN ona uy — ne
+  zaman soracağın ve hangi işareti koyacağın orada yazar. medya_notu YOKSA
+  fotoğraf/videodan hiç BAHSETME.
 
 PAZARLIK
 - DAVET: yalnız TEK bir ürün/kombinasyon fiyatı verdiğin cevabın sonuna BİR KEZ
@@ -394,8 +393,22 @@ def _tool_calistir(ad: str, argumanlar: dict,
     if ad == "kombinasyonlari_listele":
         # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
         # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
-        sonuc = _ham_fiyat_gizle(menu_veri.kombinasyonlar(
-            int(argumanlar["koleksiyon_id"])))
+        ham = menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"]))
+        sonuc = _ham_fiyat_gizle(ham)
+        # Koleksiyon videosu: model çoğu zaman TEK bir kombinasyonun fiyatını
+        # doğrudan BU liste sonucundan veriyor ve fiyat_detay'ı hiç çağırmıyor
+        # (canlıda ölçüldü 2026-08-02). Not buraya konmazsa o yolda video hiç
+        # teklif edilmiyordu. Çoklu listede teklif YASAK — tek ürüne inince
+        # serbest (İsmail'in 2026-07-28 "listede medya yok" kuralı).
+        kol = ((ham or {}).get("koleksiyon") or {})
+        if kol.get("video_var"):
+            sonuc["video_notu"] = (
+                f"Bu koleksiyonun tanıtım videosu var. ÇOKLU liste veren "
+                f"cevapta videodan BAHSETME. TEK bir kombinasyonun fiyatını "
+                f"verdiğin cevapta 'Mağazadaki halinin videosunu göndereyim "
+                f"mi?' diye SOR; müşteri isteyince cevabının EN SONUNA "
+                f"[video:kol:{kol['id']}] yaz — bu işaret olmadan müşteriye "
+                f"video GİTMEZ.")
         if sonuc and len(sonuc.get("kombinasyonlar") or []) > 1:
             # Pazarlık daveti seçimden ÖNCE gitmesin (İsmail kararı 2026-07-12):
             # listede davet olunca pazarlığın hangi kombinasyon üzerinde
@@ -435,7 +448,13 @@ def _tool_calistir(ad: str, argumanlar: dict,
                     "not": "Bu numarada kombinasyon yok — fiyat UYDURMA. Ürünü "
                            "koleksiyon_ara ile bul, sonra kombinasyonlari_listele "
                            "ile kombinasyon id'sini al."}
-        return _ham_fiyat_gizle(sonuc)
+        gorunum = _ham_fiyat_gizle(sonuc)
+        # Koleksiyonun YouTube tanıtım videosu varsa teklif ettir. Katalogda
+        # fotoğraf ayrı yoldan gidiyor ([gorsel:<SKU>]), burada yalnız video.
+        kol = (sonuc.get("koleksiyon") or {})
+        if kol.get("video_var"):
+            gorunum["medya_notu"] = _medya_notu("kol", kol["id"], 0, True)
+        return gorunum
     if ad == "parca_ara":
         # Tekil parça fiyatı: kayıtlarda yalnız fiyat_cumlesi var (ham rakam alanı yok).
         parcalar = menu_veri.urun_ara(str(argumanlar.get("q", "")))
@@ -483,18 +502,16 @@ def _tool_calistir(ad: str, argumanlar: dict,
             gorunum = _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",))
             araliklar = []
             for ham, gk in zip(kayitlar, gorunum):
-                # Fotoğraf talimatı BURADA veriliyor (sistem promptunda değil):
-                # id'yi ve kaç fotoğraf olduğunu ancak araç sonucu bilir. Canlı
-                # denemede (2026-08-02) model "Görseli gönderiyorum" deyip
-                # işareti KOYMADI — talimat rakamla birlikte gelmezse uygulamıyor.
-                if gk.get("fotograf_sayisi"):
-                    gk["fotograf_notu"] = (
-                        f"Bu üründe {gk['fotograf_sayisi']} mağaza fotoğrafı var. "
-                        f"Müşteri fotoğraf İSTEDİYSE cevabının EN SONUNA "
-                        f"[gorsel:teshir:{gk['id']}] yaz — fotoğrafı sen "
-                        f"gönderemezsin, bu işaret olmadan müşteriye hiçbir "
-                        f"görsel GİTMEZ. Henüz istemediyse yalnız "
-                        f"'Mağazadaki halinin fotoğrafını göndereyim mi?' diye SOR.")
+                # Medya talimatı BURADA veriliyor (sistem promptunda değil):
+                # id'yi, kaç fotoğraf olduğunu ve video bulunup bulunmadığını
+                # ancak araç sonucu bilir. Canlı denemede (2026-08-02) model
+                # "Görseli gönderiyorum" deyip işareti KOYMADI — talimat
+                # somut veriyle birlikte gelmezse uygulamıyor.
+                gk["medya_notu"] = _medya_notu(
+                    "teshir", gk["id"], gk.get("fotograf_sayisi") or 0,
+                    bool(gk.get("video_var")))
+                if not gk["medya_notu"]:
+                    gk.pop("medya_notu")
                 taban = ham.get("pazarlik_taban_fiyat")
                 perakende = ham.get("perakende_fiyat")
                 if taban:
@@ -736,33 +753,91 @@ def _davete_olumlu_mu(metin: str, platform: str, kullanici: str) -> bool:
     return False
 
 
-# Teşhir fotoğrafı teklifinin gönderilen metinde bıraktığı iz. Prompt bu
-# cümleyi aynen yazdırır; "göndereyim mi" çekirdeği yeterince ayırt edici.
-_FOTO_TEKLIF_IZI = "fotoğrafını göndereyim mi"
+# Cevapta medya işareti var mı — [gorsel:...] ya da [video:...]. Zorlamanın
+# ölçütü budur: işaret yoksa müşteriye hiçbir görsel/video GİTMEZ.
+# (router.GORSEL_ISARETI / VIDEO_ISARETI ile aynı işaretler; burada yalnız
+# "var mı" sorulduğu için gevşek kalıp yeterli ve router'a bağımlılık doğmaz.)
+_MEDYA_ISARETI = re.compile(r"\[(?:gorsel|video):", re.I)
+# Araç sonucundaki HAZIR işaretleri toplamak için (emniyet ağı — aşağıya bak).
+_MEDYA_ISARETLERI = re.compile(r"\[(?:gorsel|video):[A-Za-z0-9_.:-]{1,48}\]")
+
+
+def _medya_notu(tur: str, kid: int, fotograf: int, video: bool) -> str:
+    """Araç sonucuna eklenecek fotoğraf/video talimatı — TEK doğru kaynak.
+
+    Sistem promptu yalnız "medya_notu varsa ona uy" der; ne zaman sorulacağı ve
+    hangi işaretin konacağı BURADA, somut sayı/id ile yazılır. Sebep: modelin
+    bağlamında önceki araç sonuçları yok, id'yi ancak buradan öğrenebiliyor
+    (bkz. _medya_istegi_mi).
+
+    Fotoğraf ve video AYNI cümlede teklif edilir — iki ayrı soru sormak
+    konuşmayı uzatıyor ve botun en kırılgan yeri zaten ikinci tur.
+    """
+    if not fotograf and not video:
+        return ""
+    neler = []
+    if fotograf:
+        neler.append(f"{fotograf} fotoğraf")
+    if video:
+        neler.append("1 video")
+    isaretler = []
+    if fotograf:
+        isaretler.append(f"[gorsel:{tur}:{kid}]")
+    if video:
+        isaretler.append(f"[video:{tur}:{kid}]")
+    ne_sorulacak = ("fotoğrafını" if fotograf and not video else
+                    "videosunu" if video and not fotograf else
+                    "fotoğraf ve videosunu")
+    return (
+        f"Bu üründe {' + '.join(neler)} var. Müşteri İSTEDİYSE cevabının EN "
+        f"SONUNA {' '.join(isaretler)} yaz — medyayı sen gönderemezsin, bu "
+        f"işaret olmadan müşteriye hiçbir şey GİTMEZ. Henüz istemediyse yalnız "
+        f"'Mağazadaki halinin {ne_sorulacak} göndereyim mi?' diye SOR, işareti "
+        f"O CEVAPTA KOYMA.")
+
+
+# Medya teklifinin gönderilen metinde bıraktığı iz. Yalnız "göndereyim mi"
+# aramak YETMEZ — bot başka bağlamda da ("adresi göndereyim mi") kullanabilir ve
+# müşterinin "evet"i boşuna teşhir aramasına yol açardı. İkisi birden aranır.
+_MEDYA_TEKLIF_IZI = "göndereyim mi"
+_MEDYA_KELIMELERI = ("fotoğraf", "fotograf", "video", "görsel", "gorsel")
+
+
+def _medya_teklifi_mi(giden: str) -> bool:
+    d = (giden or "").lower()
+    return _MEDYA_TEKLIF_IZI in d and any(k in d for k in _MEDYA_KELIMELERI)
 # Teklife olumlu dönüş. Uzun cümle elenir (len sınırı): "evet ama önce fiyatı
 # söyleyin" gibi mesajlarda asıl istek fotoğraf değildir.
-_FOTO_ONAY_KELIMELERI = ("evet", "olur", "gonder", "gönder", "yolla", "tabi",
-                         "tamam", "isterim", "istiyorum", "lutfen", "lütfen",
-                         "gorebilir", "görebilir", "fotograf", "fotoğraf",
-                         "gorsel", "görsel", "at")
+# Eşleşme ALT DİZE bazlı (istenerek: "gonder" → "gönderin/gönderir misiniz").
+# Bu yüzden 4 harften kısa kelime KOYMA: "at" burada vardı ve "teslimAT",
+# "fiyAT", "saAT" içinde geçtiği için "peki teslimat kaç gün" mesajını medya
+# isteği sayıyordu (test yakaladı 2026-08-02). Aynı tuzak gozden_gecirme'de
+# 'rene' → 'öğRENEbilir' olarak da çıkmıştı.
+_MEDYA_ONAY_KELIMELERI = ("evet", "olur", "gonder", "gönder", "yolla", "tabi",
+                          "tamam", "isterim", "istiyorum", "lutfen", "lütfen",
+                          "gorebilir", "görebilir", "fotograf", "fotoğraf",
+                          "gorsel", "görsel", "video", "izle")
 
 
-def _foto_istegi_mi(metin: str, platform: str, kullanici: str) -> bool:
-    """Bot fotoğrafı teklif etti ve müşteri olumlu mu döndü?
+def _medya_istegi_mi(metin: str, platform: str, kullanici: str) -> bool:
+    """Bot fotoğraf/video teklif etti ve müşteri olumlu mu döndü?
 
     Neden bu kontrol var: bağlamda önceki araç sonuçları YOKTUR (her mesaj
-    aramayı sıfırdan yapar). İkinci turda model teşhir kaydının id'sini
-    bilmediği için teshir_bilgi'yi yeniden çağırması ŞART; canlı denemede
-    (2026-08-02) çağırmadı ve "Görseli gönderiyorum" deyip hiçbir şey
-    göndermedi. Bu işlev o anı yakalar, döngü modeli araca zorlar —
-    pazarlıktaki _davete_olumlu_mu ile birebir aynı desen.
+    aramayı sıfırdan yapar). İkinci turda model kaydın id'sini bilmediği için
+    ilgili aracı yeniden çağırması ŞART; canlı denemede (2026-08-02) çağırmadı
+    ve "Görseli gönderiyorum" deyip hiçbir şey göndermedi. Bu işlev o anı
+    yakalar, döngü modeli araca zorlar — pazarlıktaki _davete_olumlu_mu ile
+    birebir aynı desen.
+
+    Uzun cümle elenir (len sınırı): "evet ama önce teslimat kaç gün sürer"
+    gibi mesajlarda asıl istek medya değildir.
     """
     m = (metin or "").strip().lower()
-    if not m or len(m) > 40 or not any(k in m for k in _FOTO_ONAY_KELIMELERI):
+    if not m or len(m) > 40 or not any(k in m for k in _MEDYA_ONAY_KELIMELERI):
         return False
     for yon, mt in _son_mesajlar(platform, kullanici):
         if yon == "giden":                       # en yeni giden mesaj
-            return _FOTO_TEKLIF_IZI in (mt or "").lower()
+            return _medya_teklifi_mi(mt)
     return False
 
 
@@ -1076,9 +1151,10 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     # davete kısa olumlu dönüş ("olur", "evet" — menü akışından gelen müşteri).
     pazarlik_niyeti = _pazarlik_istegi_mi(metin) or _davete_olumlu_mu(
         metin, platform, kullanici)
-    # Az önce teklif edilen teşhir fotoğrafına olumlu dönüş (bkz. _foto_istegi_mi).
-    foto_niyeti = _foto_istegi_mi(metin, platform, kullanici)
-    foto_zorlandi = False              # araçsız fotoğraf cevabına tek zorlama hakkı
+    # Az önce teklif edilen fotoğraf/videoya olumlu dönüş (bkz. _medya_istegi_mi).
+    medya_niyeti = _medya_istegi_mi(metin, platform, kullanici)
+    medya_zorlandi = False             # işaretsiz medya cevabına tek zorlama hakkı
+    medya_yedegi = ""                  # araç sonucundan toplanan hazır işaret(ler)
 
     for _ in range(MAKS_TOOL_TURU):
         # Sayaç BURADA tutulur, cevapla()'da değil: bir müşteri mesajı bu
@@ -1120,21 +1196,23 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     "sonundaki ADIM DURUMU satırı ne diyorsa AYNEN onu yap — "
                     "teklif edilecek fiyat orada hazır yazıyor."})
                 continue
-            # Fotoğraf isteğine ARAÇSIZ cevap yasak: model teşhir kaydının
-            # id'sini ancak teshir_bilgi'den öğrenir. Canlıda (2026-08-02)
-            # araç çağırmadan "Görseli gönderiyorum" dedi ve müşteriye hiçbir
-            # fotoğraf gitmedi — pazarlıktaki zorlamayla aynı çare.
-            if (cevap and foto_niyeti and not arac_cagrildi
-                    and not foto_zorlandi):
-                foto_zorlandi = True
+            # Müşteri medya istedi ama cevapta İŞARET YOKSA hiçbir şey gitmez.
+            # Ölçüt "araç çağrıldı mı" DEĞİL "işaret var mı" (2026-08-02 canlı
+            # denemesi): model yanlış aracı çağırıp (kombinasyonlari_listele —
+            # medya_notu taşımaz) işaretsiz cevap verebiliyor; araç çağrıldığı
+            # için eski koşul zorlamayı atlıyordu ve video sessizce kayboluyordu.
+            if (cevap and medya_niyeti and not medya_zorlandi
+                    and not _MEDYA_ISARETI.search(cevap)):
+                medya_zorlandi = True
                 mesajlar.append({"role": "assistant", "content": cevap})
                 mesajlar.append({"role": "user", "content":
-                    "DUR: Müşteri az önce teklif ettiğin TEŞHİR FOTOĞRAFINI "
-                    "istedi. Konuşulan ürünün adıyla teshir_bilgi aracını "
-                    "ŞİMDİ çağır ve cevabının EN SONUNA araç sonucundaki "
-                    "fotograf_notu'nun söylediği [gorsel:teshir:<id>] işaretini "
-                    "yaz. Fotoğrafı sen gönderemezsin; işaret olmadan müşteriye "
-                    "hiçbir görsel GİTMEZ, 'gönderiyorum' demen yetmez."})
+                    "DUR: Müşteri az önce teklif ettiğin FOTOĞRAF/VİDEOYU "
+                    "istedi. Konuşulan ürün için ilgili aracı (teşhirse "
+                    "teshir_bilgi, katalog ürünüyse fiyat_detay) ŞİMDİ çağır ve "
+                    "cevabının EN SONUNA araç sonucundaki medya_notu'nun "
+                    "söylediği işareti AYNEN yaz. Medyayı sen gönderemezsin; "
+                    "işaret olmadan müşteriye hiçbir şey GİTMEZ, "
+                    "'gönderiyorum' demen yetmez."})
                 continue
             # Oyalama cevabı ("hemen kontrol ediyorum") = cevapsız müşteri:
             # bot tek atımlıktır, sonraki mesajı kendi gönderemez. Bir kez zorla.
@@ -1185,6 +1263,13 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 return None
             if not cevap:
                 return None
+            # EMNİYET AĞI: müşteri medya istedi, araç işareti hazır verdi ama
+            # model yine koymadıysa işareti BİZ ekleriz. Zorlama tek seferlik ve
+            # modelin uyacağı garanti değil (canlıda aynı akış bir koşuda
+            # çalışıp diğerinde çalışmadı, 2026-08-02). Uydurma riski YOK:
+            # işaret modelden değil, o turda çalışan aracın sonucundan geliyor.
+            if medya_niyeti and medya_yedegi and not _MEDYA_ISARETI.search(cevap):
+                cevap = f"{cevap} {medya_yedegi}"
             return cevap[:MAKS_CEVAP_KR]
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
@@ -1201,6 +1286,16 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             except Exception:
                 log.exception("ajan: araç hatası %s(%s)", tc.function.name, argumanlar)
                 sonuc = {"hata": "veri okunamadı"}
+            # Araç sonucundaki medya işaretlerini AKLIMIZDA TUT. Müşteri medya
+            # istediği hâlde model işareti koymazsa sonunda biz koyacağız —
+            # modele güvenmek yetmiyor: canlı denemede (2026-08-02) aynı akış
+            # bir koşuda işareti yazdı, diğerinde yazmadı ve video sessizce
+            # kayboldu. İşaretler zaten araç sonucunda hazır duruyor.
+            if medya_niyeti:
+                bulunan = _MEDYA_ISARETLERI.findall(
+                    json.dumps(sonuc, ensure_ascii=False, default=str))
+                if bulunan:
+                    medya_yedegi = " ".join(dict.fromkeys(bulunan))
             # Fiyat kalkanı yalnız BELİRLİ teşhir sorgusunda (kol/ad = fiyat+pazarlık
             # bağlamı) devre dışı kalsın. Argümansız isim listesinde fiyat yoktur;
             # kalkan açık kalsın ki model oraya rakam uydurursa yakalansın.

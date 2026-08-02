@@ -101,6 +101,25 @@ def _gorsel_ayikla(cevap: str) -> tuple[str, str | None]:
     return GORSEL_ISARETI.sub(" ", cevap).strip(), bulunan.group(1)
 
 
+# Video işareti: [video:teshir:<id>] ya da [video:kol:<id>]. Fotoğraftan AYRI
+# tutuluyor çünkü gönderim biçimi bambaşka — fotoğraf bir görsel mesajı olarak
+# gider, video ise ÖNİZLEMELİ METİN linki (YouTube; gerekçe catalog/services/
+# video.py'de). İkisi aynı cevapta olabilir: önce metin, sonra fotoğraflar,
+# en sonda video linki.
+VIDEO_ISARETI = re.compile(r"\s*\[video:\s*(teshir|kol)\s*:\s*(\d{1,12})\s*\]\s*")
+
+
+def _video_ayikla(cevap: str) -> tuple[str, str | None]:
+    """Cevaptan [video:tur:id] işaretini çıkar; (temiz metin, video adresi)."""
+    bulunan = VIDEO_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    temiz = VIDEO_ISARETI.sub(" ", cevap).strip()
+    from catalog.services import video as video_servis
+    tur = "teshir" if bulunan.group(1) == "teshir" else "koleksiyon"
+    return temiz, video_servis.video_var_mi(tur, int(bulunan.group(2)))
+
+
 def _gorsel_urlleri(kod: str) -> list[str]:
     """İşaretteki kodu gönderilecek fotoğraf adreslerine çevir.
 
@@ -135,20 +154,20 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     if not cevap:
         return None
     cevap, kod = _gorsel_ayikla(cevap)
-    if not cevap and not kod:           # işaret de yok, metin de yok
+    cevap, video_url = _video_ayikla(cevap)
+    if not cevap and not kod and not video_url:   # ne işaret ne metin
         return None
     if not cevap:
         # Model YALNIZ işareti yazdı — "evet gönderin" gibi kısa isteklerde
         # doğal davranış (canlıda görüldü 2026-08-02). Eskiden burada None
-        # dönülüyordu: fotoğraf da metin de gitmiyor, müşteri boş kalıyordu.
+        # dönülüyordu: medya da metin de gitmiyor, müşteri boş kalıyordu.
         cevap = "Buyurun, mağazadaki hâli 👇"
-    metin = P.metin_mesaji(cevap)
-    if not kod or not hasattr(P, "gorsel_mesaji"):
-        return metin
-    urller = _gorsel_urlleri(kod)
-    if not urller:
-        return metin
-    return [metin] + [P.gorsel_mesaji(u) for u in urller]
+    mesajlar = [P.metin_mesaji(cevap)]
+    if kod and hasattr(P, "gorsel_mesaji"):
+        mesajlar += [P.gorsel_mesaji(u) for u in _gorsel_urlleri(kod)]
+    if video_url and hasattr(P, "video_mesaji"):
+        mesajlar.append(P.video_mesaji(video_url))
+    return mesajlar if len(mesajlar) > 1 else mesajlar[0]
 
 
 def yanit_uret(tetik: str, P=_default_P, platform: str = "",

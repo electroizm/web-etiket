@@ -51,6 +51,8 @@ class Teshir(Base):
     # GİTMEZ, yalnız "kaç tane var" bilgisi gider; adresi router çözer.
     fotograflar: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    # YouTube videosu, kanonik biçim (0018). NULL = yok; bot bahsetmez.
+    video_url: Mapped[str | None] = mapped_column(Text)
     guncelleme: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

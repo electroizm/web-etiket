@@ -21,6 +21,16 @@ def metin_mesaji(govde: str) -> dict:
     return {"text": govde}
 
 
+def video_mesaji(url: str) -> dict:
+    """YouTube videosu — düz metin linki.
+
+    Instagram DM'de link önizlemesi Meta'nın kendi kararı; API'de açıp
+    kapatan bir alan YOK (WhatsApp'taki preview_url'in karşılığı yok).
+    Önizleme çıkmasa bile link tıklanabilir kalır.
+    """
+    return {"text": url}
+
+
 def gorsel_mesaji(url: str, altyazi: str = "") -> dict:
     """Ürün fotoğrafı. IG mesaj eki altyazı TAŞIMAZ — altyazı ayrı metin
     mesajı olarak gider (router fotoğrafı metnin ardına ekler)."""

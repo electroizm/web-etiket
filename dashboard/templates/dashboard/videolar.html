@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Videolar · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  <style>
+    /* Aydınlık tema — teşhir/bot bilgi sayfalarıyla aynı dil. */
+    .vd { max-width: 760px; margin: 0 auto; padding: 12px; color: #191c2e; }
+    .vd h2 { font-size: 1.05rem; margin: 18px 4px 10px; }
+    .vd-not { background: #e9f6f1; border: 1px solid #c4e8da; border-radius: 12px;
+              padding: 12px 14px; font-size: .85rem; line-height: 1.55; color: #1e3a30; }
+    .vd-not code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 5px; }
+
+    .vd-ara { display: flex; gap: 8px; margin: 14px 0 6px; }
+    .vd-ara input {
+      flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid #d5d9e0;
+      font-size: 15px; background: #fff; color: #191c2e; min-width: 0;
+    }
+    .vd-ara input:focus { outline: none; border-color: #00a884; }
+    .vd-btn { border: none; cursor: pointer; border-radius: 10px; padding: 10px 16px;
+              font-size: .85rem; font-weight: 700; min-height: 44px;
+              background: #eef1f5; color: #191c2e; }
+    .vd-btn--yesil { background: #00a884; color: #fff; }
+    .vd-btn--kirmizi { background: #fdecec; color: #b42323; }
+    .vd-btn:hover { filter: brightness(.96); }
+
+    .vd-kart { background: #fff; border: 1px solid #e4e6f0; border-radius: 14px;
+               padding: 12px; margin-bottom: 10px;
+               box-shadow: 0 1px 2px rgba(25,28,46,.05); }
+    .vd-kart__ust { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .vd-ad { font-weight: 800; font-size: .96rem; }
+    .vd-yol { font-size: .76rem; color: #6b7280; }
+    .vd-tur { font-size: 10px; font-weight: 700; letter-spacing: .04em;
+              text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+    .vd-tur--koleksiyon { background: rgba(59,130,246,.14); color: #1d4ed8; }
+    .vd-tur--teshir     { background: rgba(245,158,11,.16); color: #b45309; }
+
+    .vd-video { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+    .vd-video img { width: 120px; height: 68px; object-fit: cover; border-radius: 8px;
+                    border: 1px solid #e4e6f0; flex: 0 0 auto; }
+    .vd-video__bilgi { min-width: 0; font-size: .82rem; line-height: 1.45; }
+    .vd-video__bilgi a { color: #1d4ed8; word-break: break-all; }
+
+    .vd-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .vd-form input[type="url"], .vd-form input[type="text"] {
+      flex: 1; padding: 11px 13px; border-radius: 10px; border: 1px solid #d5d9e0;
+      font-size: 14px; background: #fff; color: #191c2e; min-width: 200px;
+    }
+    .vd-form input:focus { outline: none; border-color: #00a884; }
+    .vd-bos { text-align: center; color: #6b7280; font-size: .88rem; padding: 22px 10px; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="vd">
+  <h2>🎬 Videolar</h2>
+
+  <div class="vd-not">
+    Bir koleksiyona ya da teşhir kaydına <b>YouTube videosu</b> bağla. Müşteri o
+    ürünün fiyatını sorunca bot <b>“videosunu göndereyim mi?”</b> diye sorar ve
+    isteyince linki yollar.<br>
+    YouTube'da videoyu aç → <b>Paylaş</b> → linki kopyala → buraya yapıştır.
+    <code>shorts</code>, <code>youtu.be</code> ve normal adres — hepsi olur.
+    <br><b>Video “Herkese açık” ya da “Liste dışı” olmalı;</b> gizli videoyu
+    müşteri açamaz, sistem de kabul etmez.
+  </div>
+
+  {% if mesaj %}<div class="vd-not" style="background:#fff9ec;border-color:#f0c36d;color:#7a4b00">{{ mesaj }}</div>{% endif %}
+  {% if hata %}<div class="vd-not" style="background:#fdecec;border-color:#f5b5b5;color:#b42323">{{ hata }}</div>{% endif %}
+
+  <form method="get" class="vd-ara">
+    <input type="text" name="ara" value="{{ ara }}" placeholder="Koleksiyon ya da teşhir ara — örn. bend"
+           autocomplete="off">
+    <button type="submit" class="vd-btn">Ara</button>
+  </form>
+
+  {% if ara %}
+    <h2>“{{ ara }}” sonuçları</h2>
+    {% if not kayitlar %}
+      <p class="vd-bos">Eşleşen koleksiyon ya da teşhir yok.</p>
+    {% endif %}
+  {% else %}
+    <h2>Videosu olanlar ({{ kayitlar|length }})</h2>
+    {% if not kayitlar %}
+      <p class="vd-bos">Henüz hiçbir kayda video bağlanmamış.<br>
+        Yukarıdan ürün ara ve linki yapıştır.</p>
+    {% endif %}
+  {% endif %}
+
+  {% for k in kayitlar %}
+    <article class="vd-kart">
+      <div class="vd-kart__ust">
+        <span class="vd-ad">{{ k.ad }}</span>
+        {% if k.kategori %}<span class="vd-yol">› {{ k.kategori }}</span>{% endif %}
+        <span class="vd-tur vd-tur--{{ k.tur }}">{{ k.tur }}</span>
+      </div>
+
+      {% if k.video_url %}
+        <div class="vd-video">
+          <a href="{{ k.video_url }}" target="_blank" rel="noopener">
+            <img src="{{ k.kucuk_resim }}" alt="Video küçük resmi" loading="lazy">
+          </a>
+          {% comment %}
+            Video BAŞLIĞI burada gösterilmiyor: başlığı almak YouTube'a ayrı bir
+            istek demek ve liste render'ında N istek sayfayı saniyelerce
+            bekletir (Render ücretsiz katmanı zaten yavaş uyanıyor). Küçük resim
+            videonun kendi karesi — tanımaya yeter. Başlık, video bağlanırken
+            doğrulama mesajında gösteriliyor.
+          {% endcomment %}
+          <div class="vd-video__bilgi">
+            <a href="{{ k.video_url }}" target="_blank" rel="noopener">{{ k.video_url }}</a>
+          </div>
+        </div>
+        <form method="post" class="vd-form"
+              onsubmit="return confirm('Video bu kayıttan kaldırılsın mı? (YouTube’daki video silinmez)');">
+          {% csrf_token %}
+          <input type="hidden" name="islem" value="kaldir">
+          <input type="hidden" name="tur" value="{{ k.tur }}">
+          <input type="hidden" name="id" value="{{ k.id }}">
+          <button type="submit" class="vd-btn vd-btn--kirmizi">Videoyu kaldır</button>
+        </form>
+      {% else %}
+        <form method="post" class="vd-form">
+          {% csrf_token %}
+          <input type="hidden" name="islem" value="ata">
+          <input type="hidden" name="tur" value="{{ k.tur }}">
+          <input type="hidden" name="id" value="{{ k.id }}">
+          <input type="url" name="url" placeholder="YouTube linkini yapıştır" required>
+          <button type="submit" class="vd-btn vd-btn--yesil">Bağla</button>
+        </form>
+      {% endif %}
+    </article>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -82,6 +82,7 @@ def _coz(session, t: Teshir) -> dict:
         "ham_koleksiyon_adi": t.koleksiyon_adi or "",
         "notlar": t.notlar or "",
         "fotograflar": list(t.fotograflar or []),
+        "video_url": t.video_url or "",
         "guncelleme": t.guncelleme,
     }
 
@@ -197,10 +198,11 @@ def ajan_icin(koleksiyon_id: int | None = None,
                 "liste_fiyat": d["liste_fiyat"],
                 "perakende_fiyat": d["perakende_fiyat"],
                 "para_birimi": "TL",
-                # Yalnız SAYI gider, URL DEĞİL — adresi router çözer. Model uzun
-                # bir CDN adresini kopyalarken bozabilir (ürün fotoğrafında da
-                # aynı sebeple SKU verilmişti, İsmail kararı 2026-07-28).
+                # Yalnız SAYI/VAR-YOK gider, URL DEĞİL — adresi router çözer.
+                # Model uzun bir adresi kopyalarken bozabilir (ürün fotoğrafında
+                # da aynı sebeple SKU verilmişti, İsmail kararı 2026-07-28).
                 "fotograf_sayisi": len(d["fotograflar"]),
+                "video_var": bool(d["video_url"]),
             }
             cumle = menu_veri.fiyat_cumlesi(d["liste_fiyat"], d["perakende_fiyat"])
             if cumle:

@@ -1,7 +1,8 @@
 """Kategori → Koleksiyon hiyerarşisi + KategoriKurali (filtre/duplikasyon)."""
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (Boolean, DateTime, ForeignKey, Integer, String, Text,
+                        UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from catalog.database import Base
@@ -50,6 +51,10 @@ class Koleksiyon(Base):
     )
     bayrak_exc: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     bayrak_sube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # YouTube tanıtım videosu, kanonik biçim (0018 migration). NULL = video yok
+    # ve bot videodan HİÇ bahsetmez. Panelde /app/videolar/ sayfasından girilir.
+    video_url: Mapped[str | None] = mapped_column(Text)
 
     # Mağaza bazlı son etiket yazdırma zamanı (0013 migration).
     # NULL = bu mağaza için hiç yazdırılmadı. Etiket Yazdır ekranının

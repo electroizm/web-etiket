@@ -2197,6 +2197,54 @@ def _pencere_durumu(platform: str, kullanici: str) -> dict:
 
 
 @login_required_supabase
+def videolar(request):
+    """Koleksiyon/teşhir kayıtlarına YouTube videosu bağlama sayfası.
+
+    Neden ayrı sayfa: koleksiyonlar kategori sayfasında TABLO hâlinde duruyor ve
+    262 tane var; oraya alan koymak hem dar hem de kategori kategori gezmeyi
+    gerektirirdi. Burada tek arama kutusundan ("bend") hem koleksiyon hem teşhir
+    kayıtları çıkar. Arama Türkçe karakter duyarsızdır (menu_veri._ad_gibi).
+
+    Video DOSYASI yüklenmez, YouTube LİNKİ bağlanır — gerekçe
+    catalog/services/video.py modül açıklamasında.
+    """
+    from catalog.services import video as video_servis
+
+    mesaj = hata = ""
+    if request.method == "POST":
+        islem = (request.POST.get("islem") or "").strip()
+        tur = (request.POST.get("tur") or "").strip()
+        ham_id = (request.POST.get("id") or "").strip()
+        try:
+            if not ham_id.isdigit():
+                raise video_servis.VideoHatasi("Kayıt seçilmedi.")
+            if islem == "ata":
+                bilgi = video_servis.ata(tur, int(ham_id),
+                                         request.POST.get("url") or "")
+                mesaj = f"Video bağlandı: “{bilgi['baslik'] or bilgi['url']}”"
+                if bilgi.get("kanal"):
+                    mesaj += f" ({bilgi['kanal']})"
+                if bilgi.get("hata"):
+                    # Ağ hatası yüzünden doğrulanamadı ama link biçimi geçerli.
+                    mesaj += " — YouTube'a ulaşılamadığı için başlık doğrulanamadı."
+            elif islem == "kaldir":
+                if not video_servis.kaldir(tur, int(ham_id)):
+                    raise video_servis.VideoHatasi("Bu kayıtta video yok.")
+                mesaj = "Video kaldırıldı."
+        except video_servis.VideoHatasi as e:
+            hata = str(e)
+        except Exception as e:                       # beklenmedik — sayfa düşmesin
+            logging.getLogger(__name__).exception("video islemi basarisiz")
+            hata = f"İşlem başarısız: {e}"
+
+    ara = (request.GET.get("ara") or "").strip()[:100]
+    kayitlar = video_servis.ara(ara) if ara else video_servis.videolu()
+    return render(request, "dashboard/videolar.html", {
+        "kayitlar": kayitlar, "ara": ara, "mesaj": mesaj, "hata": hata,
+    })
+
+
+@login_required_supabase
 def bot_gozden_gecirme(request):
     """Gözden geçirme — botun tökezlediği anlar (kural tabanlı, LLM yok).
 

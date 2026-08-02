@@ -178,7 +178,9 @@ def kombinasyonlar(koleksiyon_id: int, toptan_dahil: bool = False) -> dict | Non
         kombi_list = kombinasyon_listele(session, koleksiyon_id)
         data = [{"id": k.id, "ad": k.ad, **_toplam_ozet(k, toptan_dahil)}
                 for k in kombi_list]
-        return {"koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad}, "kombinasyonlar": data}
+        return {"koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad,
+                               "video_var": bool(koleksiyon.video_url)},
+                "kombinasyonlar": data}
     finally:
         session.close()
 
@@ -591,8 +593,12 @@ def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
             "ad": kombi.ad,
             # kategori adı: menü detay başlığı "BEND Oturma Grubu için ..."
             # (wa/ig_presenter.kombinasyon_detay_mesaji) için gerekli.
+            # video_var: koleksiyonun YouTube tanıtım videosu var mı. Yalnız
+            # VAR/YOK gider, adres DEĞİL — linki router çözer (ajan.py'deki
+            # medya notu [video:kol:<id>] işaretini bu id ile kurdurur).
             "koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad,
-                           "kategori": kategori.ad if kategori else None}
+                           "kategori": kategori.ad if kategori else None,
+                           "video_var": bool(koleksiyon.video_url)}
                           if koleksiyon else None,
             # pazarlik=True: fiyat_detay tekil bağlamdır — pazarlık merdiveni
             # yalnız burada gelir (listede N ayrı merdiven modeli karıştırırdı).
