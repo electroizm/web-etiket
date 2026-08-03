@@ -37,6 +37,20 @@ log = logging.getLogger("bot.ajan")
 MAKS_TOOL_TURU = 8
 MAKS_CEVAP_KR = 900     # WA/IG'de rahat okunur üst sınır (tek mesaj)
 
+# Model başına çıktı token bütçesi. 600'dü ve MÜŞTERİYE YARIM CÜMLE GİDİYORDU:
+# zincirin 1. halkası (gemini-flash-latest = Gemini 3.6 Flash) DÜŞÜNEN bir
+# model ve düşünme tokenları bu bütçeden yeniyor. Ölçüm (2026-08-03):
+# 129 çıktı tokenının 110'u DÜŞÜNME — cevaba ~19 token kalıyor.
+# Canlı sonuç: cevaplar 47 / 52 / 111 / 250 karakterde, kelime ortasında
+# kesildi ("Liste Fiyatı: 111.084" diye bitti), sonraki turda model kendi
+# kesik mesajını görüp "bir sistem aksaklığı yaşandı" dedi.
+# Ücretsiz Gemini kotası İSTEK başına sayılır (token başına değil), yani
+# bütçeyi büyütmek kotaya MAL OLMAZ. Cevap uzunluğu zaten MAKS_CEVAP_KR ile
+# sınırlı; buradaki bütçe yalnız "düşünme + yazma" için tavan.
+MAKS_TOKEN = 2000
+# İlk deneme yine de yetmezse (uzun düşünen tur) tek seferlik geniş bütçe.
+MAKS_TOKEN_GENIS = 4000
+
 # Son ajan hatası — Render loguna erişim olmadan teşhis için /saglik'ta gösterilir.
 SON_HATA: str | None = None
 
@@ -722,7 +736,12 @@ _PAZARLIK_ISTEK_KALIPLARI = ("indirim", "pazarl", "son fiy", "olmaz mı", "olmaz
                              "kaça olur", "kaca olur", "kaça verirsin", "ucuz",
                              "bırak", "birak", "son ne", "en son", "son kaç",
                              "son kac", "net fiyat", "netini", "kaç yapar",
-                             "kac yapar", "en aşağı", "en asagi", "son teklif")
+                             "kac yapar", "en aşağı", "en asagi", "son teklif",
+                             # Canlı konuşmalarda görülen ama kaçan kalıplar
+                             # (2026-08-03 taraması):
+                             "daha uygun", "esneklik", "net kaç", "net kac",
+                             "iyileştir", "iyilestir", "eksiltir", "kırar",
+                             "kirar", "alt tarafı", "alt tarafi")
 
 
 def _pazarlik_istegi_mi(metin: str) -> bool:
@@ -760,6 +779,94 @@ def _davete_olumlu_mu(metin: str, platform: str, kullanici: str) -> bool:
 _MEDYA_ISARETI = re.compile(r"\[(?:gorsel|video):", re.I)
 # Araç sonucundaki HAZIR işaretleri toplamak için (emniyet ağı — aşağıya bak).
 _MEDYA_ISARETLERI = re.compile(r"\[(?:gorsel|video):[A-Za-z0-9_.:-]{1,48}\]")
+
+
+# Botun "elimizde yok" dediğini ele veren kalıplar (gozden_gecirme ile aynı).
+_YOK_KALIPLARI = ("bulunmuyor", "bulunamadı", "mevcut değil", "kayıtlı değil",
+                  "yer almıyor", "sistemimizde yok")
+
+
+# "Liste Fiyatı: X / İndirim: Y / İndirimli Fiyat: Z" bloğu. X−Y=Z tutmalı.
+_BLOK_KALIBI = re.compile(
+    r"Liste Fiyat[ıi]\s*:\s*([\d.\s]+)\s*TL\s*\n\s*İndirim\s*:\s*([\d.\s]+)\s*TL"
+    r"\s*\n\s*İndirimli Fiyat\s*:\s*([\d.\s]+)\s*TL", re.IGNORECASE)
+
+
+def _tutarsiz_blogu_sadelestir(cevap: str) -> str:
+    """Aritmetiği TUTMAYAN liste/indirim bloğunu tek satıra indir.
+
+    Canlı vaka (2026-08-03): model pazarlık fiyatını "İndirimli Fiyat"
+    satırına yazdı; blok 70.894 − 13.471 = 57.423 demesi gerekirken 54.800
+    diyordu. Müşteri toplama yapınca tutmuyor — fiyat güveni zedeleniyor.
+
+    Rakamlara DOKUNULMAZ: yalnız yanıltıcı "Liste/İndirim" satırları atılır,
+    modelin verdiği fiyat olduğu gibi kalır (fiyat kalkanı onu zaten meşru
+    saydı). Blok tutarlıysa hiçbir şey değişmez.
+    """
+    def _sayi(s: str) -> int:
+        return int(re.sub(r"[.\s]", "", s or "0") or 0)
+
+    def duzelt(m: re.Match) -> str:
+        liste, indirim, son = (_sayi(m.group(i)) for i in (1, 2, 3))
+        if liste - indirim == son:
+            return m.group(0)               # tutarlı — dokunma
+        return f"Size özel fiyatımız: {menu_veri._tl(son)}"
+
+    return _BLOK_KALIBI.sub(duzelt, cevap or "")
+
+
+def _yok_diyor_mu(cevap: str) -> bool:
+    d = (cevap or "").lower()
+    return any(k in d for k in _YOK_KALIPLARI)
+
+
+def _teshirde_var_mi(musteri_metni: str) -> bool:
+    """Müşterinin yazdığı ad MAĞAZA TEŞHİRİNDE var mı?
+
+    Katalogda olmayan ama teşhirde duran ürünler var (DIAMOND gibi). Bot
+    teşhire bakmadan "yok" derse satılabilir mal yok sayılmış olur.
+    """
+    try:
+        from catalog.services import teshir as teshir_servis
+        return bool(teshir_servis.ajan_icin(ad=musteri_metni))
+    except Exception:
+        log.exception("ajan: teshir kontrolu basarisiz")
+        return False
+
+
+def _kesigi_toparla(cevap: str) -> str:
+    """Token bütçesi bitince yarım kalan cevabı TAM satırlara kırp.
+
+    Geniş bütçeyle tekrar denemek bile yetmediyse son çare. Bot cevapları
+    satır tabanlı fiyat bloklarıdır ("İndirimli Fiyat: 57.423 TL"); yarım
+    kalan SON satırı atmak, müşteriye "Liste Fiyatı: 111.084" gibi askıda bir
+    rakam göndermekten iyidir — askıda rakam yanlış fiyat izlenimi verir.
+
+    Hiç tam satır kalmazsa boş döner; çağıran metin fallback'ine düşer.
+    """
+    satirlar = [s for s in (cevap or "").split("\n")]
+    if len(satirlar) > 1:
+        satirlar = satirlar[:-1]        # son satır yarım
+        # Fiyatsız ÜRÜN BAŞLIĞI askıda kalmasın: "VERMONT Konsol, Açılır"
+        # diye biten cevap, müşteriye fiyatı unutulmuş bir ürün gösterir.
+        # Sona doğru, ya TL taşıyan ya da cümle bitiren satıra kadar sar.
+        while satirlar:
+            son = satirlar[-1].strip()
+            if not son:                       # boş satır — at
+                satirlar.pop()
+                continue
+            if "TL" in son or son.endswith((".", "!", "?", "😊", ":")):
+                break
+            satirlar.pop()
+    temiz = "\n".join(satirlar).rstrip()
+    # Tek satırlık cevapta cümle sonuna kadar geri sar.
+    if "\n" not in temiz:
+        for isaret in (". ", "! ", "? ", ".", "!", "?"):
+            yer = temiz.rfind(isaret)
+            if yer > 20:
+                return temiz[:yer + len(isaret)].strip()
+        return ""                        # anlamlı parça kalmadı
+    return temiz
 
 
 def _medya_notu(tur: str, kid: int, fotograf: int, video: bool) -> str:
@@ -1155,6 +1262,9 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     medya_niyeti = _medya_istegi_mi(metin, platform, kullanici)
     medya_zorlandi = False             # işaretsiz medya cevabına tek zorlama hakkı
     medya_yedegi = ""                  # araç sonucundan toplanan hazır işaret(ler)
+    butce_genis = False                # token bütçesi bitince tek seferlik büyütme
+    teshir_bakildi = False             # bu istekte teshir_bilgi ÇAĞRILDI mı
+    teshir_zorlandi = False            # "yok" cevabına tek zorlama hakkı
 
     for _ in range(MAKS_TOOL_TURU):
         # Sayaç BURADA tutulur, cevapla()'da değil: bir müşteri mesajı bu
@@ -1167,8 +1277,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 model=model,
                 messages=mesajlar,
                 tools=TOOLS,
-                max_tokens=600,
-                timeout=15,
+                max_tokens=MAKS_TOKEN if not butce_genis else MAKS_TOKEN_GENIS,
+                timeout=25,
             )
         except Exception as e:
             _sayac(model, "kota" if _kota_mu(e) else "hata")
@@ -1177,9 +1287,22 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
         _sayac(model, "basari" if (secim.content
                                    or getattr(secim, "tool_calls", None))
                else "bos")
+        # Token bütçesi bitti mi? Bitmişse cevap CÜMLE ORTASINDA kesilmiştir.
+        bitti = getattr(yanit.choices[0], "finish_reason", "") == "length"
 
         if not getattr(secim, "tool_calls", None):
             cevap = (secim.content or "").strip()
+            # Token bütçesi bittiyse cevap YARIM. Müşteriye yarım cümle
+            # göndermek en kötüsü: hem anlamsız, hem sonraki turda model kendi
+            # kesik mesajını görüp "sistem aksaklığı" diye özür diliyor.
+            # Önce bütçeyi büyütüp BİR KEZ tekrar dene.
+            if bitti and not butce_genis:
+                butce_genis = True
+                log.warning("ajan: token butcesi bitti (cevap kesik), "
+                            "genis butceyle tekrar deneniyor")
+                continue
+            if bitti and cevap:
+                cevap = _kesigi_toparla(cevap)
             # Pazarlık isteğine ARAÇSIZ cevap yasak: geçmişteki (redakte) ret
             # cevapları modeli araç çağırmadan "indirim yapamıyorum" demeye
             # itiyor (canlıda görüldü) — merdivende adım varken pazarlık ölüyor.
@@ -1214,6 +1337,21 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     "işaret olmadan müşteriye hiçbir şey GİTMEZ, "
                     "'gönderiyorum' demen yetmez."})
                 continue
+            # "Yok" demeden ÖNCE teşhire bakılmış olmalı. Canlı vaka
+            # (02.08): "DIAMOND TV ÜNİTES fiyat nedir" → "Mağazamızda Diamond
+            # adında bir TV ünitesi bulunmuyor". DIAMOND katalogda gerçekten
+            # yok AMA teşhirde var — bot teshir_bilgi'yi hiç çağırmamıştı ve
+            # satılabilir malı yok saydı. Prompt bunu zaten söylüyor ("SON
+            # ÇARE"), model uymuyor; deterministik kontrol şart.
+            if (cevap and not teshir_bakildi and not teshir_zorlandi
+                    and _yok_diyor_mu(cevap) and _teshirde_var_mi(metin)):
+                teshir_zorlandi = True
+                mesajlar.append({"role": "assistant", "content": cevap})
+                mesajlar.append({"role": "user", "content":
+                    "DUR: 'bulunmuyor' demeden ÖNCE teshir_bilgi aracını "
+                    "müşterinin yazdığı ürün adıyla çağır — bu ürün MAĞAZA "
+                    "TEŞHİRİNDE olabilir. Teşhirde de yoksa o zaman yok de."})
+                continue
             # Oyalama cevabı ("hemen kontrol ediyorum") = cevapsız müşteri:
             # bot tek atımlıktır, sonraki mesajı kendi gönderemez. Bir kez zorla.
             if cevap and not oyalama_zorlandi and _oyalama_mi(cevap):
@@ -1227,8 +1365,9 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     "'yetkili' yazmasını öner."})
                 continue
             if cevap:
-                cevap = _davet_yeri_duzelt(_sistem_sozu_temizle(
-                    _pazarlik_kalkani(cevap, teshir_cagrildi, legit=legit_fiyatlar)))
+                cevap = _tutarsiz_blogu_sadelestir(_davet_yeri_duzelt(
+                    _sistem_sozu_temizle(_pazarlik_kalkani(
+                        cevap, teshir_cagrildi, legit=legit_fiyatlar))))
             # Fiyat kalkanı (teşhir DAHİL, artık her zaman açık): cevaptaki bir TL
             # tutarı ne araçların döndürdüğü gerçek fiyat, ne müşterinin yazdığı
             # tutar, ne de bir teşhir pazarlık aralığı [taban, İndirimli] içindeyse
@@ -1299,6 +1438,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # Fiyat kalkanı yalnız BELİRLİ teşhir sorgusunda (kol/ad = fiyat+pazarlık
             # bağlamı) devre dışı kalsın. Argümansız isim listesinde fiyat yoktur;
             # kalkan açık kalsın ki model oraya rakam uydurursa yakalansın.
+            if tc.function.name == "teshir_bilgi":
+                teshir_bakildi = True
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True

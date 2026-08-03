@@ -230,6 +230,13 @@ def olaylar(gun_sayisi: int = 7) -> list[dict]:
         for i, m in enumerate(msjlar):
             if m.yon != "giden":
                 continue
+            # Medya mesajı bir CEVAP değil, metnin EKİDİR. Fotoğraf gönderilen
+            # her turda "[fotoğraf]" ayrı satır olarak kaydediliyor ve fiyat
+            # içermediği için "pazarlık isteğine fiyat verilmedi" sanılıyordu —
+            # oysa fiyat bir önceki metin mesajında verilmişti (canlı yanlış
+            # alarm, 02.08).
+            if (m.metin or "").strip() in ("[fotoğraf]", "[görsel]", "[video]"):
+                continue
             # Bu cevaptan ÖNCEKİ gerçek müşteri sorusu
             soru_msj = next((x for x in reversed(msjlar[:i])
                              if x.yon == "gelen" and _musteri_sorusu_mu(x.metin)),

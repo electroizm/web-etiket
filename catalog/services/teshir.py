@@ -230,7 +230,48 @@ def ajan_icin(koleksiyon_id: int | None = None,
                             and any(len(t) >= 3 for t in ad_tokenlari))
                     if ileri or geri:
                         secilen.append(k)
-                sonuc = secilen
+                # (c) KATEGORİ ayıklaması. Aynı seri adı birden çok kategoride
+                #     teşhirde olabiliyor: LEA hem Yatak Odası hem Yemek Odası
+                #     hem Tv Ünitesi. Üçü de "LEA" adıyla döndüğü için model
+                #     ayırt edemiyordu — canlıda müşteri "Lea YATAK ODASI
+                #     Takımı" sordu, bota Oturma Grubu fiyatı verdirtti
+                #     (02.08, Esra). Müşteri kategoriyi SÖYLEDİYSE ona indir.
+                kategorili = [k for k in secilen
+                              if _kategori_geciyor_mu(k.get("kategori"), istek_kume)]
+                sonuc = kategorili or secilen
         return sonuc
     finally:
         session.close()
+
+
+# Müşterinin kategoriyi söylerken kullandığı kelimeler ↔ katalog kategorisi.
+# "yatak odası takımı" → Yatak Odası. Tek kelime yeter ("yatak", "tv").
+_KATEGORI_IPUCLARI = {
+    "yatak odasi": ("yatak",),
+    "yemek odasi": ("yemek",),
+    "oturma grubu": ("oturma", "koltuk", "kanepe", "berjer"),
+    "tv uniteleri": ("tv", "unite", "unitesi"),
+    "dogtas genc ve cocuk odasi": ("genc", "cocuk"),
+}
+# Kategori adlarında ORTAK geçen, hiçbir şeyi AYIRT ETMEYEN kelimeler.
+# "odasi" hem Yatak Odası'nda hem Yemek Odası'nda var: müşteri "yatak odası"
+# dediğinde "odasi" yüzünden Yemek Odası da eşleşiyordu.
+_KATEGORI_JENERIK = frozenset((
+    "odasi", "oda", "grubu", "grup", "takimi", "takim", "uniteleri",
+    "urunleri", "seti", "dogtas", "genc",
+))
+
+
+def _kategori_geciyor_mu(kategori: str | None, istek_kume: set[str]) -> bool:
+    """Müşterinin cümlesi bu kategoriyi işaret ediyor mu?"""
+    from catalog.services import menu_veri      # geç import: döngüsel bağı kır
+
+    if not kategori:
+        return False
+    duz = menu_veri._duz(kategori)
+    ipuclari = set(_KATEGORI_IPUCLARI.get(duz, ()))
+    # Haritada olmayan kategoriler için ad kelimelerine düş — ama JENERİK
+    # olanları AT, yoksa "odasi" iki kategoriyi birden eşleştirir.
+    ipuclari.update(t for t in duz.split()
+                    if len(t) >= 3 and t not in _KATEGORI_JENERIK)
+    return bool(ipuclari & istek_kume)

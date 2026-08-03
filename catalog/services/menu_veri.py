@@ -98,7 +98,15 @@ def _pazarlik_notu(ad: str, merdiven: list[int]) -> str:
             f"{adimlar}. Sırayı bozma, adım atlama, rakam değiştirme. "
             f"{_tl(merdiven[-1])} SON fiyattır — altına ASLA inme; müşteri daha "
             f"düşük isterse kibarca son fiyatın bu olduğunu söyle, mağazaya davet "
-            f"et. Sen rakam uydurma, yalnız bu merdivendeki fiyatları kullan.")
+            f"et. Sen rakam uydurma, yalnız bu merdivendeki fiyatları kullan. "
+            # BİÇİM kuralı: canlıda (2026-08-03) model pazarlık fiyatını
+            # "İndirimli Fiyat" satırına yazdı ve blok tutarsız kaldı
+            # (70.894 − 13.471 = 57.423, ama satırda 54.800 yazıyordu).
+            # Müşteri hesabı yapınca yanlış/oyun gibi görünüyor.
+            f"BİÇİM: pazarlık fiyatını verirken 'Liste Fiyatı/İndirim/İndirimli "
+            f"Fiyat' bloğunu TEKRAR YAZMA — o blok liste indirimidir, pazarlık "
+            f"değil. Yalnız TEK satır yaz: 'Size özel fiyatımız: <tutar> TL'. "
+            f"Pazarlık teklifi verdiğin cevapta müşteriyi 'yetkili'ye YÖNLENDİRME.")
 
 
 def _toplam_ozet(kombi, toptan_dahil: bool = False, pazarlik: bool = False) -> dict:
