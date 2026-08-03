@@ -11,6 +11,18 @@ from catalog.sa_models import BotMesaj
 
 log = logging.getLogger("bot.kayit")
 
+# Panelin "Deneme" sayfası bu kullanıcı adıyla yazar. Mesajlar bot_mesaj'a
+# GERÇEKTEN kaydedilir — yoksa ajan geçmişi göremez ve pazarlık adımı /
+# fotoğraf teklifi gibi ÇOK TURLU davranışlar denenemez (ikisi de giden
+# mesajlardan okunuyor). Ama bu kayıtlar MÜŞTERİ DEĞİLDİR: konuşma listesi,
+# gözden geçirme, fırsat defteri ve sabah özeti bunları DIŞARIDA bırakır,
+# yoksa İsmail'in kendi denemeleri "cevapsız müşteri" diye raporlanır.
+DENEME_KULLANICI = "panel-deneme"
+
+
+def deneme_mi(kullanici: str) -> bool:
+    return (kullanici or "") == DENEME_KULLANICI
+
 
 def kaydet(platform: str, kullanici: str, yon: str, metin: str) -> None:
     """Tek bir mesajı kaydet (yon: 'gelen' | 'giden')."""

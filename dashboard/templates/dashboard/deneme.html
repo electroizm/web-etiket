@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Deneme · Etiket Studio{% endblock %}
+
+{% block head_extra %}
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+  <style>
+    /* WhatsApp benzeri sohbet görünümü — İsmail ne göreceğini birebir görsün. */
+    .dn { max-width: 760px; margin: 0 auto; padding: 12px; color: #191c2e; }
+    .dn h2 { font-size: 1.05rem; margin: 18px 4px 10px; }
+    .dn-not { background: #e9f6f1; border: 1px solid #c4e8da; border-radius: 12px;
+              padding: 12px 14px; font-size: .85rem; line-height: 1.55; color: #1e3a30; }
+    .dn-uyari { background: #fff9ec; border-color: #f0c36d; color: #7a4b00; }
+
+    .dn-sohbet { background: #e5ddd5; border-radius: 14px; padding: 12px;
+                 margin: 12px 0; min-height: 80px; }
+    .dn-balon { max-width: 82%; padding: 8px 11px; border-radius: 10px;
+                margin-bottom: 8px; font-size: .9rem; line-height: 1.45;
+                white-space: pre-wrap; word-break: break-word;
+                box-shadow: 0 1px 1px rgba(0,0,0,.12); }
+    .dn-balon--musteri { background: #d9fdd3; margin-left: auto; }
+    .dn-balon--bot     { background: #fff; }
+    .dn-balon img { max-width: 100%; border-radius: 8px; display: block; }
+    .dn-etiket { font-size: 10px; font-weight: 700; text-transform: uppercase;
+                 letter-spacing: .04em; opacity: .45; margin-bottom: 3px; }
+
+    .dn-form { display: flex; gap: 8px; margin-top: 12px; }
+    .dn-form input[type="text"] {
+      flex: 1; padding: 12px 14px; border-radius: 10px; border: 1px solid #d5d9e0;
+      font-size: 15px; background: #fff; color: #191c2e; min-width: 0;
+    }
+    .dn-form input:focus { outline: none; border-color: #00a884; }
+    .dn-btn { border: none; cursor: pointer; border-radius: 10px; padding: 10px 18px;
+              font-size: .88rem; font-weight: 700; min-height: 46px;
+              background: #00a884; color: #fff; }
+    .dn-btn--gri { background: #eef1f5; color: #191c2e; }
+    .dn-btn:hover { filter: brightness(.96); }
+    .dn-ops { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+              margin-top: 10px; }
+
+    .dn-tani { background: #fff; border: 1px solid #e4e6f0; border-radius: 12px;
+               padding: 10px 12px; margin-top: 12px; font-size: .8rem;
+               line-height: 1.5; color: #475569; }
+    .dn-tani b { color: #191c2e; }
+    .dn-tani code { background: #f1f5f9; padding: 1px 5px; border-radius: 5px; }
+    .dn-hata { background: #fdecec; border-color: #f5b5b5; color: #b42323; }
+
+    .dn-ornek { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .dn-ornek button { border: 1px solid #d5d9e0; background: #fff; cursor: pointer;
+                       border-radius: 999px; padding: 6px 12px; font-size: .78rem;
+                       color: #334155; }
+    .dn-ornek button:hover { border-color: #00a884; color: #00a884; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="dn">
+  <h2>🧪 Deneme</h2>
+
+  <div class="dn-not">
+    Bota buradan mesaj yaz, <b>müşteriye ne gideceğini</b> aynen gör — fotoğraf ve
+    video dahil. Gerçek müşterilere <b>hiçbir şey gönderilmez</b> ve
+    <b>Konuşmalar sayfası kirlenmez</b>; bu sohbet yalnız sana ait.
+  </div>
+  <div class="dn-not dn-uyari">
+    ⚠️ Her deneme <b>gerçek yapay zekâ kotası</b> harcar (bir mesaj ortalama 2-3
+    istek). Kalan hakkını <a href="{% url 'dashboard:bot_kota' %}">Kota</a>
+    sayfasından görebilirsin.
+  </div>
+
+  {% if hata %}<div class="dn-not dn-hata">{{ hata }}</div>{% endif %}
+
+  <div class="dn-sohbet">
+    {% for m in sohbet %}
+      <div class="dn-balon dn-balon--{{ m.kim }}">
+        <div class="dn-etiket">{% if m.kim == 'musteri' %}Sen (müşteri){% else %}Bot{% endif %}</div>
+        {% if m.gorsel %}
+          <img src="{{ m.gorsel }}" alt="Gönderilen görsel" loading="lazy">
+        {% elif m.video %}
+          🎬 <a href="{{ m.video }}" target="_blank" rel="noopener">{{ m.video }}</a>
+        {% else %}{{ m.metin }}{% endif %}
+      </div>
+    {% empty %}
+      <p style="text-align:center;color:#667;font-size:.85rem;margin:18px 0">
+        Aşağıya bir mesaj yazıp <b>Gönder</b>'e bas.</p>
+    {% endfor %}
+  </div>
+
+  <form method="post" class="dn-form">
+    {% csrf_token %}
+    <input type="hidden" name="islem" value="gonder">
+    <input type="text" name="mesaj" id="dn-mesaj" required autocomplete="off"
+           placeholder="Müşteri gibi yaz — örn. bend yemek odası ne kadar?">
+    <button type="submit" class="dn-btn">Gönder</button>
+  </form>
+
+  <div class="dn-ornek">
+    {% for o in ornekler %}
+      <button type="button"
+              onclick="document.getElementById('dn-mesaj').value='{{ o|escapejs }}'">{{ o }}</button>
+    {% endfor %}
+  </div>
+
+  {% if sohbet %}
+    <div class="dn-ops">
+      <form method="post" style="display:inline">
+        {% csrf_token %}
+        <input type="hidden" name="islem" value="temizle">
+        <button type="submit" class="dn-btn dn-btn--gri">🗑️ Sohbeti sıfırla</button>
+      </form>
+      <span style="font-size:.78rem;color:#64748b">
+        Sıfırlamak botun hafızasını da siler — pazarlık baştan başlar.</span>
+    </div>
+  {% endif %}
+
+  {% if tani %}
+    <div class="dn-tani">
+      <b>Ne oldu?</b><br>
+      Cevabı yazan model: <code>{{ tani.model }}</code><br>
+      Gönderilen mesaj sayısı: <b>{{ tani.mesaj_sayisi }}</b>
+      {% if tani.gorsel_sayisi %}({{ tani.gorsel_sayisi }} fotoğraf){% endif %}
+      {% if tani.video_sayisi %}(1 video){% endif %}<br>
+      Cevap uzunluğu: {{ tani.uzunluk }} karakter
+      {% if tani.kesik %}<b style="color:#b42323"> — KESİK GELDİ</b>{% endif %}<br>
+      {% if tani.son_hata %}Son ajan hatası: <code>{{ tani.son_hata }}</code>{% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -57,7 +57,10 @@ class Command(BaseCommand):
         alarmlar = sum(1 for r in rows
                        if r.kullanici == YETKILI_WA and r.yon == "giden"
                        and (r.metin or "").startswith("⚠️ MEMNUNİYETSİZLİK"))
-        rows = [r for r in rows if r.kullanici != YETKILI_WA]
+        # Panel deneme sohbeti de müşteri değildir (bkz. bot.kayit.DENEME_KULLANICI).
+        from bot.kayit import deneme_mi
+        rows = [r for r in rows
+                if r.kullanici != YETKILI_WA and not deneme_mi(r.kullanici)]
 
         konusmalar: dict[tuple[str, str], list] = {}
         for r in rows:

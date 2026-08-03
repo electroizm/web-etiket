@@ -210,8 +210,14 @@ def olaylar(gun_sayisi: int = 7) -> list[dict]:
     finally:
         session.close()
 
+    from bot.kayit import deneme_mi
+
     sohbetler: dict[tuple[str, str], list] = {}
     for m in satirlar:
+        # Panel deneme sohbeti müşteri değil — İsmail'in kendi testleri
+        # "cevapsız müşteri" diye raporlanmasın.
+        if deneme_mi(m.kullanici):
+            continue
         sohbetler.setdefault((m.platform, m.kullanici), []).append(m)
 
     cikti: list[dict] = []

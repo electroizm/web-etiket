@@ -53,6 +53,10 @@ MAKS_TOKEN_GENIS = 4000
 
 # Son ajan hatası — Render loguna erişim olmadan teşhis için /saglik'ta gösterilir.
 SON_HATA: str | None = None
+# Son cevabı YAZAN model. /app/bot/deneme sayfası bunu gösteriyor: aynı soruya
+# farklı halkalar farklı cevap veriyor (flash-latest düşünüyor, lite düşünmüyor)
+# ve "bot saçmaladı" derken hangi modelin konuştuğunu bilmek şart.
+SON_MODEL: str | None = None
 
 # ── Model zinciri izleme (Gemini kota/yedek teşhisi) ─────────────────────────
 # Süreç içi sayaçlar — /saglik'ta gösterilir. Render restart'ında sıfırlanır
@@ -1189,7 +1193,7 @@ def cevapla(metin: str, platform: str, kullanici: str,
     kendisi tek başına yeterli bağlamı taşıdığı durumlar için — eski konuşma
     yanlış ürünü ele geçirmesin).
     """
-    global SON_HATA
+    global SON_HATA, SON_MODEL
     if not settings.AJAN_AKTIF:
         return None
     from datetime import datetime
@@ -1223,6 +1227,8 @@ def cevapla(metin: str, platform: str, kullanici: str,
             log.warning("ajan: YEDEK model %s cevapladı (birincil düştü)", model)
         log.info("ajan: %s %.1fs'de %s (%s)", model, monotonic() - basla,
                  "cevapladı" if cevap else "boş döndü (kalkan/tur limiti)", platform)
+        if cevap:
+            SON_MODEL = model
         return cevap
     log.error("ajan: tüm modeller başarısız, menüye düşülüyor")
     return None

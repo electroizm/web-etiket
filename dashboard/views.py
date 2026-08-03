@@ -2197,6 +2197,108 @@ def _pencere_durumu(platform: str, kullanici: str) -> dict:
 
 
 @login_required_supabase
+def deneme(request):
+    """Bot deneme sayfası — müşteriye hiçbir şey göndermeden botu sına.
+
+    Neden var: botun çok turlu davranışları (pazarlık merdiveni, "fotoğrafını
+    göndereyim mi" teklifi) ancak GERÇEK bir konuşma akışında görülür ve tek
+    tek test yazmakla İsmail'in kendi gözüyle görmesi aynı şey değil. Buraya
+    kadar denemenin tek yolu kendi telefonundan gerçek mesaj atmaktı; o da
+    müşteri konuşmalarının arasına karışıyordu.
+
+    Mesajlar bot_mesaj'a GERÇEKTEN yazılır (yoksa ajan geçmişi göremez, çok
+    turlu davranış denenemez) ama DENEME_KULLANICI adıyla; konuşma listesi,
+    gözden geçirme, fırsat defteri ve sabah özeti bu adı dışarıda bırakır.
+    """
+    from bot import ajan, kayit as bot_kayit, router, wa_presenter
+    from catalog.database import SessionLocal as _SL
+    from sqlalchemy import delete as _del
+
+    KULLANICI = bot_kayit.DENEME_KULLANICI
+    hata = ""
+    tani = None
+
+    if request.method == "POST":
+        islem = (request.POST.get("islem") or "").strip()
+        session = _SL()
+        try:
+            if islem == "temizle":
+                session.execute(_del(BotMesaj).where(BotMesaj.kullanici == KULLANICI))
+                session.commit()
+            elif islem == "gonder":
+                mesaj = (request.POST.get("mesaj") or "").strip()[:1000]
+                if not mesaj:
+                    hata = "Boş mesaj gönderilemez."
+                else:
+                    bot_kayit.kaydet("whatsapp", KULLANICI, "gelen", mesaj)
+                    sonuc = router._ai_cevabi(mesaj, "whatsapp", KULLANICI,
+                                              False, wa_presenter)
+                    if sonuc is None:
+                        hata = ("Ajan cevap üretemedi — kota dolmuş ya da hata "
+                                "olabilir. Aşağıdaki teşhis satırına bak.")
+                    mesajlar = (sonuc if isinstance(sonuc, list)
+                                else [sonuc]) if sonuc else []
+                    for m in mesajlar:
+                        bot_kayit.kaydet("whatsapp", KULLANICI, "giden",
+                                         bot_kayit.ozet_giden(m))
+                    ilk = (mesajlar[0].get("text", {}).get("body", "")
+                           if mesajlar else "")
+                    tani = {
+                        "model": ajan.SON_MODEL or "?",
+                        "mesaj_sayisi": len(mesajlar),
+                        "gorsel_sayisi": sum(1 for m in mesajlar
+                                             if m.get("type") == "image"),
+                        "video_sayisi": sum(1 for m in mesajlar
+                                            if m.get("type") == "text"
+                                            and m.get("text", {}).get("preview_url")),
+                        "uzunluk": len(ilk),
+                        # Yarım cümle canlıda yaşandı (0308.03.1) — göze çarpsın.
+                        "kesik": bool(ilk) and not ilk.rstrip().endswith(
+                            (".", "!", "?", "😊", "TL", ":")),
+                        "son_hata": (ajan.SON_HATA or "")[:160],
+                    }
+        except Exception as e:
+            session.rollback()
+            logging.getLogger(__name__).exception("deneme sayfasi hatasi")
+            hata = f"Beklenmedik hata: {e}"
+        finally:
+            session.close()
+        if islem == "temizle":
+            return redirect("dashboard:deneme")
+
+    session = _SL()
+    try:
+        rows = list(session.scalars(
+            select(BotMesaj).where(BotMesaj.kullanici == KULLANICI)
+            .order_by(BotMesaj.id)).all())
+    finally:
+        session.close()
+
+    sohbet = []
+    for m in rows:
+        metin = m.metin or ""
+        sohbet.append({
+            "kim": "musteri" if m.yon == "gelen" else "bot",
+            "metin": metin,
+            # Kayıtta fotoğraf "[fotoğraf]" diye durur; adresi yoktur.
+            "gorsel": "", "video": metin if metin.startswith("http") else "",
+        })
+
+    return render(request, "dashboard/deneme.html", {
+        "sohbet": sohbet, "hata": hata, "tani": tani,
+        "ornekler": [
+            "bend yemek odası ne kadar?",
+            "massimo fiyat",
+            "son fiyat ne olur",
+            "teşhirde ne var",
+            "lea yatak odası teşhir fiyatı",
+            "videosu var mı",
+            "mağazanız nerede",
+        ],
+    })
+
+
+@login_required_supabase
 def videolar(request):
     """Koleksiyon/teşhir kayıtlarına YouTube videosu bağlama sayfası.
 
@@ -2319,8 +2421,12 @@ def bot_konusmalar(request):
 
         # (platform, kullanici) bazında grupla. rows yeniden-eskiye sıralı geldiği
         # için ilk görülen mesaj o konuşmanın en yenisidir.
+        from bot.kayit import deneme_mi
         gruplar: dict[tuple[str, str], list] = {}
         for m in rows:
+            # Deneme sayfasının sohbeti müşteri listesine KARIŞMAZ.
+            if deneme_mi(m.kullanici):
+                continue
             gruplar.setdefault((m.platform, m.kullanici), []).append(m)
 
         durumlar = {(k.platform, k.kullanici): k
