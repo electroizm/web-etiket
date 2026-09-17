@@ -139,13 +139,19 @@ def secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
 def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
     """Yetkiliye yönlendirme — TEK mesaj (İsmail 2026-09-18).
 
-    Eskiden iki ayrı buton mesajı gidiyordu ve sohbette üst üste iki kart
+    Eskiden iki ayrı buton mesajı gidiyordu, sohbette üst üste iki kart
     görünüyordu. WhatsApp Cloud API bir mesajda YALNIZ BİR link butonu
     (cta_url) taşır — iki URL butonlu tek mesaj ancak onaylı şablonlarla
-    mümkün. Bu yüzden: arama için numara GÖVDEDE duruyor (WhatsApp telefon
-    numaralarını kendisi tıklanır yapar, dokunulunca arama ekranı açılır),
-    yazmak için tek buton. Instagram tarafında iki buton tek kartta zaten
-    çıkıyor (generic template iki web_url destekliyor).
+    mümkün. İki eylem şöyle paylaştırıldı:
+      • BUTON = SESLİ ARAMA (/ara sayfası telefonun arama ekranını açar).
+        İlk denemede buton "WhatsApp'tan yaz" idi ve arama, gövdedeki
+        numaraya bırakılmıştı; ama WhatsApp numaraya dokununca kendi
+        menüsünü ("... ile sohbet et / Kişilere ekle") açıyor, GERÇEK ARAMA
+        yapmıyor (İsmail'in ekran görüntüsü). Arama tek dokunuş olmalı.
+      • GÖVDEDEKİ NUMARA = WhatsApp'tan yazma yolu; WhatsApp'ın kendi menüsü
+        zaten "sohbet et" seçeneğini veriyor.
+    Instagram'da iki buton tek kartta çıkıyor (generic template iki web_url
+    destekliyor), orada bölüştürmeye gerek yok.
     """
-    return _cta(f"{metin}\n\n📞 Aramak için numaraya dokunun.",
-                "📱 WhatsApp'tan yaz", url)
+    return _cta(f"{metin}\n\n📱 WhatsApp'tan yazmak için numaraya dokunun.",
+                "📞 Sesli arama yap", ara_url)
