@@ -201,10 +201,11 @@ def _secenekler_mesaji(koleksiyon_id: int, P, metin: str = "",
     # platform sınırında kırpılıyor ("1. Dörtlü, Tekno, Üçlü,…") ve hemen
     # altındaki açıklamayı tekrarlıyordu. Tam ad açıklamada (WhatsApp) ve zaten
     # mesaj gövdesindeki numaralı listede duruyor.
+    # Listede YALNIZ seçenekler (İsmail 2026-09-18): Geri/Yetkili satırları
+    # buradan kaldırıldı — müşteri bu ekranda ürün seçer, gezinmez. Yetkiliye
+    # ulaşmak için "yetkili" yazmak yeterli (ajan uygun anlarda hatırlatıyor).
     secenekler = [(f"{k['no']}.", f"KOM:{k['id']}", k["ad"])
                   for k in kombiler[:SECENEK_MAX]]
-    secenekler.append((GERI_BUTONU, f"GERI:ARA:{kol['ad']}"[:180], ""))
-    secenekler.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
     return P.secim_mesaji(metin, secenekler)
 
 
@@ -230,7 +231,9 @@ def _kombinasyon_fiyat_mesaji(kombinasyon_id: int, P) -> dict | None:
         butonlar.append((INDIRIM_BUTONU, f"IND:{kombinasyon_id}", ""))
     if kol.get("id"):
         butonlar.append((GERI_BUTONU, f"KOL:{kol['id']}", ""))
-    butonlar.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
+    # Yetkili butonu BURADA yok (İsmail 2026-09-18): fiyatı yeni görmüş
+    # müşteriyi insana yönlendirmek yerine önce indirim/geri seçenekleri
+    # dursun. İndirim cevabında Yetkili yine var.
     return P.secim_mesaji(metin, butonlar)
 
 

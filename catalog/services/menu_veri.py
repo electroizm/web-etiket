@@ -783,9 +783,9 @@ def kombinasyon(kombi_id: int) -> dict | None:
         no = next((i for i, k in enumerate(kardesler, 1) if k.id == kombi.id), None)
         tam_ad = koleksiyon_tam_ad(koleksiyon.ad if koleksiyon else "",
                                    kategori.ad if kategori else None)
-        if len(kardesler) > 1 and no:
-            baslik = f"{tam_ad}\n{no}. {kombi.ad}"
-        elif tam_ad:
+        # Başlıkta seçenek NUMARASI yazılmaz (İsmail 2026-09-18): numara yalnız
+        # seçim listesinde işe yarar, fiyat cevabında gereksiz duruyordu.
+        if tam_ad:
             baslik = f"{tam_ad}\n{kombi.ad}" if kombi.ad else tam_ad
         else:
             baslik = kombi.ad or ""
