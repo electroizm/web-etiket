@@ -161,11 +161,10 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
 2) Teşhirde yoksa sonuç koleksiyon listesidir. Uygun koleksiyonu seç (aynı
    seri birden çok kategoride olabilir — VERMONT; kategori belli değilse
    fiyat vermeden SOR), sonra kombinasyonlari_listele ile takım seçeneklerini
-   getir. BU LİSTEDE FİYAT YOKTUR ve olmayacaktır. Araç sonucundaki
-   "secenek_metni"ni AYNEN yapıştır (numaralı satırlar; numarayı, sırayı,
-   yazımı DEĞİŞTİRME), hangisini istediğini SOR ve cevabın EN SONUNA aracın
-   söylediği [secenekler:kol:<id>] işaretini koy — o işaret müşteriye SEÇİM
-   BUTONLARI olarak gider. Rakam/fiyat YAZMA.
+   getir. Seçenekleri SEN YAZMA: cevabın yalnız aracın söylediği
+   [secenekler:kol:<id>] işareti olsun, başka hiçbir şey yazma. Numaralı
+   listeyi, "hangisini istersiniz" sorusunu ve seçim butonlarını sistem
+   gönderir; müşteri numaraya basınca fiyatı da sistem verir.
 3) Müşteri seçince fiyat_detay'ı o kombinasyonun "id" değeriyle çağır —
    katalog fiyatı YALNIZ buradan gelir. Tek seçenek varsa sormadan geç.
 - Müşteri adı yanlış yazabilir ("mariza") — arama araçlarıyla en yakınını bul.
@@ -531,15 +530,13 @@ def _tool_calistir(ad: str, argumanlar: dict,
             # listede davet olunca pazarlığın hangi kombinasyon üzerinde
             # başlayacağı belirsiz kalıyor. Önce seçim, davet tek ürün cevabında.
             sonuc["not"] = (
-                "Bu listede FİYAT YOK — rakam yazma, tahmin etme. "
-                "Cevabın gövdesine 'secenek_metni' alanını AYNEN yapıştır "
-                "(numaraları DEĞİŞTİRME, sıralarını bozma, madde imi ekleme) "
-                "ve altına hangisini istediğini SOR. Cevabın EN SONUNA "
-                f"[secenekler:kol:{(sonuc.get('koleksiyon') or {}).get('id')}] "
-                "yaz — bu işaret müşteriye numaralı SEÇİM BUTONLARI olarak "
-                "gider, müşteri numaraya basınca fiyatı sistem gönderir. "
-                "İşaret müşteriye görünmez. 'Size özel bir fiyat çalışması' "
-                "cümlesini BU cevaba EKLEME — müşteri seçim yapınca eklenir.")
+                "SEÇENEKLERİ SEN YAZMA. Cevabın SADECE şu işaretten ibaret "
+                f"olsun: [secenekler:kol:{(sonuc.get('koleksiyon') or {}).get('id')}] "
+                "— başka hiçbir şey yazma (ne seçenek adı, ne numara, ne fiyat, "
+                "ne soru cümlesi). Listeyi, soruyu ve numaralı SEÇİM "
+                "BUTONLARINI sistem gönderir; müşteri numaraya basınca fiyatı "
+                "da sistem verir. (Sen yazarsan seçenekler tek paragrafa "
+                "diziliyor ve okunmuyor — canlıda oldu.)")
         return sonuc
     if ad == "fiyat_detay":
         kid = int(argumanlar["kombinasyon_id"])

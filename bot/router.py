@@ -179,8 +179,12 @@ def _secenekler_mesaji(koleksiyon_id: int, P, metin: str = "",
         return _kombinasyon_fiyat_mesaji(kombiler[0]["id"], P) if tek_ise_fiyat else None
     kol = veri["koleksiyon"]
     if not metin:
-        metin = (f"{kol['tam_ad']} seçenekleri:\n\n{veri['secenek_metni']}\n\n"
-                 f"Hangisini istersiniz?")
+        # Liste metnini KOD yazar, model DEĞİL (İsmail 2026-09-18): canlıda
+        # model dört seçeneği tek paragrafa dizdi ("1. ..., 2. ..., 3. ... ve
+        # 4. ...") ve okunmaz hâle geldi. Her seçenek KENDİ satırında.
+        metin = (f"{kol['tam_ad']} için seçeneklerimiz:\n\n"
+                 f"{veri['secenek_metni']}\n\n"
+                 f"Hangisini istersiniz? 😊")
     secenekler = [(f"{k['no']}. {k['ad']}", f"KOM:{k['id']}", k["ad"])
                   for k in kombiler[:SECENEK_MAX]]
     secenekler.append((GERI_BUTONU, f"GERI:ARA:{kol['ad']}"[:180], ""))
@@ -246,17 +250,21 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     cevap, kod = _gorsel_ayikla(cevap)
     cevap, video_url = _video_ayikla(cevap)
     cevap, kol_id = _secenek_ayikla(cevap)
-    if not cevap and not kod and not video_url:   # ne işaret ne metin
+    if not cevap and not kod and not video_url and not kol_id:   # hiçbir şey yok
         return None
+    # Seçenek listesi: METNİ DE BUTONLARI DA KOD yazar (İsmail 2026-09-18).
+    # Modelin yazdığı liste metni BİLEREK atılır — canlıda dört seçeneği tek
+    # paragrafa dizip okunmaz hâle getirdi. Model yalnız "listeyi göster"
+    # işaretini koyar; düzen bizim.
+    butonlu = (_secenekler_mesaji(kol_id, P, tek_ise_fiyat=False)
+               if kol_id else None)
     if not cevap:
+        if butonlu:
+            return butonlu
         # Model YALNIZ işareti yazdı — "evet gönderin" gibi kısa isteklerde
         # doğal davranış (canlıda görüldü 2026-08-02). Eskiden burada None
         # dönülüyordu: medya da metin de gitmiyor, müşteri boş kalıyordu.
         cevap = "Buyurun, mağazadaki hâli 👇"
-    # Seçenek listesi: modelin yazdığı metne numaralı butonlar iliştirilir.
-    # Butonlar KODDAN gelir; metindeki numaralarla aynı sırayı paylaşırlar.
-    butonlu = (_secenekler_mesaji(kol_id, P, metin=cevap, tek_ise_fiyat=False)
-               if kol_id else None)
     mesajlar = [butonlu or P.metin_mesaji(cevap)]
     if kod and hasattr(P, "gorsel_mesaji"):
         mesajlar += [P.gorsel_mesaji(u) for u in _gorsel_urlleri(kod)]

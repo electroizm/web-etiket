@@ -296,10 +296,15 @@ def kombinasyonlar(koleksiyon_id: int, fiyatli: bool = False) -> dict | None:
 def koleksiyon_tam_ad(koleksiyon_ad: str, kategori_ad: str | None) -> str:
     """'LEGNA' + 'Yatak Odası' → 'LEGNA Yatak Odası' (müşteriye görünen başlık).
 
-    Kategori adı koleksiyon adında zaten geçiyorsa tekrar edilmez.
+    Kategori adı koleksiyon adında zaten geçiyorsa tekrar edilmez. Kategori
+    adındaki "Doğtaş" öneki atılır: kendi mağazamızın mesajında marka adını
+    tekrarlamak gereksiz ("NORTH Doğtaş Genç ve Çocuk Odası" → "NORTH Genç ve
+    Çocuk Odası").
     """
     kol = (koleksiyon_ad or "").strip()
     kat = (kategori_ad or "").strip()
+    if kat.lower().startswith("doğtaş ") or kat.lower().startswith("dogtas "):
+        kat = kat.split(" ", 1)[1].strip()
     if not kat or _duz(kat) in _duz(kol):
         return kol
     return f"{kol} {kat}"
@@ -732,11 +737,22 @@ def kombinasyon(kombi_id: int) -> dict | None:
             baslik = f"{tam_ad}\n{kombi.ad}" if kombi.ad else tam_ad
         else:
             baslik = kombi.ad or ""
+        # İÇİNDEKİLER (İsmail isteği 2026-09-18): seçenek adı ("3 Kapaklı, 100
+        # Karyola, Çalışma Masası") tek satırda okununca karışıyor; müşteri
+        # takımda TAM olarak ne olduğunu görsün. Fiyat satırlarından ÖNCE,
+        # başlığın hemen altında madde madde yazılır.
+        icerik = "\n".join(
+            f"• {ku.urun.urun_adi_tam}" + (f" ×{ku.miktar}" if ku.miktar > 1 else "")
+            for ku in kombi.urunler if ku.urun is not None
+        )
+        if icerik:
+            baslik = f"{baslik}\n\n{icerik}" if baslik else icerik
         ozet = _toplam_ozet(kombi, pazarlik=True)
         if ozet.get("fiyat_cumlesi") and baslik:
-            # Ad ve fiyat TEK blok: model ikisini ayrı yazarken eşleştirmeyi
-            # kaçırabiliyor (canlıda fiyat başka ürünün adıyla gitti).
-            ozet["fiyat_cumlesi"] = f"{baslik}\n{ozet['fiyat_cumlesi']}"
+            # Ad, içindekiler ve fiyat TEK blok: model bunları ayrı yazarken
+            # eşleştirmeyi kaçırabiliyor (canlıda fiyat başka ürünün adıyla
+            # gitti). Boş satır, fiyatı içindekilerden görsel olarak ayırır.
+            ozet["fiyat_cumlesi"] = f"{baslik}\n\n{ozet['fiyat_cumlesi']}"
         return {
             "id": kombi.id,
             "ad": kombi.ad,
