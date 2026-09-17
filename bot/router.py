@@ -254,12 +254,9 @@ def _kombinasyon_indirim_mesaji(kombinasyon_id: int, P) -> dict | None:
     metin = (f"{veri['baslik']}\n\n"
              f"Size özel fiyatımız: {menu_veri._tl(merdiven[-1])}\n"
              f"Bu bizim son fiyatımız 😊")
-    kol = veri.get("koleksiyon") or {}
-    butonlar = []
-    if kol.get("id"):
-        butonlar.append((GERI_BUTONU, f"KOL:{kol['id']}", ""))
-    butonlar.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
-    return P.secim_mesaji(metin, butonlar)
+    # Son fiyattan sonra TEK buton: Yetkili (İsmail 2026-09-18). Pazarlık
+    # bitti; müşteriye kalan tek adım insana bağlanmak.
+    return P.secim_mesaji(metin, [(YETKILI_BUTONU, YETKILI_PAYLOAD, "")])
 
 
 def _koleksiyon_secim_mesaji(ad: str, P, metin: str = "") -> dict | None:
@@ -274,9 +271,10 @@ def _koleksiyon_secim_mesaji(ad: str, P, metin: str = "") -> dict | None:
         return None
     if len(eslesmeler) == 1:
         return _secenekler_mesaji(eslesmeler[0]["id"], P)
+    # Yalnız kategoriler — Yetkili butonu YOK (İsmail 2026-09-18: yetkili
+    # yalnız SON indirimden sonra çıksın, her ekranda değil).
     secenekler = [(k.get("kategori") or k["ad"], f"KOL:{k['id']}", "")
                   for k in eslesmeler[:SECENEK_MAX]]
-    secenekler.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
     # Kategori adları butonların üstünde zaten yazıyor; modelin sorusu varsa
     # onu kullan (doğal dili daha iyi), yoksa kısa varsayılan soru.
     return P.secim_mesaji(metin or f"{eslesmeler[0]['ad']} hangi kategoride olsun?",

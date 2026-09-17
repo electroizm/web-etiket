@@ -397,6 +397,31 @@ def kategori_geciyor_mu(kategori: str | None, istek_kume: set[str]) -> bool:
     return bool(ipuclari & istek_kume)
 
 
+# Kategori/oda adlarını ele veren kelimeler — "parça tarifi" sayılmazlar.
+_KATEGORI_KELIMELERI = frozenset(
+    t for ipuclari in KATEGORI_IPUCLARI.values() for t in ipuclari
+) | KATEGORI_JENERIK
+
+
+def parca_ipucu_kelimeleri(metin: str, seri_ad: str) -> list[str]:
+    """Seri adı + kategori + gürültü atıldıktan sonra metinde ne kaldı?
+
+    Müşteri "MILENA alt 240" derken koleksiyon değil TEK ÜRÜN istiyordur;
+    geriye kalan kelimeler ("alt", "240") bunu ele verir. Hiçbir şey kalmazsa
+    ("milena", "milena fiyatı ne kadar") istek seri geneli demektir.
+    Canlı vaka 2026-09-18: "Milena alt 240" yazan müşteriye bot kategori
+    sordu, oysa tek bir TV ünitesi modülü istiyordu.
+    """
+    seri = {t for t in _duz(seri_ad).split() if t}
+    kalan = []
+    for t in re.split(r"[^0-9a-z]+", _duz(metin)):
+        if (not t or len(t) < 2 or t in seri or t in _ARAMA_GURULTU
+                or t in _KATEGORI_KELIMELERI):
+            continue
+        kalan.append(t)
+    return kalan
+
+
 def kategoriye_gore_suz(kayitlar: list[dict], metin: str) -> list[dict]:
     """Serbest metinde kategori geçiyorsa eşleşmeleri ona indir.
 
@@ -534,6 +559,12 @@ def urun_ara(q: str) -> list[dict]:
             # fiyat ve merdiven artık toptandan hesaplanır (2026-09-17).
             paket = fiyat_paketi(u.son_liste_fiyat, u.son_perakende_fiyat,
                                  u.son_toptan_fiyat)
+            # Ad fiyat bloğunun İÇİNE yazılır (kombinasyonlarda olduğu gibi):
+            # sistem promptu "fiyat_cumlesi ürün adını zaten taşır" diyor,
+            # taşımazsa model adı hiç yazmıyor (canlıda görüldü 2026-09-18:
+            # "Liste Fiyatı: 13.265 TL" diye başlayan adsız cevap).
+            if paket.get("fiyat_cumlesi"):
+                paket["fiyat_cumlesi"] = f"{u.urun_adi_tam}\n{paket['fiyat_cumlesi']}"
             kayit = {
                 "sku": u.sku,
                 "ad": u.urun_adi_tam,
@@ -686,6 +717,8 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
             paket = fiyat_paketi(u.son_liste_fiyat, u.son_perakende_fiyat,
                                  u.son_toptan_fiyat)
             paket.pop("_merdiven", None)      # ÇOKLU liste: pazarlık yok (aşağı bak)
+            if paket.get("fiyat_cumlesi"):
+                paket["fiyat_cumlesi"] = f"{u.urun_adi_tam}\n{paket['fiyat_cumlesi']}"
             sonuc.append({
                 "sku": u.sku,
                 "ad": u.urun_adi_tam,

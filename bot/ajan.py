@@ -466,6 +466,20 @@ def _teshir_sonucu(kayitlar: list[dict]) -> dict:
             "_teshir_baglami": True}
 
 
+def _parca_sonucu(parcalar: list[dict]) -> dict:
+    """Tek parça arama sonucunun model görünümü (parca_ara ile ortak).
+
+    koleksiyon_ara da bu görünümü kullanıyor: müşteri seri adının yanına parça
+    tarifi yazdıysa ("Milena alt 240") koleksiyon seçtirmek yerine doğrudan
+    parçayı veriyoruz (2026-09-18).
+    """
+    return {"parcalar": parcalar,
+            "not": "Yalnız sorulan parçanın fiyat_cumlesi'ni AYNEN ver. Seti "
+                   "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
+                   "adlar müşterinin yazdığından farklıysa (arama yakın adları "
+                   "da getirir) fiyat vermeden önce hangisini kastettiğini SOR."}
+
+
 def _tool_calistir(ad: str, argumanlar: dict,
                    platform: str = "", kullanici: str = "",
                    musteri_metni: str = ""):
@@ -513,6 +527,17 @@ def _tool_calistir(ad: str, argumanlar: dict,
                                   {"koleksiyon_id": eslesmeler[0]["id"]},
                                   platform=platform, kullanici=kullanici)
         if len(eslesmeler) > 1:
+            # ÖNCE TEK PARÇA MI? Müşteri seri adının yanına parça tarifi de
+            # yazdıysa ("Milena ALT 240") koleksiyon seçtirmek yanlış — tek bir
+            # ürün istiyordur. Canlı vaka 2026-09-18: bot kategori sordu, oysa
+            # istenen "MILENA Tv Ünitesi Alt Modül - 240 cm" idi.
+            ek = menu_veri.parca_ipucu_kelimeleri(f"{q} {musteri_metni}",
+                                                  eslesmeler[0]["ad"])
+            if ek:
+                parcalar = menu_veri.urun_ara(
+                    f"{eslesmeler[0]['ad']} {' '.join(ek)}")
+                if parcalar:
+                    return _parca_sonucu(parcalar)
             # Kategori sorusu da BUTONLU sorulsun: müşteri "yatak odası" diye
             # yazmak zorunda kalmasın. Soru cümlesini model yazar, kategoriler
             # butona döner (işareti router çözer).
@@ -522,7 +547,9 @@ def _tool_calistir(ad: str, argumanlar: dict,
                             "yaz (kategori adlarını saymana gerek yok) ve "
                             f"cevabın EN SONUNA [seriler:{eslesmeler[0]['ad']}] "
                             "işaretini koy — kategoriler müşteriye BUTON olarak "
-                            "gider. Fiyat VERME, başka araç çağırma.")}
+                            "gider. Fiyat VERME. TEK BİR PARÇA sorulduğunu "
+                            "düşünüyorsan (ör. 'alt modül 240', 'komodin') "
+                            "kategori sordurma, parca_ara'yı çağır.")}
         return eslesmeler
     if ad == "kategorileri_listele":
         return menu_veri.kategoriler()
@@ -613,11 +640,7 @@ def _tool_calistir(ad: str, argumanlar: dict,
             return {"bulunamadi": True,
                     "not": "Bu parça bulunamadı — fiyat UYDURMA. Bilmediğini söyle, "
                            "'yetkili' yazmasını öner."}
-        return {"parcalar": parcalar,
-                "not": "Yalnız sorulan parçanın fiyat_cumlesi'ni AYNEN ver. Seti "
-                       "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
-                       "adlar müşterinin yazdığından farklıysa (arama yakın adları "
-                       "da getirir) fiyat vermeden önce hangisini kastettiğini SOR."}
+        return _parca_sonucu(parcalar)
     if ad == "en_uygun_ara":
         urunler = menu_veri.en_uygun(str(argumanlar.get("tip", "")))
         if not urunler:
