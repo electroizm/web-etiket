@@ -42,7 +42,7 @@ YETKILI_KELIMELER = ("yetkili", "temsilci", "canlı", "canli", "insanla",
 
 def yetkili_metni() -> str:
     """Tek satır — İsmail'in isteği: uzun açıklama olmasın, butona basıp geçilsin."""
-    return f"👤 Yetkilimiz: {YETKILI_TEL_GORUNEN} 👇"
+    return f"👤 Yetkilimiz: {YETKILI_TEL_GORUNEN}"
 
 
 # Eski mesajlarda kalan "📞 Beni arayın" butonunun payload'ı. Akış kaldırıldı
@@ -147,6 +147,8 @@ SECENEK_ISARETI = re.compile(r"\s*\[secenekler:\s*kol\s*:\s*(\d{1,12})\s*\]\s*")
 # Aynı seri birden çok kategorideyse (MILENA) kategori sorusu da BUTONLU sorulur;
 # müşteri "yatak odası" diye yazmak zorunda kalmasın (2026-09-18).
 SERI_ISARETI = re.compile(r"\s*\[seriler:\s*([^\]\n]{1,60}?)\s*\]\s*")
+# Tek ürün fiyatı: butonları kurabilmek için hangi SKU olduğunu bilmek gerek.
+PARCA_ISARETI = re.compile(r"\s*\[parca:\s*([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
 GERI_BUTONU = "⬅️ Geri"
 YETKILI_BUTONU = "👤 Yetkili"
 INDIRIM_BUTONU = "📉 İndirim"
@@ -161,6 +163,14 @@ def _secenek_ayikla(cevap: str) -> tuple[str, int | None]:
     if not bulunan:
         return cevap, None
     return SECENEK_ISARETI.sub(" ", cevap).strip(), int(bulunan.group(1))
+
+
+def _parca_ayikla(cevap: str) -> tuple[str, str | None]:
+    """Cevaptan [parca:<SKU>] işaretini çıkar; (temiz metin, SKU)."""
+    bulunan = PARCA_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    return PARCA_ISARETI.sub(" ", cevap).strip(), bulunan.group(1)
 
 
 def _seri_ayikla(cevap: str) -> tuple[str, str | None]:
@@ -237,6 +247,39 @@ def _kombinasyon_fiyat_mesaji(kombinasyon_id: int, P) -> dict | None:
     return P.secim_mesaji(metin, butonlar)
 
 
+def _parca_fiyat_butonlari(sku: str, P, metin: str) -> dict | None:
+    """Tek ürün fiyatına da 📉 İndirim / ⬅️ Geri butonlarını iliştir.
+
+    Kombinasyonlarda butonlar vardı, tekil üründe yoktu (İsmail 2026-09-18).
+    Metni model yazar (fiyat bloğu araçtan hazır geliyor), butonları kod kurar.
+    """
+    from catalog.services import menu_veri
+    veri = menu_veri.urun(sku)
+    if not veri:
+        return None
+    butonlar = []
+    if veri.get("_merdiven"):
+        butonlar.append((INDIRIM_BUTONU, f"PIND:{sku}", ""))
+    if veri.get("koleksiyon_id"):
+        butonlar.append((GERI_BUTONU, f"KOL:{veri['koleksiyon_id']}", ""))
+    if not butonlar:
+        return None
+    return P.secim_mesaji(metin, butonlar)
+
+
+def _parca_indirim_mesaji(sku: str, P) -> dict | None:
+    """Tek üründe 📉 İndirim: merdivenin SON kademesi + Yetkili butonu."""
+    from catalog.services import menu_veri
+    veri = menu_veri.urun(sku)
+    merdiven = (veri or {}).get("_merdiven")
+    if not veri or not merdiven:
+        return None
+    metin = (f"{veri['ad']}\n\n"
+             f"Size özel fiyatımız: {menu_veri._tl(merdiven[-1])}\n"
+             f"Bu bizim son fiyatımız 😊")
+    return P.secim_mesaji(metin, [(YETKILI_BUTONU, YETKILI_PAYLOAD, "")])
+
+
 def _kombinasyon_indirim_mesaji(kombinasyon_id: int, P) -> dict | None:
     """📉 İndirim butonunun cevabı: merdivenin SON kademesi (Müdür fiyatı).
 
@@ -300,6 +343,7 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     cevap, video_url = _video_ayikla(cevap)
     cevap, kol_id = _secenek_ayikla(cevap)
     cevap, seri_adi = _seri_ayikla(cevap)
+    cevap, parca_sku = _parca_ayikla(cevap)
     if not cevap and not kod and not video_url and not kol_id:   # hiçbir şey yok
         return None
     # Seçenek listesi: METNİ DE BUTONLARI DA KOD yazar (İsmail 2026-09-18).
@@ -313,6 +357,9 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     # butonlarda duruyor, modelin yazdığı yalnızca soru cümlesi.)
     if butonlu is None and seri_adi:
         butonlu = _koleksiyon_secim_mesaji(seri_adi, P, metin=cevap)
+    # Tek ürün fiyatı: metin modelin, butonlar kodun.
+    if butonlu is None and parca_sku and cevap:
+        butonlu = _parca_fiyat_butonlari(parca_sku, P, cevap)
     if not cevap:
         if butonlu:
             return butonlu
@@ -358,6 +405,10 @@ def yanit_uret(tetik: str, P=_default_P, platform: str = "",
             return mesaj
     if tur == "IND" and (_deger or "").isdigit():
         mesaj = _kombinasyon_indirim_mesaji(int(_deger), P)
+        if mesaj:
+            return mesaj
+    if tur == "PIND" and _deger:
+        mesaj = _parca_indirim_mesaji(_deger, P)
         if mesaj:
             return mesaj
     if tur == "KOL" and (_deger or "").isdigit():

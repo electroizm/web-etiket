@@ -473,11 +473,18 @@ def _parca_sonucu(parcalar: list[dict]) -> dict:
     tarifi yazdıysa ("Milena alt 240") koleksiyon seçtirmek yerine doğrudan
     parçayı veriyoruz (2026-09-18).
     """
-    return {"parcalar": parcalar,
-            "not": "Yalnız sorulan parçanın fiyat_cumlesi'ni AYNEN ver. Seti "
-                   "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
-                   "adlar müşterinin yazdığından farklıysa (arama yakın adları "
-                   "da getirir) fiyat vermeden önce hangisini kastettiğini SOR."}
+    not_metni = ("Yalnız sorulan parçanın fiyat_cumlesi'ni AYNEN ver. Seti "
+                 "kendiliğinden önerme. Birden çok eşleşme varsa ya da dönen "
+                 "adlar müşterinin yazdığından farklıysa (arama yakın adları "
+                 "da getirir) fiyat vermeden önce hangisini kastettiğini SOR.")
+    if len(parcalar) == 1:
+        # TEK ürünün fiyatını veriyorsun: cevabın sonuna [parca:<SKU>] koy —
+        # sistem 📉 İndirim / ⬅️ Geri butonlarını ekler (kombinasyonlardaki
+        # akışın tekil karşılığı, İsmail 2026-09-18). İşaret müşteriye görünmez.
+        not_metni += (f" Bu TEK ürünün fiyatını verdiğin cevabın EN SONUNA "
+                      f"[parca:{parcalar[0]['sku']}] yaz — sistem indirim ve "
+                      f"geri butonlarını ekler.")
+    return {"parcalar": parcalar, "not": not_metni}
 
 
 def _tool_calistir(ad: str, argumanlar: dict,
@@ -1450,6 +1457,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     teshir_zorlandi = False            # "yok" cevabına tek zorlama hakkı
     listelenen_kol: int | None = None  # seçenekleri listelenen koleksiyon (buton için)
     listelenen_seri = ""               # birden çok kategorideki seri (kategori butonu)
+    tekil_sku = ""                     # tek ürün fiyatı verildi (indirim butonu)
     kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
 
     for _ in range(MAKS_TOOL_TURU):
@@ -1622,6 +1630,10 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             elif (listelenen_seri and not kombinasyon_fiyati
                     and not listelenen_kol and "[seriler:" not in cevap):
                 cevap = f"{cevap} [seriler:{listelenen_seri}]"
+            elif (tekil_sku and not kombinasyon_fiyati and not listelenen_kol
+                    and "[parca:" not in cevap and _FIYAT_KALIBI.search(cevap)):
+                # Fiyat verilmiş bir tek-ürün cevabı: buton işaretini ekle.
+                cevap = f"{cevap} [parca:{tekil_sku}]"
             return cevap[:MAKS_CEVAP_KR]
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
@@ -1664,6 +1676,9 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 listelenen_seri = (sonuc["koleksiyonlar"][0].get("ad") or "")
             if tc.function.name == "fiyat_detay":
                 kombinasyon_fiyati = True
+            # Tek ürün: buton işaretini model unutursa kod koyacak (emniyet ağı).
+            if isinstance(sonuc, dict) and len(sonuc.get("parcalar") or []) == 1:
+                tekil_sku = (sonuc["parcalar"][0].get("sku") or "")
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True

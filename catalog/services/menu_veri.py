@@ -732,6 +732,31 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
         session.close()
 
 
+def urun(sku: str) -> dict | None:
+    """Tek ürünün fiyat bloğu + bağlı koleksiyon — buton akışı için.
+
+    Kombinasyonlarda `kombinasyon()` ne yapıyorsa tekil üründe bunun karşılığı:
+    router bununla 📉 İndirim / ⬅️ Geri butonlarını kurar (2026-09-18).
+    """
+    session = SessionLocal()
+    try:
+        u = session.scalar(select(Urun).where(Urun.sku == str(sku)))
+        if u is None:
+            return None
+        paket = fiyat_paketi(u.son_liste_fiyat, u.son_perakende_fiyat,
+                             u.son_toptan_fiyat)
+        if paket.get("fiyat_cumlesi"):
+            paket["fiyat_cumlesi"] = f"{u.urun_adi_tam}\n{paket['fiyat_cumlesi']}"
+        # Geri butonu ürünün koleksiyonuna döner; birden çok koleksiyondaysa
+        # ilki alınır (sıra kararlı olsun diye ada göre).
+        koleksiyonlar = sorted(u.koleksiyonlar, key=lambda k: (k.ad, k.id))
+        return {"sku": u.sku, "ad": u.urun_adi_tam,
+                "koleksiyon_id": koleksiyonlar[0].id if koleksiyonlar else None,
+                **paket}
+    finally:
+        session.close()
+
+
 def bilgi_ara(soru: str) -> list[dict]:
     """Mağaza bilgi kayıtlarında anahtar kelime eşleşmesi.
 
