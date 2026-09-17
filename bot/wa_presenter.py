@@ -3,14 +3,34 @@
 ig_presenter ile **aynı fonksiyon adlarını** sunar; böylece router platformdan
 bağımsız kalır (yanit_uret'e hangi presenter verilirse onu üretir).
 
-Menü/liste/buton üreticileri 2026-07-29'da SİLİNDİ: bot 2026-07-21'de AI-only
-akışa geçti (menü, kategori seçimi, sayfalama kaldırıldı) ve o fonksiyonlar o
-tarihten beri hiç çağrılmıyordu. Bugün router yalnız şu üçünü kullanıyor:
-metin_mesaji, gorsel_mesaji, yetkili_mesaji. Eski sürüm git geçmişinde duruyor.
+Eski menü (kategori→koleksiyon→kombinasyon gezintisi, sayfalama) 2026-07-29'da
+silindi; bot AI-only akışa geçmişti. 2026-09-17'de İsmail SEÇİM BUTONLARINI
+geri istedi — ama menü olarak değil: yalnız takım seçenekleri numaralı
+listelenir, müşteri numaraya basınca o kombinasyonun fiyatı gider.
+
+WhatsApp'ın Messenger'dan farkı (sınırlar Meta dokümanından):
+- "quick_replies" YOK. Yerine iki interaktif tip var:
+  * button : en çok 3 yanıt butonu (kısa seçimler).
+  * list   : tek butonla açılan, en çok 10 satırlık liste (uzun seçimler).
+- Buton başlığı ≤20, liste satır başlığı ≤24, satır açıklaması ≤72 karakter.
+4 seçenek + Geri + Yetkili = 6 satır → liste tipi kullanılır (İsmail kararı
+2026-09-17: "Liste menüsü").
 
 Bu modül dönüşü "to/messaging_product" içermez — onu meta_client ekler.
 """
 from __future__ import annotations
+
+BUTON_BASLIK = 20
+BUTON_MAX = 3
+SATIR_BASLIK = 24
+SATIR_ACIKLAMA = 72
+LISTE_MAX = 10
+LISTE_BUTON = "Seçenekler"
+
+
+def _kirp(s: str, n: int) -> str:
+    s = (s or "").strip()
+    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 def _metin(govde: str) -> dict:
@@ -59,6 +79,61 @@ def _cta(metin: str, buton: str, url: str) -> dict:
             },
         },
     }
+
+
+def _butonlar(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
+    """secenekler: [(baslik, payload, aciklama), ...] — en çok 3 → button tipi."""
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": metin},
+            "action": {"buttons": [
+                {"type": "reply",
+                 "reply": {"id": payload, "title": _kirp(baslik, BUTON_BASLIK)}}
+                for baslik, payload, _ in secenekler[:BUTON_MAX]
+            ]},
+        },
+    }
+
+
+def _liste(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
+    """secenekler: [(baslik, payload, aciklama), ...] — en çok 10 → list tipi."""
+    satirlar = []
+    for baslik, payload, aciklama in secenekler[:LISTE_MAX]:
+        baslik = (baslik or "").strip()
+        # Başlık 24 karakterde kırpılır (platform sınırı); kırpılıyorsa ve
+        # açıklama boşsa tam ad açıklamada gösterilsin — hiçbir ad kaybolmasın.
+        if not aciklama and len(baslik) > SATIR_BASLIK:
+            aciklama = baslik
+        satir = {"id": payload, "title": _kirp(baslik, SATIR_BASLIK)}
+        if aciklama:
+            satir["description"] = _kirp(aciklama, SATIR_ACIKLAMA)
+        satirlar.append(satir)
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {"text": metin},
+            "action": {"button": LISTE_BUTON, "sections": [{"rows": satirlar}]},
+        },
+    }
+
+
+def secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
+    """≤3 seçenek → buton, fazlası → liste. secenekler: (başlık, payload, açıklama).
+
+    Buton tipinde açıklama alanı yoktur ve başlık 20 karakterle sınırlıdır;
+    ad sığmıyorsa liste tipine geçilir (24 + 72 karakterlik açıklama ile tam
+    ad gösterilebiliyor).
+    """
+    if not secenekler:
+        return _metin(metin)
+    if (len(secenekler) <= BUTON_MAX
+            and all(not a for *_, a in secenekler)
+            and all(len((b or "").strip()) <= BUTON_BASLIK for b, *_ in secenekler)):
+        return _butonlar(metin, secenekler)
+    return _liste(metin, secenekler)
 
 
 def yetkili_mesaji(metin: str, url: str, ara_url: str) -> list[dict]:

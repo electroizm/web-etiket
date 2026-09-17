@@ -252,12 +252,17 @@ def koleksiyonlar(kategori_id: int) -> dict | None:
 
 
 def kombinasyonlar(koleksiyon_id: int, fiyatli: bool = False) -> dict | None:
-    """Bir koleksiyonun takım seçenekleri.
+    """Bir koleksiyonun takım seçenekleri — NUMARALI.
 
     Varsayılan FİYATSIZ (İsmail kararı 2026-09-17): müşteriye önce seçenekler
     sunulur, fiyat ancak seçtiği kombinasyon için verilir (fiyat_detay). Böylece
     hem mesaj kısalır hem pazarlık hangi ürün üzerine olduğu belirsiz kalmaz.
-    Yalnız kaç parça/kaç adet olduğu gider — model seçenekleri tarif edebilsin.
+
+    Numaralandırma (İsmail isteği 2026-09-17): her seçeneğin sabit bir sırası
+    (`no`) vardır ve `secenek_metni` bu sırayla hazır metin olarak döner. Sıra
+    KODDA belirlenir, modelde değil — çünkü aynı numaralar butonlara da
+    basılıyor (bkz. router `KOM:` payload'ı) ve metindeki "3" ile butondaki
+    "3" aynı kombinasyonu göstermek ZORUNDA.
     """
     session = SessionLocal()
     try:
@@ -265,20 +270,49 @@ def kombinasyonlar(koleksiyon_id: int, fiyatli: bool = False) -> dict | None:
         if koleksiyon is None:
             return None
         kombi_list = kombinasyon_listele(session, koleksiyon_id)
-        if fiyatli:
-            data = [{"id": k.id, "ad": k.ad, **_toplam_ozet(k)} for k in kombi_list]
-        else:
-            data = []
-            for k in kombi_list:
+        kategori = (session.get(Kategori, koleksiyon.kategori_id)
+                    if koleksiyon.kategori_id else None)
+        data = []
+        for no, k in enumerate(kombi_list, 1):
+            kayit = {"no": no, "id": k.id, "ad": k.ad}
+            if fiyatli:
+                kayit.update(_toplam_ozet(k))
+            else:
                 t = hesapla_kombinasyon_toplam(k)
-                data.append({"id": k.id, "ad": k.ad,
-                             "urun_sayisi": t["urun_sayisi"],
-                             "toplam_adet": t["toplam_adet"]})
+                kayit["urun_sayisi"] = t["urun_sayisi"]
+                kayit["toplam_adet"] = t["toplam_adet"]
+            data.append(kayit)
         return {"koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad,
+                               "kategori": kategori.ad if kategori else None,
+                               "tam_ad": koleksiyon_tam_ad(koleksiyon.ad,
+                                                           kategori.ad if kategori else None),
                                "video_var": bool(koleksiyon.video_url)},
-                "kombinasyonlar": data}
+                "kombinasyonlar": data,
+                "secenek_metni": secenek_metni(data)}
     finally:
         session.close()
+
+
+def koleksiyon_tam_ad(koleksiyon_ad: str, kategori_ad: str | None) -> str:
+    """'LEGNA' + 'Yatak Odası' → 'LEGNA Yatak Odası' (müşteriye görünen başlık).
+
+    Kategori adı koleksiyon adında zaten geçiyorsa tekrar edilmez.
+    """
+    kol = (koleksiyon_ad or "").strip()
+    kat = (kategori_ad or "").strip()
+    if not kat or _duz(kat) in _duz(kol):
+        return kol
+    return f"{kol} {kat}"
+
+
+def secenek_metni(kombinasyonlar_listesi: list[dict]) -> str:
+    """Numaralı seçenek listesi — modelin AYNEN kopyalayacağı hazır metin.
+
+    Biçim (İsmail 2026-09-17):
+        1. 5 Kapaklı 160 Karyola
+        2. 5 Kapaklı Baza
+    """
+    return "\n".join(f"{k['no']}. {k['ad']}" for k in kombinasyonlar_listesi)
 
 
 # ─── Türkçe karakter duyarsız arama ──────────────────────────────────────────
@@ -684,9 +718,30 @@ def kombinasyon(kombi_id: int) -> dict | None:
             }
             for ku in kombi.urunler if ku.urun is not None
         ]
+        # Başlık: koleksiyon adı + (seçenek varsa) NUMARALI seçenek satırı —
+        # İsmail isteği 2026-09-17. Numara, seçenek listesindekiyle AYNI sırada
+        # olmak zorunda; bu yüzden aynı kaynaktan (kombinasyon_listele) sayılır.
+        kardesler = (kombinasyon_listele(session, kombi.koleksiyon_id)
+                     if kombi.koleksiyon_id else [])
+        no = next((i for i, k in enumerate(kardesler, 1) if k.id == kombi.id), None)
+        tam_ad = koleksiyon_tam_ad(koleksiyon.ad if koleksiyon else "",
+                                   kategori.ad if kategori else None)
+        if len(kardesler) > 1 and no:
+            baslik = f"{tam_ad}\n{no}. {kombi.ad}"
+        elif tam_ad:
+            baslik = f"{tam_ad}\n{kombi.ad}" if kombi.ad else tam_ad
+        else:
+            baslik = kombi.ad or ""
+        ozet = _toplam_ozet(kombi, pazarlik=True)
+        if ozet.get("fiyat_cumlesi") and baslik:
+            # Ad ve fiyat TEK blok: model ikisini ayrı yazarken eşleştirmeyi
+            # kaçırabiliyor (canlıda fiyat başka ürünün adıyla gitti).
+            ozet["fiyat_cumlesi"] = f"{baslik}\n{ozet['fiyat_cumlesi']}"
         return {
             "id": kombi.id,
             "ad": kombi.ad,
+            "no": no,
+            "baslik": baslik,
             # kategori adı: menü detay başlığı "BEND Oturma Grubu için ..."
             # (wa/ig_presenter.kombinasyon_detay_mesaji) için gerekli.
             # video_var: koleksiyonun YouTube tanıtım videosu var mı. Yalnız
@@ -698,7 +753,7 @@ def kombinasyon(kombi_id: int) -> dict | None:
                           if koleksiyon else None,
             # pazarlik=True: fiyat_detay tekil bağlamdır — pazarlık merdiveni
             # yalnız burada gelir (listede N ayrı merdiven modeli karıştırırdı).
-            **_toplam_ozet(kombi, pazarlik=True),
+            **ozet,
             "para_birimi": "TL",
             "urunler": urunler,
         }

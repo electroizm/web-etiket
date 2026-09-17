@@ -3,12 +3,17 @@
 wa_presenter ile **aynı fonksiyon adlarını** sunar; router platformdan bağımsız
 kalır.
 
-Quick reply / carousel üreticileri 2026-07-29'da SİLİNDİ: bot 2026-07-21'de
-AI-only akışa geçti ve o fonksiyonlar o tarihten beri hiç çağrılmıyordu. Bugün
-router yalnız şu üçünü kullanıyor: metin_mesaji, gorsel_mesaji, yetkili_mesaji.
-Eski sürüm git geçmişinde duruyor.
+Eski menü (kategori→koleksiyon gezintisi, sayfalama) 2026-07-29'da silindi.
+2026-09-17'de İsmail SEÇİM BUTONLARINI geri istedi — yalnız takım seçenekleri
+için: numaralı hızlı yanıtlar + Geri + Yetkili.
+
+Sınırlar: quick reply başlığı ≤20 karakter, en çok 13 adet. WhatsApp'ın
+aksine hepsi tek mesajda yan yana görünür (liste açmaya gerek yok).
 """
 from __future__ import annotations
+
+QR_BASLIK = 20
+QR_MAX = 13
 
 
 def _kirp(s: str, n: int) -> str:
@@ -35,6 +40,25 @@ def gorsel_mesaji(url: str, altyazi: str = "") -> dict:
     """Ürün fotoğrafı. IG mesaj eki altyazı TAŞIMAZ — altyazı ayrı metin
     mesajı olarak gider (router fotoğrafı metnin ardına ekler)."""
     return {"attachment": {"type": "image", "payload": {"url": url}}}
+
+
+def secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
+    """Numaralı seçim — hızlı yanıt (quick reply) mesajı.
+
+    secenekler: [(başlık, payload, açıklama), ...]. Açıklama IG'de gösterilemez
+    (alan yok), yalnız WhatsApp liste satırında kullanılır — imza ortak kalsın
+    diye burada sessizce yok sayılır.
+    """
+    if not secenekler:
+        return {"text": metin}
+    return {
+        "text": metin,
+        "quick_replies": [
+            {"content_type": "text", "title": _kirp(baslik, QR_BASLIK),
+             "payload": payload}
+            for baslik, payload, _ in secenekler[:QR_MAX]
+        ],
+    }
 
 
 def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:

@@ -42,10 +42,36 @@ def kaydet(platform: str, kullanici: str, yon: str, metin: str) -> None:
         log.exception("bot mesajı kaydedilemedi (%s/%s)", platform, kullanici)
 
 
+def _buton_adi(secim: str) -> str:
+    """Buton payload'ını okunur ada çevir ("KOM:99" → "4. 6 Kapaklı Baza").
+
+    Hem panelde hem AI geçmişinde ham payload anlamsız görünüyordu; seçim
+    butonları 2026-09-17'de geri gelince bu okunurluk şart oldu (ajan bir
+    sonraki turda müşterinin NE seçtiğini buradan anlıyor). Çözülemezse
+    payload olduğu gibi kalır — kayıt akışı hiçbir koşulda bozulmamalı.
+    """
+    try:
+        tur, _, deger = (secim or "").partition(":")
+        if tur.upper() == "KOM" and deger.isdigit():
+            from catalog.services import menu_veri
+            veri = menu_veri.kombinasyon(int(deger))
+            if veri:
+                no = veri.get("no")
+                return f"{no}. {veri['ad']}" if no else veri["ad"]
+        if tur.upper() == "KOL" and deger.isdigit():
+            from catalog.services import menu_veri
+            veri = menu_veri.kombinasyonlar(int(deger))
+            if veri:
+                return f"{(veri.get('koleksiyon') or {}).get('tam_ad', '')} seçenekleri"
+    except Exception:
+        log.exception("buton adı çözülemedi: %s", secim)
+    return secim or ""
+
+
 def ozet_gelen(olay) -> str:
     """Gelen olayın okunur özeti (buton payload'ı ya da serbest metin)."""
     if olay.secim:
-        return f"[buton] {olay.secim}"
+        return f"[buton] {_buton_adi(olay.secim)}"
     metin = (olay.metin or "").strip()
     if getattr(olay, "ses", None):
         # Sesli mesaj: metin = transkript (views doldurur); çözülmediyse işaret kalsın.

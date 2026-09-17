@@ -117,10 +117,12 @@ AJAN_GECMIS_LIMIT = int(os.getenv('AJAN_GECMIS_LIMIT', '10'))
 BOT_PATRON_KIMLIKLER = [k.strip() for k in os.getenv(
     'BOT_PATRON_KIMLIK',
     '905321370627,905321339826,1330726738631990').split(',') if k.strip()]
-# Katalog pazarlık merdiveni (İsmail formülü 2026-07-12): pazarlık tabanı =
-# toptan × MARJ (yukarı 100'e yuvarlanır). Taban ile indirimli fiyat arasındaki
-# fark 6'ya bölünür; teklifler indirimli−3/6 ve −5/6 (100'e yuvarlı), son teklif
-# tabanın kendisi. Marj değişirse env'den ayarlanır, kod değişmez.
+# Katalog fiyat TABANI (kod kalkanı). 2026-09-17'den beri satış fiyatı
+# toptandan hesaplanıyor (ilk fiyat × bot_marj_ilk = 1,37; son fiyat ×
+# bot_marj_son = 1,31 — ikisi de app_ayarlari'ndan, panelden değişir; bkz.
+# catalog/services/menu_veri.satis_fiyatlari). Bu değer o merdivenin ALTINA
+# konulamayacak tabandır: marj ayarları yanlış girilse bile hiçbir teklif
+# toptan × 1,27'nin altına inmez. Eski 6'ya bölen merdiven formülü kalktı.
 BOT_PAZARLIK_MARJ = float(os.getenv('BOT_PAZARLIK_MARJ', '1.27'))
 # Verilen teklifler bu kadar saat hatırlanır (İsmail kararı 2026-07-12: 24).
 # Süre içinde merdiven kaldığı adımdan sürer (12.100 diyen bot 13.000'e geri
@@ -214,7 +216,7 @@ TEMPLATES = [
 # HER deploy öncesi güncellenir. (İsmail 2026-09-17: sıra karışmasın — "1709.17"
 # gibi GÜN-AY ile başlayan damga YANLIŞ; aynı gün ikinci deploy olursa "2609.17.2".)
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2609.17"
+APP_SURUM = "2609.17.2"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'

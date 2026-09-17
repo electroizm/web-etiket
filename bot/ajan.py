@@ -21,7 +21,6 @@ import re
 from django.conf import settings
 from sqlalchemy import select
 
-from bot.webhook_core import KOMBI_ONAY_SORUSU
 from catalog.database import SessionLocal
 from catalog.sa_models import BotMesaj
 from catalog.services import menu_veri
@@ -126,9 +125,11 @@ AYNI cevapta ver; ulaşamıyorsan bilmediğini söyle, "yetkili" yazmasını ön
 FİYAT — EN KATI KURAL
 - Fiyat ve ürün bilgisini YALNIZCA araçlardan al. Araç sonucu yoksa fiyat
   SÖYLEME; ürünü netleştir ya da "yetkili" yazmasını öner.
-- Fiyatı araçtaki "fiyat_cumlesi"nden AYNEN kopyala: önce ürün adı kendi
-  satırına, altına fiyat_cumlesi kaç satırsa o kadar satırıyla. Örnek:
+- Fiyatı araçtaki "fiyat_cumlesi"nden AYNEN kopyala — kaç satırsa o kadar
+  satırıyla. Bu metin ürün adını ve (seçeneklerden biriyse) seçenek numarasını
+  ZATEN taşır; ürün adını ayrıca yazma, numarayı değiştirme. Örnek:
     LEGNA Yatak Odası
+    4. 6 Kapaklı Baza
     Liste Fiyatı: 139.223 TL
     Size Özel: 117.100 TL
 - Rakamları değiştirme/yuvarlama/yeniden hesaplama, satır ekleme/atlama.
@@ -160,8 +161,11 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
 2) Teşhirde yoksa sonuç koleksiyon listesidir. Uygun koleksiyonu seç (aynı
    seri birden çok kategoride olabilir — VERMONT; kategori belli değilse
    fiyat vermeden SOR), sonra kombinasyonlari_listele ile takım seçeneklerini
-   getir. BU LİSTEDE FİYAT YOKTUR ve olmayacaktır: seçeneklerin adlarını yaz,
-   hangisini istediğini SOR, rakam YAZMA.
+   getir. BU LİSTEDE FİYAT YOKTUR ve olmayacaktır. Araç sonucundaki
+   "secenek_metni"ni AYNEN yapıştır (numaralı satırlar; numarayı, sırayı,
+   yazımı DEĞİŞTİRME), hangisini istediğini SOR ve cevabın EN SONUNA aracın
+   söylediği [secenekler:kol:<id>] işaretini koy — o işaret müşteriye SEÇİM
+   BUTONLARI olarak gider. Rakam/fiyat YAZMA.
 3) Müşteri seçince fiyat_detay'ı o kombinasyonun "id" değeriyle çağır —
    katalog fiyatı YALNIZ buradan gelir. Tek seçenek varsa sormadan geç.
 - Müşteri adı yanlış yazabilir ("mariza") — arama araçlarıyla en yakınını bul.
@@ -191,12 +195,14 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   istediğini sor, "fiyatlarımızda cüzi pazarlık payımız var 😊" ekle. Belirli
   ürün istenince ad="<ürün adı>" ile çağır — fiyat ve pazarlık notu orada.
 
-ÜRÜN FOTOĞRAFI
-- Müşteri görsel isterse ("fotoğrafı var mı") ya da TEK bir ürünün fiyatını
-  verdiysen: cevabın EN SONUNA [gorsel:<SKU>] yaz. SKU araç sonucundan AYNEN
-  kopyalanır — uydurma, yoksa KOYMA. Cevapta EN FAZLA BİR kez; ÇOKLU listede
-  KULLANMA (müşteri birini seçince kullan). İşaret müşteriye görünmez, sistem
-  fotoğrafa çevirir — "fotoğraf aşağıda" gibi bir şey yazma.
+ÜRÜN FOTOĞRAFI — YALNIZ TEK PARÇADA
+- TAKIM/kombinasyon fiyatı verdiğin cevaba fotoğraf işareti KOYMA (takımın tek
+  fotoğrafı yok; parçalardan birini göstermek yanıltıcı olur).
+- YALNIZ tek bir parçanın fiyatını verdiysen ya da müşteri o parçanın
+  fotoğrafını istediyse: cevabın EN SONUNA [gorsel:<SKU>] yaz. SKU araç
+  sonucundan AYNEN kopyalanır — uydurma, yoksa KOYMA. Cevapta EN FAZLA BİR
+  kez; ÇOKLU listede KULLANMA (müşteri birini seçince kullan). İşaret
+  müşteriye görünmez, sistem fotoğrafa çevirir — "fotoğraf aşağıda" yazma.
 - MAĞAZA FOTOĞRAFI/VİDEOSU: araç sonucunda medya_notu varsa AYNEN ona uy — ne
   zaman soracağın ve hangi işareti koyacağın orada yazar. medya_notu YOKSA
   fotoğraf/videodan hiç BAHSETME.
@@ -524,13 +530,16 @@ def _tool_calistir(ad: str, argumanlar: dict,
             # Pazarlık daveti seçimden ÖNCE gitmesin (İsmail kararı 2026-07-12):
             # listede davet olunca pazarlığın hangi kombinasyon üzerinde
             # başlayacağı belirsiz kalıyor. Önce seçim, davet tek ürün cevabında.
-            sonuc["not"] = ("Bu listede FİYAT YOK — rakam yazma, tahmin etme. "
-                            "Seçeneklerin ADLARINI kısaca yaz (istersen kaç "
-                            "parça olduğunu ekle) ve hangisini istediğini SOR. "
-                            "Müşteri seçince o kombinasyonun 'id' değeriyle "
-                            "fiyat_detay'ı çağır; fiyat YALNIZ oradan gelir. "
-                            "'Size özel bir fiyat çalışması' cümlesini BU cevaba "
-                            "EKLEME — müşteri bir kombinasyon seçince ekle.")
+            sonuc["not"] = (
+                "Bu listede FİYAT YOK — rakam yazma, tahmin etme. "
+                "Cevabın gövdesine 'secenek_metni' alanını AYNEN yapıştır "
+                "(numaraları DEĞİŞTİRME, sıralarını bozma, madde imi ekleme) "
+                "ve altına hangisini istediğini SOR. Cevabın EN SONUNA "
+                f"[secenekler:kol:{(sonuc.get('koleksiyon') or {}).get('id')}] "
+                "yaz — bu işaret müşteriye numaralı SEÇİM BUTONLARI olarak "
+                "gider, müşteri numaraya basınca fiyatı sistem gönderir. "
+                "İşaret müşteriye görünmez. 'Size özel bir fiyat çalışması' "
+                "cümlesini BU cevaba EKLEME — müşteri seçim yapınca eklenir.")
         return sonuc
     if ad == "fiyat_detay":
         kid = int(argumanlar["kombinasyon_id"])
@@ -848,6 +857,31 @@ def _davete_olumlu_mu(metin: str, platform: str, kullanici: str) -> bool:
         if yon == "giden":                       # en yeni giden mesaj
             return _DAVET_ISARETI in mt
     return False
+
+
+# Katalog fotoğrafı işareti ([gorsel:<SKU>]) — teşhir işareti HARİÇ.
+# İsmail kararı (2026-09-17): "her seferinde ürün resmini gösterme; tekil
+# ürünlerde, yani SKU'su 3 ile başlayanların fiyatı istenirken gösterilebilir".
+# İki kural birden uygulanır:
+#   (a) TAKIM/kombinasyon fiyatı verilen cevapta katalog fotoğrafı GİTMEZ —
+#       takımın tek bir fotoğrafı yok, parçalardan birini göstermek yanıltıcı.
+#   (b) SKU'su 3 ile başlamayan kayıt (150… = Doğtaş'ın paket "takım" SKU'su)
+#       için de gitmez.
+# Teşhir fotoğrafı bu kuralın DIŞINDA: o zaten "göndereyim mi?" diye sorulup
+# müşteri isteyince gidiyor.
+_KATALOG_GORSELI = re.compile(r"\s*\[gorsel:\s*(?!teshir:)([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
+
+
+def _gorsel_isaretini_suz(cevap: str, kombinasyon_fiyati: bool) -> str:
+    """Uygun olmayan katalog fotoğrafı işaretlerini cevaptan çıkar."""
+    def karar(m: re.Match) -> str:
+        sku = m.group(1)
+        if not kombinasyon_fiyati and sku.startswith("3"):
+            return m.group(0)          # tekil ürün — fotoğraf serbest
+        log.info("ajan: katalog fotoğrafı düşürüldü (sku=%s, kombinasyon=%s)",
+                 sku, kombinasyon_fiyati)
+        return " "
+    return _KATALOG_GORSELI.sub(karar, cevap or "").strip()
 
 
 # Cevapta medya işareti var mı — [gorsel:...] ya da [video:...]. Zorlamanın
@@ -1230,13 +1264,19 @@ def _gecmis(platform: str, kullanici: str, guncel_metin: str) -> list[dict]:
     mesajlar: list[dict] = []
     for r in rows:
         metin = (r.metin or "").strip()
-        if "[menü]" in metin and KOMBI_ONAY_SORUSU in metin:
-            # IG'de kombinasyon detayı quick reply ile gider ("[menü]" etiketi
-            # alır) ama bağlam için kritiktir: müşterinin menüden HANGİ
-            # kombinasyonu seçtiğini model ancak buradan öğrenir. Atlamak
-            # yerine etiketi temizleyip tut.
+        if "[menü]" in metin:
+            # Butonlu mesajlar (numaralı seçenek listesi, kombinasyon detayı)
+            # "[menü]" etiketi alır ama BAĞLAM İÇİN KRİTİKTİR: müşterinin
+            # hangi seçenekleri gördüğünü ve neyi seçtiğini model ancak
+            # buradan öğrenir. Eskiden bu satırlar atılıyordu; seçim butonları
+            # 2026-09-17'de geri gelince atmak "4 numarayı istiyorum" diyen
+            # müşteriyi anlaşılmaz hâle getirdi. Etiketi temizle, metni TUT.
             metin = metin.replace("[menü]", "").strip()
-        elif not metin or metin.startswith("[buton]") or "[menü]" in metin \
+        elif metin.startswith("[buton] "):
+            # Müşterinin bastığı butonun ADI (bkz. kayit._buton_adi) — payload
+            # değil, okunur metin. Model seçimi görmeli.
+            metin = metin[len("[buton] "):].strip()
+        elif not metin or metin.startswith("[buton]") \
                 or metin.startswith("[kart") or metin.startswith("[sohbeti") \
                 or metin.startswith("[ses —") or metin.startswith("[görsel —"):
             continue
@@ -1350,6 +1390,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     butce_genis = False                # token bütçesi bitince tek seferlik büyütme
     teshir_bakildi = False             # bu istekte teshir_bilgi ÇAĞRILDI mı
     teshir_zorlandi = False            # "yok" cevabına tek zorlama hakkı
+    listelenen_kol: int | None = None  # seçenekleri listelenen koleksiyon (buton için)
+    kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
 
     for _ in range(MAKS_TOOL_TURU):
         # Sayaç BURADA tutulur, cevapla()'da değil: bir müşteri mesajı bu
@@ -1453,6 +1495,14 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 cevap = _tutarsiz_blogu_sadelestir(_davet_yeri_duzelt(
                     _sistem_sozu_temizle(_pazarlik_kalkani(
                         cevap, teshir_cagrildi, legit=legit_fiyatlar))))
+                # Pazarlık BAŞLADIYSA davet cümlesi ("Size özel bir fiyat
+                # çalışması yapmak isteriz") ARTIK anlamsız: müşteri zaten
+                # pazarlık ediyor, teklifi verdikten sonra tekrar davet etmek
+                # oyalama gibi duruyor. Prompt bunu söylüyor ama model, bir
+                # önceki (kod üretimi) mesajdaki daveti taklit edebiliyor —
+                # canlıda görüldü (2026-09-17 buton denemesi).
+                if pazarlik_niyeti:
+                    cevap = _DAVET_KALIBI.sub("", cevap).strip()
             # Fiyat kalkanı (teşhir DAHİL, artık her zaman açık): cevaptaki bir TL
             # tutarı ne araçların döndürdüğü gerçek fiyat, ne müşterinin yazdığı
             # tutar, ne de bir teşhir pazarlık aralığı [taban, İndirimli] içindeyse
@@ -1497,6 +1547,16 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # işaret modelden değil, o turda çalışan aracın sonucundan geliyor.
             if medya_niyeti and medya_yedegi and not _MEDYA_ISARETI.search(cevap):
                 cevap = f"{cevap} {medya_yedegi}"
+            # Fotoğraf süzgeci: takım fiyatında ve 3 ile başlamayan SKU'da
+            # katalog fotoğrafı gitmez (bkz. _gorsel_isaretini_suz).
+            cevap = _gorsel_isaretini_suz(cevap, kombinasyon_fiyati)
+            # Seçim butonları: model işareti unutursa BİZ koyarız — medya
+            # emniyet ağıyla aynı desen (canlıda aynı akış bir koşuda işareti
+            # yazdı, diğerinde yazmadı). Koleksiyon id'si araç sonucundan
+            # geliyor, modelden değil; uydurma riski yok.
+            if (listelenen_kol and not kombinasyon_fiyati
+                    and "[secenekler:" not in cevap):
+                cevap = f"{cevap} [secenekler:kol:{listelenen_kol}]"
             return cevap[:MAKS_CEVAP_KR]
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
@@ -1528,6 +1588,12 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # kalkan açık kalsın ki model oraya rakam uydurursa yakalansın.
             if tc.function.name == "teshir_bilgi":
                 teshir_bakildi = True
+            # Seçim butonu / fotoğraf kuralı için bu turda ne olduğunu izle.
+            if tc.function.name == "kombinasyonlari_listele" and isinstance(sonuc, dict):
+                if len(sonuc.get("kombinasyonlar") or []) > 1:
+                    listelenen_kol = (sonuc.get("koleksiyon") or {}).get("id")
+            if tc.function.name == "fiyat_detay":
+                kombinasyon_fiyati = True
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True

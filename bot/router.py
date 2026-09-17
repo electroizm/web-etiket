@@ -138,6 +138,96 @@ def _gorsel_urlleri(kod: str) -> list[str]:
     return [url] if url else []
 
 
+# ── Numaralı seçim butonları (İsmail isteği 2026-09-17) ─────────────────────
+# Ajan takım seçeneklerini listelediğinde cevabın sonuna [secenekler:kol:<id>]
+# koyar; router bunu butonlara çevirir. Menü DEĞİL — tek adımlık seçim:
+# müşteri numaraya basar, o kombinasyonun fiyatı KOD tarafından üretilir
+# (AI çağrısı yok → anında cevap, kota harcanmaz).
+SECENEK_ISARETI = re.compile(r"\s*\[secenekler:\s*kol\s*:\s*(\d{1,12})\s*\]\s*")
+GERI_BUTONU = "⬅️ Geri"
+YETKILI_BUTONU = "👤 Yetkili"
+# WhatsApp listesi en çok 10 satır; 2'si Geri + Yetkili için ayrılır.
+SECENEK_MAX = 8
+PAZARLIK_DAVETI = "Size özel bir fiyat çalışması yapmak isteriz. 😊"
+
+
+def _secenek_ayikla(cevap: str) -> tuple[str, int | None]:
+    """Cevaptan [secenekler:kol:<id>] işaretini çıkar; (temiz metin, kol id)."""
+    bulunan = SECENEK_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    return SECENEK_ISARETI.sub(" ", cevap).strip(), int(bulunan.group(1))
+
+
+def _secenekler_mesaji(koleksiyon_id: int, P, metin: str = "",
+                       tek_ise_fiyat: bool = True) -> dict | None:
+    """Koleksiyonun numaralı takım seçenekleri + Geri/Yetkili butonları.
+
+    Numaralar `menu_veri.kombinasyonlar` sırasından gelir — metindeki "3" ile
+    butondaki "3" AYNI kombinasyonu gösterir. Tek seçenek varsa buton üretmeye
+    gerek yok, doğrudan fiyat gider.
+    """
+    from catalog.services import menu_veri
+    veri = menu_veri.kombinasyonlar(koleksiyon_id)
+    kombiler = (veri or {}).get("kombinasyonlar") or []
+    if not kombiler:
+        return None
+    if len(kombiler) == 1:
+        # Butona basılarak gelindiyse tek seçeneği sormanın anlamı yok, fiyatı
+        # ver. Ajan işaretinden gelindiyse (tek_ise_fiyat=False) cevabı model
+        # zaten yazdı — üstüne kod metni bindirme.
+        return _kombinasyon_fiyat_mesaji(kombiler[0]["id"], P) if tek_ise_fiyat else None
+    kol = veri["koleksiyon"]
+    if not metin:
+        metin = (f"{kol['tam_ad']} seçenekleri:\n\n{veri['secenek_metni']}\n\n"
+                 f"Hangisini istersiniz?")
+    secenekler = [(f"{k['no']}. {k['ad']}", f"KOM:{k['id']}", k["ad"])
+                  for k in kombiler[:SECENEK_MAX]]
+    secenekler.append((GERI_BUTONU, f"GERI:ARA:{kol['ad']}"[:180], ""))
+    secenekler.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
+    return P.secim_mesaji(metin, secenekler)
+
+
+def _kombinasyon_fiyat_mesaji(kombinasyon_id: int, P) -> dict | None:
+    """Seçilen kombinasyonun fiyatı — KOD üretir, model çağrılmaz.
+
+    Fiyat bloğu (ad + Liste/Size Özel) menu_veri'den hazır gelir; buraya yalnız
+    pazarlık daveti ile Geri/Yetkili butonları eklenir. Pazarlık daveti metni
+    ajan tarafındakiyle AYNI olmalı: ajan bir sonraki turda müşterinin "olur"
+    cevabını bu cümleden tanıyor (_davete_olumlu_mu).
+    """
+    from catalog.services import menu_veri
+    veri = menu_veri.kombinasyon(kombinasyon_id)
+    if not veri or not veri.get("fiyat_cumlesi"):
+        return None
+    metin = f"{veri['fiyat_cumlesi']}\n\n{PAZARLIK_DAVETI}"
+    kol = veri.get("koleksiyon") or {}
+    butonlar = []
+    if kol.get("id"):
+        butonlar.append((GERI_BUTONU, f"KOL:{kol['id']}", ""))
+    butonlar.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
+    return P.secim_mesaji(metin, butonlar)
+
+
+def _koleksiyon_secim_mesaji(ad: str, P) -> dict | None:
+    """Aynı seri birden çok kategorideyse (LEGNA) kategori seçimi.
+
+    Seçenek listesindeki "Geri" buraya döner: müşteri yanlış kategoriye
+    girdiyse seriyi yeniden yazmadan düzeltebilsin (İsmail kararı 2026-09-17).
+    """
+    from catalog.services import menu_veri
+    eslesmeler = menu_veri.koleksiyon_ara(ad or "")
+    if not eslesmeler:
+        return None
+    if len(eslesmeler) == 1:
+        return _secenekler_mesaji(eslesmeler[0]["id"], P)
+    secenekler = [(k.get("kategori") or k["ad"], f"KOL:{k['id']}", "")
+                  for k in eslesmeler[:SECENEK_MAX]]
+    secenekler.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
+    return P.secim_mesaji(f"{eslesmeler[0]['ad']} hangi kategoride olsun?",
+                          secenekler)
+
+
 def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
                P) -> dict | list[dict] | None:
     """AI'dan cevap iste; üretemezse None (çağıran metin fallback'ine düşer).
@@ -155,6 +245,7 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
         return None
     cevap, kod = _gorsel_ayikla(cevap)
     cevap, video_url = _video_ayikla(cevap)
+    cevap, kol_id = _secenek_ayikla(cevap)
     if not cevap and not kod and not video_url:   # ne işaret ne metin
         return None
     if not cevap:
@@ -162,7 +253,11 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
         # doğal davranış (canlıda görüldü 2026-08-02). Eskiden burada None
         # dönülüyordu: medya da metin de gitmiyor, müşteri boş kalıyordu.
         cevap = "Buyurun, mağazadaki hâli 👇"
-    mesajlar = [P.metin_mesaji(cevap)]
+    # Seçenek listesi: modelin yazdığı metne numaralı butonlar iliştirilir.
+    # Butonlar KODDAN gelir; metindeki numaralarla aynı sırayı paylaşırlar.
+    butonlu = (_secenekler_mesaji(kol_id, P, metin=cevap, tek_ise_fiyat=False)
+               if kol_id else None)
+    mesajlar = [butonlu or P.metin_mesaji(cevap)]
     if kod and hasattr(P, "gorsel_mesaji"):
         mesajlar += [P.gorsel_mesaji(u) for u in _gorsel_urlleri(kod)]
     if video_url and hasattr(P, "video_mesaji"):
@@ -178,9 +273,9 @@ def yanit_uret(tetik: str, P=_default_P, platform: str = "",
       1. "Yetkiliyle görüş" (yazı, eski YETKILI ya da eski BENIARA butonu) →
          yetkili kartı. İnsana yönlendirmenin TEK yolu budur (İsmail 2026-07-27:
          "beni ara" geri arama akışı kaldırıldı).
-      2. Eski menü butonu (KAT/KOL/KOM/START) ya da boş mesaj → yazmaya yönlendir
-         (menü üretilmez — bu butonlar yalnız geçmiş mesajlardan gelebilir).
-      3. Her serbest metin (selam dahil) → AI. Üretemezse metin fallback.
+      2. Numaralı seçim butonları (KOM/KOL/GERI, 2026-09-17) → cevabı kod üretir.
+      3. Kalan eski menü butonu (KAT/START) ya da boş mesaj → yazmaya yönlendir.
+      4. Her serbest metin (selam dahil) → AI. Üretemezse metin fallback.
     """
     tur, _deger = parse_secim(tetik)
 
@@ -190,11 +285,31 @@ def yanit_uret(tetik: str, P=_default_P, platform: str = "",
     if _yetkili_mi(tur, tetik) or tur == BENIARA_PAYLOAD:
         return P.yetkili_mesaji(yetkili_metni(), YETKILI_URL, YETKILI_ARA_URL)
 
-    # 2) Eski menü butonu ya da boş mesaj → menü yok, yazmaya yönlendir.
+    # 2) Numaralı seçim butonları (2026-09-17). Cevabı KOD üretir — model
+    #    çağrılmaz: müşteri anında cevap alır, kota harcanmaz. Kayıt (silinmiş
+    #    kombinasyon, değişmiş id) bulunamazsa aşağıdaki eski-buton dalına
+    #    düşer ve müşteri yazmaya yönlendirilir.
+    if tur == "KOM" and (_deger or "").isdigit():
+        mesaj = _kombinasyon_fiyat_mesaji(int(_deger), P)
+        if mesaj:
+            return mesaj
+    if tur == "KOL" and (_deger or "").isdigit():
+        mesaj = _secenekler_mesaji(int(_deger), P)
+        if mesaj:
+            return mesaj
+    if tur == "GERI":
+        deger = _deger or ""
+        if deger.upper().startswith("ARA:"):
+            mesaj = _koleksiyon_secim_mesaji(deger[4:], P)
+            if mesaj:
+                return mesaj
+        return P.metin_mesaji(YAZMAYA_YONLENDIR)
+
+    # 3) Eski menü butonu ya da boş mesaj → menü yok, yazmaya yönlendir.
     if tur in ("KAT", "KOL", "KOM", "START"):
         return P.metin_mesaji(YAZMAYA_YONLENDIR)
 
-    # 3) Her serbest metin → AI. Üretemezse (kapalı/kota/hata) metin fallback.
+    # 4) Her serbest metin → AI. Üretemezse (kapalı/kota/hata) metin fallback.
     if platform and kullanici:
         cevap = _ai_cevabi(tetik, platform, kullanici, gecmissiz, P)
         if cevap is not None:
