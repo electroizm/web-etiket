@@ -358,8 +358,16 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     if butonlu is None and seri_adi:
         butonlu = _koleksiyon_secim_mesaji(seri_adi, P, metin=cevap)
     # Tek ürün fiyatı: metin modelin, butonlar kodun.
-    if butonlu is None and parca_sku and cevap:
-        butonlu = _parca_fiyat_butonlari(parca_sku, P, cevap)
+    # SKU iki yerden gelebilir: [parca:<SKU>] işareti (arama TEK ürün
+    # döndürdüğünde konur) ya da fotoğraf işareti [gorsel:<SKU>]. İkincisi
+    # şart: "KIERA Berjer" gibi çok kayıtlı aramalarda model bir tanesini
+    # seçip fiyat veriyor, [parca:] konmuyordu ve butonlar kayboluyordu
+    # (İsmail 2026-09-18). Fotoğraf işareti yalnız TEK ürün cevabında konur
+    # (çoklu listede yasak), dolayısıyla doğru çapa.
+    if butonlu is None and cevap:
+        sku = parca_sku or (kod if kod and not kod.startswith("teshir:") else None)
+        if sku:
+            butonlu = _parca_fiyat_butonlari(sku, P, cevap)
     if not cevap:
         if butonlu:
             return butonlu
