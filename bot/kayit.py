@@ -52,12 +52,15 @@ def _buton_adi(secim: str) -> str:
     """
     try:
         tur, _, deger = (secim or "").partition(":")
-        if tur.upper() == "KOM" and deger.isdigit():
+        if tur.upper() in ("KOM", "IND") and deger.isdigit():
             from catalog.services import menu_veri
             veri = menu_veri.kombinasyon(int(deger))
             if veri:
                 no = veri.get("no")
-                return f"{no}. {veri['ad']}" if no else veri["ad"]
+                ad = f"{no}. {veri['ad']}" if no else veri["ad"]
+                # İndirim butonu ayrı işaretlenir: panelde "müşteri indirim
+                # istedi" görünsün, ajan da geçmişte bunu okuyabilsin.
+                return f"📉 İndirim istedi — {ad}" if tur.upper() == "IND" else ad
         if tur.upper() == "KOL" and deger.isdigit():
             from catalog.services import menu_veri
             veri = menu_veri.kombinasyonlar(int(deger))

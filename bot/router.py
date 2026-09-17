@@ -146,6 +146,7 @@ def _gorsel_urlleri(kod: str) -> list[str]:
 SECENEK_ISARETI = re.compile(r"\s*\[secenekler:\s*kol\s*:\s*(\d{1,12})\s*\]\s*")
 GERI_BUTONU = "⬅️ Geri"
 YETKILI_BUTONU = "👤 Yetkili"
+INDIRIM_BUTONU = "📉 İndirim"
 # WhatsApp listesi en çok 10 satır; 2'si Geri + Yetkili için ayrılır.
 SECENEK_MAX = 8
 PAZARLIK_DAVETI = "Size özel bir fiyat çalışması yapmak isteriz. 😊"
@@ -209,6 +210,36 @@ def _kombinasyon_fiyat_mesaji(kombinasyon_id: int, P) -> dict | None:
     if not veri or not veri.get("fiyat_cumlesi"):
         return None
     metin = f"{veri['fiyat_cumlesi']}\n\n{PAZARLIK_DAVETI}"
+    kol = veri.get("koleksiyon") or {}
+    butonlar = []
+    # 📉 İndirim (İsmail isteği 2026-09-18): tek dokunuşla merdivenin SON
+    # kademesi (Müdür fiyatı). Merdiven yoksa — toptanı olmayan ya da şüpheli
+    # kayıt — buton hiç GÖSTERİLMEZ, yoksa basana verecek indirim olmaz.
+    if veri.get("_merdiven"):
+        butonlar.append((INDIRIM_BUTONU, f"IND:{kombinasyon_id}", ""))
+    if kol.get("id"):
+        butonlar.append((GERI_BUTONU, f"KOL:{kol['id']}", ""))
+    butonlar.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
+    return P.secim_mesaji(metin, butonlar)
+
+
+def _kombinasyon_indirim_mesaji(kombinasyon_id: int, P) -> dict | None:
+    """📉 İndirim butonunun cevabı: merdivenin SON kademesi (Müdür fiyatı).
+
+    Merdivenin iki kademesi var (ilk = ×1,37, son = ×1,31); buton doğrudan
+    sonuncuyu verir. Altına inilecek bir adım kalmadığı için cevapta İndirim
+    butonu TEKRAR gösterilmez — müşteri "biraz daha" yazarsa ajan devreye
+    girer ve ADIM DURUMU zaten "merdiven bitti" der (rakam giden mesajdan
+    okunuyor).
+    """
+    from catalog.services import menu_veri
+    veri = menu_veri.kombinasyon(kombinasyon_id)
+    merdiven = (veri or {}).get("_merdiven")
+    if not veri or not merdiven:
+        return None
+    metin = (f"{veri['baslik']}\n\n"
+             f"Size özel fiyatımız: {menu_veri._tl(merdiven[-1])}\n"
+             f"Bu bizim son fiyatımız 😊")
     kol = veri.get("koleksiyon") or {}
     butonlar = []
     if kol.get("id"):
@@ -303,6 +334,10 @@ def yanit_uret(tetik: str, P=_default_P, platform: str = "",
     #    düşer ve müşteri yazmaya yönlendirilir.
     if tur == "KOM" and (_deger or "").isdigit():
         mesaj = _kombinasyon_fiyat_mesaji(int(_deger), P)
+        if mesaj:
+            return mesaj
+    if tur == "IND" and (_deger or "").isdigit():
+        mesaj = _kombinasyon_indirim_mesaji(int(_deger), P)
         if mesaj:
             return mesaj
     if tur == "KOL" and (_deger or "").isdigit():

@@ -216,7 +216,7 @@ TEMPLATES = [
 # HER deploy öncesi güncellenir. (İsmail 2026-09-17: sıra karışmasın — "1709.17"
 # gibi GÜN-AY ile başlayan damga YANLIŞ; aynı gün ikinci deploy olursa "2609.17.2".)
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "2609.18.3"
+APP_SURUM = "2609.18.4"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'

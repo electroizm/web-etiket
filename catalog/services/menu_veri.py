@@ -745,19 +745,21 @@ def kombinasyon(kombi_id: int) -> dict | None:
             f"• {ku.urun.urun_adi_tam}" + (f" ×{ku.miktar}" if ku.miktar > 1 else "")
             for ku in kombi.urunler if ku.urun is not None
         )
-        if icerik:
-            baslik = f"{baslik}\n\n{icerik}" if baslik else icerik
+        # baslik = yalnız AD satırları (indirim mesajı gibi kısa cevaplarda
+        # içindekileri tekrarlamayalım); tam blok fiyat_cumlesi'nde kurulur.
+        tam_baslik = f"{baslik}\n\n{icerik}" if (baslik and icerik) else (baslik or icerik)
         ozet = _toplam_ozet(kombi, pazarlik=True)
-        if ozet.get("fiyat_cumlesi") and baslik:
+        if ozet.get("fiyat_cumlesi") and tam_baslik:
             # Ad, içindekiler ve fiyat TEK blok: model bunları ayrı yazarken
             # eşleştirmeyi kaçırabiliyor (canlıda fiyat başka ürünün adıyla
             # gitti). Boş satır, fiyatı içindekilerden görsel olarak ayırır.
-            ozet["fiyat_cumlesi"] = f"{baslik}\n\n{ozet['fiyat_cumlesi']}"
+            ozet["fiyat_cumlesi"] = f"{tam_baslik}\n\n{ozet['fiyat_cumlesi']}"
         return {
             "id": kombi.id,
             "ad": kombi.ad,
             "no": no,
-            "baslik": baslik,
+            "baslik": baslik,              # yalnız ad satırları
+            "icerik_metni": icerik,        # madde madde parçalar
             # kategori adı: menü detay başlığı "BEND Oturma Grubu için ..."
             # (wa/ig_presenter.kombinasyon_detay_mesaji) için gerekli.
             # video_var: koleksiyonun YouTube tanıtım videosu var mı. Yalnız
