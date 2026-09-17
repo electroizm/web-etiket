@@ -72,6 +72,18 @@ MODEL_SAYAC: dict[str, dict[str, int]] = {}
 SAYAC_BASLANGIC: str | None = None
 
 
+class BosCevap(Exception):
+    """Model boş içerik döndürdü (ne metin ne araç çağrısı).
+
+    Kalkan kararı DEĞİL, modelin o anki kusurudur — bu yüzden zincir durmaz,
+    sıradaki model denenir. Eskiden burada zincir biterdi ve müşteri özür
+    metni görürdü; kota sayfasındaki "◻️ boş" sayacının müşteri karşılığı
+    buydu (İsmail'in sorduğu "46 boş cevap", 2026-07-29). 2026-09-17'de
+    canlı denemede yeniden görüldü: gemini-2.5-flash-lite boş döndü ve
+    zincirin son halkası (OpenRouter) hiç denenmeden cevap kayboldu.
+    """
+
+
 def _sayac(model: str, alan: str, is_adi: str = "sohbet") -> None:
     global SAYAC_BASLANGIC
     from datetime import datetime
@@ -116,12 +128,12 @@ FİYAT — EN KATI KURAL
   SÖYLEME; ürünü netleştir ya da "yetkili" yazmasını öner.
 - Fiyatı araçtaki "fiyat_cumlesi"nden AYNEN kopyala: önce ürün adı kendi
   satırına, altına fiyat_cumlesi kaç satırsa o kadar satırıyla. Örnek:
-    LUMERIS Köşe Takımı
-    Liste Fiyatı: 66.661 TL
-    İndirim: 12.665 TL
-    İndirimli Fiyat: 53.996 TL
+    LEGNA Yatak Odası
+    Liste Fiyatı: 139.223 TL
+    Size Özel: 117.100 TL
 - Rakamları değiştirme/yuvarlama/yeniden hesaplama, satır ekleme/atlama.
-  "Size şu kadar indirim yaptık" gibi süs cümlesi KURMA.
+  "İndirim: ... TL" diye ÜÇÜNCÜ bir satır EKLEME, yüzde hesaplama;
+  "size şu kadar indirim yaptık" gibi süs cümlesi KURMA.
 - Söylediğin her TL tutarı araç sonucunda birebir geçmeli. Birden fazla ürün
   listelerken her ürünün KENDİ fiyat_cumlesi'ni yaz, rakamları karıştırma.
 
@@ -140,12 +152,19 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   vazgeçmesin. magaza_bilgi'yi "şube" ile çağır, gönderim/servis cevabını ver.
   Adres AÇIKÇA sorulursa ("neredesiniz") elbette Batman adresini ver.
 
-ÜRÜN BULMA — HANGİ ARACI NE ZAMAN
+ÜRÜN BULMA — AKIŞ SIRAYLA
+1) Müşteri bir ürün/seri adı geçirdiyse İLK iş: koleksiyon_ara (o adla).
+   Bu araç ÖNCE MAĞAZA TEŞHİRİNE bakar. Sonuçta "teshir" alanı geldiyse ürün
+   mağazada sergileniyor demektir: fiyatı, pazarlık payı ve fotoğrafı oradan
+   gelir — katalog araçlarını ARAMA, başka fiyat verme.
+2) Teşhirde yoksa sonuç koleksiyon listesidir. Uygun koleksiyonu seç (aynı
+   seri birden çok kategoride olabilir — VERMONT; kategori belli değilse
+   fiyat vermeden SOR), sonra kombinasyonlari_listele ile takım seçeneklerini
+   getir. BU LİSTEDE FİYAT YOKTUR ve olmayacaktır: seçeneklerin adlarını yaz,
+   hangisini istediğini SOR, rakam YAZMA.
+3) Müşteri seçince fiyat_detay'ı o kombinasyonun "id" değeriyle çağır —
+   katalog fiyatı YALNIZ buradan gelir. Tek seçenek varsa sormadan geç.
 - Müşteri adı yanlış yazabilir ("mariza") — arama araçlarıyla en yakınını bul.
-- Aynı seri birden çok kategoride olabilir (VERMONT). koleksiyon_ara çok sonuç
-  dönerse: mesajdan kategori belliyse seç, belli değilse fiyat vermeden SOR.
-- kombinasyonlari_listele zaten toplam fiyatı döndürür; fiyat_detay'ı yalnız
-  TEK kombinasyonun içeriği sorulunca çağır. Gereksiz araç çağırma.
 - parca_ara: (a) tek ürün sorulmuşsa ("zigon sehpa", "berjer", "komodin"),
   (b) "sadece/tek başına" vurgusu varsa, (c) koleksiyon akışında BULAMADIYSAN —
   "bulamadım" demeden ÖNCE mutlaka dene. Yalnız sorulanın fiyatını ver, seti
@@ -162,10 +181,11 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   2-3 seçeneği fiyatıyla listele ve "fotoğraftakine benzer modellerimiz şunlar,
   bunlardan biri mi?" diye SOR. Araç boşsa ürün adını sor. (ADI okunduysa
   normal akış.)
-- teshir_bilgi: (a) müşteri mağazadaki/teşhirdeki üründen bahsederse,
-  (b) mesajda "(teşhirdeki ürün)" geçerse, (c) ürünü katalogda bulamazsan ya da
-  bulduğun kategori müşterinin dediğiyle uyuşmazsa — "bulamadım" demeden ÖNCE.
-  Bunların DIŞINDA teşhir fiyatını kendiliğinden açma.
+- teshir_bilgi: ürün ADIYLA arama yapıyorsan buna gerek YOK — koleksiyon_ara
+  teşhire zaten önce bakıyor. Bunu şu üç durumda çağır: (a) müşteri açıkça
+  mağazadaki/teşhirdeki üründen bahsedip ad vermiyorsa, (b) mesajda
+  "(teşhirdeki ürün)" ipucu varsa, (c) pazarlık/fotoğraf için o teşhir kaydını
+  TEKRAR okuman gerekiyorsa (ad="<ürün adı>" ile).
   Genel "teşhirde ne var" sorusunda ARGÜMANSIZ çağır: yalnız isimler döner
   (fiyatsız). İsimleri kategoriye göre grupla, RAKAM YAZMA, hangisinin fiyatını
   istediğini sor, "fiyatlarımızda cüzi pazarlık payımız var 😊" ekle. Belirli
@@ -221,10 +241,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "koleksiyon_ara",
-            "description": "Koleksiyon (ürün serisi) adıyla arama yapar. Müşteri bir "
-                           "ürün/seri adı geçirdiğinde önce bunu çağır. Aynı ad birden "
-                           "fazla kategoride olabilir — sonuçtaki 'kategori' alanına bak, "
-                           "birden çok eşleşme varsa müşteriye hangisi olduğunu sor.",
+            "description": "Ürün/seri adıyla arama. ÖNCE mağaza teşhirine, orada yoksa "
+                           "katalog koleksiyonlarına bakar. Müşteri bir ürün/seri adı "
+                           "geçirdiğinde İLK bunu çağır. Sonuçta 'teshir' alanı varsa "
+                           "ürün mağazada sergileniyordur — fiyatı ve pazarlık payı "
+                           "oradan gelir, başka araç çağırma. Koleksiyon listesi "
+                           "dönerse 'kategori' alanına bak; birden çok eşleşme varsa "
+                           "müşteriye hangisi olduğunu sor.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -260,8 +283,10 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "kombinasyonlari_listele",
-            "description": "Bir koleksiyonun kombinasyonlarını (takım seçenekleri) "
-                           "toplam fiyat özetiyle listeler.",
+            "description": "Bir koleksiyonun takım seçeneklerini (kombinasyonlar) "
+                           "FİYATSIZ listeler — müşteriye seçenekleri sunup hangisini "
+                           "istediğini sormak için. Fiyat bu araçta YOKTUR; müşteri "
+                           "birini seçince fiyat_detay ile alınır.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -343,11 +368,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "fiyat_detay",
-            "description": "Bir kombinasyonun fiyat detayını, içindeki ürünleri VE "
-                           "pazarlık merdivenini (pazarlik_notu) verir. Müşteriye fiyat "
-                           "söylemeden önce MUTLAKA bu (veya kombinasyonlari_listele) "
-                           "çağrılmış olmalı. Müşteri bir kombinasyonda PAZARLIK "
-                           "ederse de bunu çağır — pazarlık fiyatları buradan gelir.",
+            "description": "Bir kombinasyonun fiyatını, içindeki ürünleri VE pazarlık "
+                           "merdivenini (pazarlik_notu) verir. KATALOG FİYATI YALNIZ "
+                           "buradan gelir — müşteriye fiyat söylemeden önce MUTLAKA "
+                           "çağrılmış olmalı (kombinasyonlari_listele fiyat vermez). "
+                           "Müşteri bir kombinasyonda PAZARLIK ederse de bunu çağır.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -393,24 +418,85 @@ def _patron_mu(kullanici: str) -> bool:
     return bool(kullanici) and kullanici in settings.BOT_PATRON_KIMLIKLER
 
 
+def _teshir_sonucu(kayitlar: list[dict]) -> dict:
+    """Teşhir kayıtlarını model görünümüne çevir (fiyat + pazarlık + medya notu).
+
+    `_teshir_baglami` çağıran döngüye "bu turda teşhir konuşuldu" der: fiyat
+    kalkanı teşhir pazarlığında farklı davranır ve "yok" demeden önce teşhire
+    bakılma zorlaması bu sinyale bakar. Anahtar modele GİTMEZ, döngü düşürür.
+    """
+    # Modele LOOSE taban rakamı VERME — canlıda 22.000 taban "İndirim: 22.000"
+    # oldu (model ayrı rakamı fiyat satırına karıştırdı). Taban artık atomik
+    # pazarlik_notu metni; ham int alanı (pazarlik_taban_fiyat) gizlenir.
+    # Pazarlık aralığı (taban..fiyat) fiyat kalkanı için ayrıca toplanır.
+    gorunum = _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",))
+    araliklar = []
+    for ham, gk in zip(kayitlar, gorunum):
+        # Medya talimatı BURADA veriliyor (sistem promptunda değil): id'yi, kaç
+        # fotoğraf olduğunu ve video bulunup bulunmadığını ancak araç sonucu
+        # bilir. Canlı denemede (2026-08-02) model "Görseli gönderiyorum" deyip
+        # işareti KOYMADI — talimat somut veriyle gelmezse uygulamıyor.
+        gk["medya_notu"] = _medya_notu(
+            "teshir", gk["id"], gk.get("fotograf_sayisi") or 0,
+            bool(gk.get("video_var")))
+        if not gk["medya_notu"]:
+            gk.pop("medya_notu")
+        taban = ham.get("pazarlik_taban_fiyat")
+        perakende = ham.get("perakende_fiyat")
+        if taban:
+            gk["pazarlik_notu"] = (
+                f"Müşteri ısrarla pazarlık ederse bu üründe en fazla "
+                f"{menu_veri._tl(taban)}'ye inebilirsin; ALTINA inme. "
+                f"Kendiliğinden indirim önerme.")
+            if perakende:
+                araliklar.append((int(taban), int(perakende)))
+    return {"teshir": gorunum,
+            "pazarlik_kurali": "Fiyatı fiyat_cumlesi'nden AYNEN kopyala; rakam "
+                               "ekleme/yuvarlama YAPMA. Pazarlık için ilgili ürünün "
+                               "pazarlik_notu'na uy; notu olmayan üründe pazarlık yapma.",
+            "_pazarlik_araliklari": araliklar,
+            "_teshir_baglami": True}
+
+
 def _tool_calistir(ad: str, argumanlar: dict,
                    platform: str = "", kullanici: str = ""):
     """Modelin istediği aracı gerçek veriyle çalıştır.
 
-    NOT: Toptan satırı bot cevaplarından KALDIRILDI (İsmail kararı 2026-07-12;
-    pazarlık merdiveni toptanı zaten içeride kullanıyor, ayrıca göstermek
-    gürültüydü). Beyaz liste (_patron_mu) ve menu_veri'nin toptan_dahil
-    altyapısı ileride gerekirse tek satırla geri açılmak üzere duruyor.
+    NOT: Toptan satırı bot cevaplarından KALDIRILDI (İsmail kararı 2026-07-12);
+    toptan artık satış fiyatının KAYNAĞI (menu_veri.satis_fiyatlari) ama ham
+    tutar olarak müşteriye/modele hiç gitmez. Beyaz liste (_patron_mu) ileride
+    patrona özel bir özellik gerekirse hazır dursun diye korunuyor.
     """
     if ad == "koleksiyon_ara":
-        return menu_veri.koleksiyon_ara(str(argumanlar.get("q", "")))
+        q = str(argumanlar.get("q", ""))
+        # ÖNCE TEŞHİR (İsmail kararı 2026-09-17): mağazada duran mal her zaman
+        # önceliklidir — fiyatı elle girilmiştir, pazarlık payı ayrıdır,
+        # fotoğrafı vardır. Sırayı modele bırakmıyoruz: prompt "önce şuna bak"
+        # dediği hâlde uymadığı canlıda üç kez görüldü (02-03.08 kayıtları).
+        # Teşhirde eşleşme varsa katalog aramasına HİÇ gidilmez.
+        try:
+            from catalog.services import teshir as teshir_servis
+            teshirde = teshir_servis.ajan_icin(ad=q) if q.strip() else []
+        except Exception:
+            log.exception("ajan: teşhir önceliği okunamadı")
+            teshirde = []
+        if teshirde:
+            sonuc = _teshir_sonucu(teshirde)
+            sonuc["not"] = ("Bu ürün MAĞAZA TEŞHİRİNDE var — fiyatı ve pazarlık "
+                            "payı buradan gelir, katalog fiyatını ARAMA. "
+                            "Müşteriye teşhirdeki ürünü anlat, fiyat_cumlesi'ni "
+                            "AYNEN yaz, medya_notu varsa ona uy.")
+            return sonuc
+        return menu_veri.koleksiyon_ara(q)
     if ad == "kategorileri_listele":
         return menu_veri.kategoriler()
     if ad == "koleksiyonlari_listele":
         return menu_veri.koleksiyonlar(int(argumanlar["kategori_id"]))
     if ad == "kombinasyonlari_listele":
-        # Modele SADE görünüm ver: ham rakamlar yerine fiyat_cumlesi. Fiyat kalkanı
-        # için gerçek tutarlar fiyat_cumlesi metninden okunur (uydurma tespiti korunur).
+        # FİYATSIZ liste (İsmail kararı 2026-09-17): önce seçenekler sunulur,
+        # fiyat ancak müşteri birini seçince (fiyat_detay) verilir. Listede
+        # rakam olmayınca model rakam karıştıramaz ve pazarlık hangi ürün
+        # üzerine olduğu belirsiz kalmaz.
         ham = menu_veri.kombinasyonlar(int(argumanlar["koleksiyon_id"]))
         sonuc = _ham_fiyat_gizle(ham)
         # Koleksiyon videosu: model çoğu zaman TEK bir kombinasyonun fiyatını
@@ -427,13 +513,23 @@ def _tool_calistir(ad: str, argumanlar: dict,
                 f"mi?' diye SOR; müşteri isteyince cevabının EN SONUNA "
                 f"[video:kol:{kol['id']}] yaz — bu işaret olmadan müşteriye "
                 f"video GİTMEZ.")
-        if sonuc and len(sonuc.get("kombinasyonlar") or []) > 1:
+        kombiler = (sonuc or {}).get("kombinasyonlar") or []
+        if len(kombiler) == 1:
+            # Tek seçenekte müşteriye "hangisini istersiniz" diye sormak boş tur
+            # yakar (kota) ve konuşmayı uzatır — doğrudan fiyata geç.
+            sonuc["not"] = ("Bu koleksiyonda TEK seçenek var. Bu listede fiyat "
+                            "YOK; fiyatı vermek için ŞİMDİ fiyat_detay'ı bu "
+                            "kombinasyonun 'id' değeriyle çağır, rakamı oradan al.")
+        elif kombiler:
             # Pazarlık daveti seçimden ÖNCE gitmesin (İsmail kararı 2026-07-12):
             # listede davet olunca pazarlığın hangi kombinasyon üzerinde
             # başlayacağı belirsiz kalıyor. Önce seçim, davet tek ürün cevabında.
-            sonuc["not"] = ("Birden fazla kombinasyon listeliyorsun: cevabın "
-                            "sonunda hangi kombinasyonu istediğini SOR. 'Size "
-                            "özel bir fiyat çalışması' cümlesini BU cevaba "
+            sonuc["not"] = ("Bu listede FİYAT YOK — rakam yazma, tahmin etme. "
+                            "Seçeneklerin ADLARINI kısaca yaz (istersen kaç "
+                            "parça olduğunu ekle) ve hangisini istediğini SOR. "
+                            "Müşteri seçince o kombinasyonun 'id' değeriyle "
+                            "fiyat_detay'ı çağır; fiyat YALNIZ oradan gelir. "
+                            "'Size özel bir fiyat çalışması' cümlesini BU cevaba "
                             "EKLEME — müşteri bir kombinasyon seçince ekle.")
         return sonuc
     if ad == "fiyat_detay":
@@ -512,38 +608,7 @@ def _tool_calistir(ad: str, argumanlar: dict,
             return {"bulunamadi": True,
                     "not": "Teşhirde eşleşen kayıt yok — normal fiyat akışını kullan."}
         if kol or urun_adi:
-            # Tekil ürün / pazarlık bağlamı. Modele LOOSE taban rakamı VERME —
-            # canlıda 22.000 taban "İndirim: 22.000" oldu (model ayrı rakamı
-            # fiyat_cumlesi satırına karıştırdı). Taban artık atomik pazarlik_notu
-            # metni; ham int alanı (pazarlik_taban_fiyat) gizlenir. Pazarlık aralığı
-            # (taban..İndirimli) fiyat kalkanı için ayrıca toplanır, modele GİTMEZ.
-            gorunum = _ham_fiyat_gizle(kayitlar, ekstra=("pazarlik_taban_fiyat",))
-            araliklar = []
-            for ham, gk in zip(kayitlar, gorunum):
-                # Medya talimatı BURADA veriliyor (sistem promptunda değil):
-                # id'yi, kaç fotoğraf olduğunu ve video bulunup bulunmadığını
-                # ancak araç sonucu bilir. Canlı denemede (2026-08-02) model
-                # "Görseli gönderiyorum" deyip işareti KOYMADI — talimat
-                # somut veriyle birlikte gelmezse uygulamıyor.
-                gk["medya_notu"] = _medya_notu(
-                    "teshir", gk["id"], gk.get("fotograf_sayisi") or 0,
-                    bool(gk.get("video_var")))
-                if not gk["medya_notu"]:
-                    gk.pop("medya_notu")
-                taban = ham.get("pazarlik_taban_fiyat")
-                perakende = ham.get("perakende_fiyat")
-                if taban:
-                    gk["pazarlik_notu"] = (
-                        f"Müşteri ısrarla pazarlık ederse bu üründe en fazla "
-                        f"{menu_veri._tl(taban)}'ye inebilirsin; ALTINA inme. "
-                        f"Kendiliğinden indirim önerme.")
-                    if perakende:
-                        araliklar.append((int(taban), int(perakende)))
-            return {"teshir": gorunum,
-                    "pazarlik_kurali": "Fiyatı fiyat_cumlesi'nden AYNEN kopyala; rakam "
-                                       "ekleme/yuvarlama YAPMA. Pazarlık için ilgili ürünün "
-                                       "pazarlik_notu'na uy; notu olmayan üründe pazarlık yapma.",
-                    "_pazarlik_araliklari": araliklar}
+            return _teshir_sonucu(kayitlar)   # tekil ürün / pazarlık bağlamı
         # Genel liste (argümansız): SADECE isim + kategori — fiyat/indirim/taban/içerik
         # YOK. Model rakam göremediği için karıştıramaz/uyduramaz; kategoriye göre
         # gruplayıp fiyat sorulacak ürünü ad ile TEKRAR sordurur.
@@ -651,9 +716,11 @@ def _sistem_sozu_temizle(cevap: str) -> str:
 _DAVET_KALIBI = re.compile(
     r"[ \t]*Size özel bir fiyat çalışması yapmak isteriz\.?\s*(?:😊\s*)?",
     re.IGNORECASE)
-# fiyat_cumlesi blokları: indirimli üç satırlık biçim "İndirimli Fiyat:" ile,
-# indirimsiz tek satır "Fiyatı:" ile biter ("Liste Fiyatı:" sayılmaz).
-_FIYAT_BLOK_KALIBI = re.compile(r"İndirimli Fiyat:|(?<!Liste )Fiyatı:")
+# fiyat_cumlesi blokları: çapalı iki satırlık biçim "Size Özel:" ile, çapasız
+# tek satır "Fiyatı:" ile biter ("Liste Fiyatı:" sayılmaz). "İndirimli Fiyat:"
+# eski biçimdi (2026-09-17 öncesi) — model geçmişten taklit edebiliyor, sayımda
+# kalsın ki davet yeri düzeltmesi o cevaplarda da çalışsın.
+_FIYAT_BLOK_KALIBI = re.compile(r"Size Özel:|İndirimli Fiyat:|(?<!Liste )Fiyatı:")
 
 
 def _davet_yeri_duzelt(cevap: str) -> str:
@@ -699,8 +766,15 @@ def _fiyatlari_topla(sonuc, kume: set[int]) -> None:
             _fiyatlari_topla(v, kume)
     elif isinstance(sonuc, str):
         # Metin alanlarındaki TL tutarları da meşru (örn. magaza_bilgi: "kargo 500 TL").
-        for m in _FIYAT_KALIBI.finditer(sonuc):
-            kume.add(int(re.sub(r"[.\s]", "", m.group(1))))
+        tutarlar = [int(re.sub(r"[.\s]", "", m.group(1)))
+                    for m in _FIYAT_KALIBI.finditer(sonuc)]
+        kume.update(tutarlar)
+        # "Liste Fiyatı: X / Size Özel: Y" bloğunda aradaki FARK da meşrudur:
+        # model istenmese de "Y TL indirim" diye yazabiliyor ve bu rakam
+        # uydurma değil, iki gerçek tutarın farkı. Kalkan bu yüzden cevabı
+        # düşürüp müşteriyi cevapsız bırakmasın (biçim kuralı promptta).
+        if len(tutarlar) == 2:
+            kume.add(abs(tutarlar[0] - tutarlar[1]))
 
 
 def _fiyat_uydurma_var_mi(cevap: str, legit: set[int],
@@ -1207,6 +1281,11 @@ def cevapla(metin: str, platform: str, kullanici: str,
         basla = monotonic()
         try:
             cevap = _cevapla(metin, platform, kullanici, model, gecmissiz=gecmissiz)
+        except BosCevap:
+            # Sayaç _cevapla içinde "bos" olarak zaten işlendi.
+            SON_HATA = f"{datetime.now():%H:%M:%S} [{model}] BosCevap: model boş döndü"
+            log.warning("ajan: %s boş cevap döndürdü, sıradaki model deneniyor", model)
+            continue
         except Exception as e:
             # Sayaç _cevapla içinde, API çağrısı başına tutulur — burada TEKRAR
             # sayma (yoksa aynı çağrı iki kez görünür).
@@ -1407,7 +1486,10 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 log.warning("ajan: fiyat kalkanı — uydurma/yer tutucu, menüye düşülüyor")
                 return None
             if not cevap:
-                return None
+                # Boş içerik: zinciri BİTİRME, sıradaki modele devret (bkz.
+                # BosCevap). Kalkanın düşürdüğü cevap yukarıda None döner —
+                # o bilinçli bir karardır, tekrar denenmez.
+                raise BosCevap()
             # EMNİYET AĞI: müşteri medya istedi, araç işareti hazır verdi ama
             # model yine koymadıysa işareti BİZ ekleriz. Zorlama tek seferlik ve
             # modelin uyacağı garanti değil (canlıda aynı akış bir koşuda
@@ -1448,6 +1530,13 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 teshir_bakildi = True
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
+                teshir_cagrildi = True
+            # Teşhir bağlamı araç ADINDAN bağımsız da doğabilir: koleksiyon_ara
+            # artık ÖNCE teşhire bakar ve eşleşme bulursa teşhir kaydını döner
+            # (teşhir-önce kapısı, 2026-09-17). Sinyali sonucun kendisi taşır;
+            # anahtar modele gitmeden burada düşürülür.
+            if isinstance(sonuc, dict) and sonuc.pop("_teshir_baglami", False):
+                teshir_bakildi = True
                 teshir_cagrildi = True
             # Pazarlık aralıklarını AL ve modele gitmeden ÇIKAR (özel _ anahtar).
             if isinstance(sonuc, dict) and "_pazarlik_araliklari" in sonuc:

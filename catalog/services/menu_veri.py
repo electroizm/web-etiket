@@ -9,6 +9,7 @@ alan adlarına bağlı). Bulunamayan kayıt için None döner; çağıran nazik 
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from sqlalchemy import func, select
@@ -18,72 +19,145 @@ from catalog.database import SessionLocal
 from catalog.sa_models import Kategori, Koleksiyon, Kombinasyon, KombinasyonUrun, Urun
 from catalog.services.kombinasyon import hesapla_kombinasyon_toplam, kombinasyon_listele
 
+log = logging.getLogger(__name__)
+
 
 def _tl(n) -> str:
     return f"{round(n):,}".replace(",", ".") + " TL"
 
 
-def fiyat_cumlesi(liste, perakende, toptan=None, toptan_goster: bool = False) -> str:
-    """Modelin AYNEN kopyalayacağı hazır, çok satırlı fiyat metni.
+# ─── Satış fiyatı — TOPTANDAN hesaplanır (İsmail kararı 2026-09-17) ──────────
+# Eskiden müşteriye söylenen fiyat etiket toplamıydı (parça perakende toplamı).
+# Artık fiyat BAYİ ALIŞ (toptan) tutarından türetilir — PRGv2'nin pazarlık
+# merdiveniyle aynı hesap, iki kademe:
+#     ilk fiyat = toptan × bot_marj_ilk   (vars. 1,37 — PRGv2'de "Sepet")
+#     son fiyat = toptan × bot_marj_son   (vars. 1,31 — PRGv2'de "Müdür")
+# İkisi de 100'e YUKARI yuvarlanır (marj asla aşağı kırpılmaz). Çarpanlar
+# app_ayarlari'ndan okunur, panelden değiştirilebilir. settings.BOT_PAZARLIK_MARJ
+# (1,27) KOD TABANIDIR: ayar yanlış girilse bile hiçbir teklif toptan × 1,27'nin
+# altına inemez. Ham toptan bu modülden DIŞARI SIZMAZ — dönen her tutar
+# türetilmiş satış fiyatıdır.
+AYAR_MARJ_ILK = "bot_marj_ilk"
+AYAR_MARJ_SON = "bot_marj_son"
+VARSAYILAN_MARJ_ILK = 1.37
+VARSAYILAN_MARJ_SON = 1.31
+_MARJ_ONBELLEK_SN = 300
+_marj_onbellek: tuple[float, tuple[float, float]] | None = None
+
+
+def _marjlar() -> tuple[float, float]:
+    """(ilk, son) marj çarpanları — DB ayarından, 5 dakikalık önbellekle.
+
+    Her fiyat hesabında DB'ye gitmek mesaj başına birkaç sorgu ekler, oysa
+    ayarlar nadiren değişir. Ayar yoksa/bozuksa (boş, metin, sıra ters)
+    varsayılana düşülür — fiyat akışı tek bir ayar yüzünden durmaz.
+    """
+    global _marj_onbellek
+    from time import monotonic
+    simdi = monotonic()
+    if _marj_onbellek and simdi - _marj_onbellek[0] < _MARJ_ONBELLEK_SN:
+        return _marj_onbellek[1]
+    ilk, son = VARSAYILAN_MARJ_ILK, VARSAYILAN_MARJ_SON
+    try:
+        from catalog.services.ayarlar import get_ayar
+        session = SessionLocal()
+        try:
+            ilk = float((get_ayar(session, AYAR_MARJ_ILK) or "").replace(",", ".")
+                        or VARSAYILAN_MARJ_ILK)
+            son = float((get_ayar(session, AYAR_MARJ_SON) or "").replace(",", ".")
+                        or VARSAYILAN_MARJ_SON)
+        finally:
+            session.close()
+    except Exception:
+        ilk, son = VARSAYILAN_MARJ_ILK, VARSAYILAN_MARJ_SON
+    if not (0 < son <= ilk):        # bozuk/ters ayar → varsayılan
+        ilk, son = VARSAYILAN_MARJ_ILK, VARSAYILAN_MARJ_SON
+    _marj_onbellek = (simdi, (ilk, son))
+    return ilk, son
+
+
+def _yuz_yukari(x: float) -> int:
+    """100 TL'ye YUKARI yuvarla (88.092 → 88.100) — PRGv2 ile aynı kural."""
+    import math
+    return math.ceil(x / 100) * 100
+
+
+def satis_fiyatlari(toptan) -> tuple[int, int] | None:
+    """Toptan tutardan (ilk fiyat, son fiyat). Toptan kayıtlı değilse None."""
+    from django.conf import settings
+    if not toptan or toptan <= 0:
+        return None
+    ilk_marj, son_marj = _marjlar()
+    taban = _yuz_yukari(toptan * settings.BOT_PAZARLIK_MARJ)   # kod kalkanı
+    son = max(_yuz_yukari(toptan * son_marj), taban)
+    ilk = max(_yuz_yukari(toptan * ilk_marj), son)
+    return ilk, son
+
+
+def fiyat_cumlesi(liste, satis) -> str:
+    """Modelin AYNEN kopyalayacağı hazır fiyat metni (İsmail kararı 2026-09-17).
 
     Model ayrı ayrı sayı alanlarını cümleye çevirirken rakamları bozabiliyor
     (canlıda görüldü: 66.661 / 53.996 → 70.000 / 70.000). Rakamları tek bir
     hazır metin olarak vermek bu transkripsiyon hatasını büyük ölçüde önler.
-    Biçim (İsmail kararı 2026-07-09): kısa, etiketli üç satır; süslü söz yok
-    ("size şu kadar indirim yaptık" DEĞİL). Sıra sabit: Liste → İndirim →
-    İndirimli. Uydurma indirim yok — yalnız gerçek liste>perakende'de indirim satırı.
 
-    toptan_goster (İsmail kararı 2026-07-11): YALNIZ patron beyaz listesindeki
-    gönderen için True gelir — sona "Toptan: X TL" (bayi alış) satırı eklenir.
-    Toptan kayıtlı değilse patron bunu bilsin diye "kayıtlı değil" yazılır.
-    Normal müşteri akışında bu parametre hiç set edilmez; toptan metne girmez.
+    Biçim İKİ satır: çapa olarak liste fiyatı, altında müşteriye söylenen fiyat.
+    Hesaplanan fiyat listeye eşit/üstündeyse (katalogda 3 kombinasyonda oluyor)
+    çapa YAZILMAZ — "indirim" diye artı bir rakam göstermek güveni bozar.
     """
-    if perakende is None:
+    if not satis:
         return ""
-    if liste and liste > perakende:
-        fark = round(liste) - round(perakende)
-        metin = (f"Liste Fiyatı: {_tl(liste)}\n"
-                 f"İndirim: {_tl(fark)}\n"
-                 f"İndirimli Fiyat: {_tl(perakende)}")
-    else:
-        metin = f"Fiyatı: {_tl(perakende)}"
-    if toptan_goster:
-        metin += f"\nToptan: {_tl(toptan) if toptan else 'kayıtlı değil'}"
-    return metin
+    if liste and round(liste) > round(satis):
+        return (f"Liste Fiyatı: {_tl(liste)}\n"
+                f"Size Özel: {_tl(satis)}")
+    return f"Fiyatı: {_tl(satis)}"
 
 
-def pazarlik_merdiveni(perakende, toptan) -> list[int] | None:
-    """İsmail'in katalog pazarlık formülü (2026-07-12) — büyükten küçüğe teklifler.
+# Toptan verisi akla yatkın mı? Ölçüm (2026-09-17, toptanı olan 1.611 ürün):
+# perakende/toptan oranı medyan 1,58 — %5-%95 aralığı 1,32-1,67, yani veri
+# normalde çok dar bir bantta. Bandın DIŞINDAKİ kayıtlarda toptan bozuktur:
+#   • oran çok YÜKSEK (BOLD Kitaplık 5,71 · MAYER Üçlü Yataklı 4,47) → yanlış
+#     SAP eşleşmesi; bu kayıttan hesaplanan fiyat 32.582 TL'lik çekyatı
+#     10.000 TL'ye satar.
+#   • oran çok DÜŞÜK (ROBIN'in dört varyantına da 49.500 toptan yazılmış,
+#     perakendesi 15.999-42.999) → takım fiyatı parçaya yazılmış; hesaplanan
+#     fiyat web fiyatının 4 katı çıkar.
+# Şüpheli kayıtta toptan KULLANILMAZ: bugünkü davranışa (web perakende fiyatı,
+# pazarlıksız) düşülür ve uyarı loglanır. Bandı daraltmak/genişletmek gerekirse
+# tek yer burasıdır; şu an katalogun ~%4'ü bu yola düşüyor.
+ORAN_ALT, ORAN_UST = 1.25, 2.05
 
-    taban = toptan × BOT_PAZARLIK_MARJ, YUKARI 100'e yuvarlı (marj asla
-    aşağı kırpılmaz). Taban ile indirimli (perakende) arasındaki fark 6'ya
-    bölünür; teklifler: perakende − 3/6 fark, − 5/6 fark (100'e yuvarlı),
-    son teklif tabanın kendisi. Örn. Milena: 101.496 → [94.800, 90.300, 88.100].
 
-    Ham toptan bu fonksiyondan SIZMAZ — dönen her değer türetilmiş satış
-    fiyatıdır. Toptan/perakende yoksa ya da taban zaten perakendeyi
-    aşıyorsa None (pazarlık payı yok). Yuvarlama basamakları çakıştırırsa
-    (küçük fark) tekrarlar ayıklanır; en kötü durumda tek teklif (taban) kalır.
+def fiyat_paketi(liste, perakende, toptan) -> dict:
+    """Katalog fiyatı: hazır fiyat cümlesi + (varsa) iki adımlı pazarlık merdiveni.
+
+    Toptan kayıtlıysa fiyat ondan hesaplanır; müşteri pazarlık ederse TEK adım
+    inilir (ilk → son). Toptan YOKSA — katalogda ~70 parça, ayrıca takım
+    SKU'larının tamamı — ya da toptan ŞÜPHELİYSE (bkz. ORAN_ALT/ORAN_UST) web
+    perakende fiyatı söylenir ve pazarlık YAPILMAZ: maliyetini bilmediğimiz
+    üründe indirim vermek risklidir (İsmail 2026-09-17).
+
+    `_merdiven` alanı modele GİTMEZ; çağıran (ajan tool döngüsü) onu düşürüp
+    yerine "ADIM DURUMU" notunu koyar. Bu yüzden yalnız pazarlık bağlamı olan
+    tekil çağrılarda üretilir — çoklu listede pazarlık hangi ürüne ait olacağı
+    belirsiz kalır.
     """
-    import math
-
-    from django.conf import settings
-    if not (perakende and toptan):
-        return None
-    taban = math.ceil(toptan * settings.BOT_PAZARLIK_MARJ / 100) * 100
-    if taban >= perakende:
-        return None
-    adim = (perakende - taban) / 6
-    ham = [round((perakende - 3 * adim) / 100) * 100,
-           round((perakende - 5 * adim) / 100) * 100,
-           taban]
-    merdiven: list[int] = []
-    for t in ham:
-        t = min(t, round(perakende))          # yuvarlama perakendeyi aşmasın
-        t = max(t, taban)                     # ve tabanın altına inmesin
-        if t < round(perakende) and (not merdiven or t < merdiven[-1]):
-            merdiven.append(int(t))
-    return merdiven or None
+    if perakende and toptan and toptan > 0:
+        oran = perakende / toptan
+        if not (ORAN_ALT <= oran <= ORAN_UST):
+            log.warning("fiyat: toptan ŞÜPHELİ (oran %.2f — perakende %s, toptan %s); "
+                        "web fiyatına düşüldü, pazarlık kapalı", oran, perakende, toptan)
+            return {"fiyat_cumlesi": fiyat_cumlesi(liste, perakende)}
+    fiyatlar = satis_fiyatlari(toptan)
+    if fiyatlar:
+        ilk, son = fiyatlar
+        paket = {"fiyat_cumlesi": fiyat_cumlesi(liste, ilk)}
+        if son < ilk:
+            paket["_merdiven"] = [ilk, son]
+        return paket
+    if perakende:
+        return {"fiyat_cumlesi": fiyat_cumlesi(liste, perakende)}
+    return {}
 
 
 def _pazarlik_notu(ad: str, merdiven: list[int]) -> str:
@@ -103,31 +177,32 @@ def _pazarlik_notu(ad: str, merdiven: list[int]) -> str:
             # "İndirimli Fiyat" satırına yazdı ve blok tutarsız kaldı
             # (70.894 − 13.471 = 57.423, ama satırda 54.800 yazıyordu).
             # Müşteri hesabı yapınca yanlış/oyun gibi görünüyor.
-            f"BİÇİM: pazarlık fiyatını verirken 'Liste Fiyatı/İndirim/İndirimli "
-            f"Fiyat' bloğunu TEKRAR YAZMA — o blok liste indirimidir, pazarlık "
-            f"değil. Yalnız TEK satır yaz: 'Size özel fiyatımız: <tutar> TL'. "
+            f"BİÇİM: pazarlık fiyatını verirken 'Liste Fiyatı/Size Özel' "
+            f"bloğunu TEKRAR YAZMA — o blok ilk fiyattır, pazarlık değil. "
+            f"Yalnız TEK satır yaz: 'Size özel fiyatımız: <tutar> TL'. "
             f"Pazarlık teklifi verdiğin cevapta müşteriyi 'yetkili'ye YÖNLENDİRME.")
 
 
-def _toplam_ozet(kombi, toptan_dahil: bool = False, pazarlik: bool = False) -> dict:
+def _toplam_ozet(kombi, pazarlik: bool = False) -> dict:
+    """Kombinasyonun fiyat özeti. pazarlik=False ise merdiven ÜRETİLMEZ.
+
+    Merdiven yalnız tekil (fiyat_detay) bağlamda anlamlıdır; çoklu listede
+    hangi ürünün pazarlığı olduğu belirsiz kalır. `_merdiven` alanını ajan tool
+    döngüsü düşürür — pazarlik=False'ta hiç doğmasın diye burada ayıklanır.
+    """
     t = hesapla_kombinasyon_toplam(kombi)
     ozet = {
         "urun_sayisi": t["urun_sayisi"],
         "toplam_adet": t["toplam_adet"],
-        "toplam_liste": t["toplam_liste"],
-        "toplam_perakende": t["toplam_perakende"],
-        "indirim_yuzde": t["indirim_yuzde"],
-        "fiyat_cumlesi": fiyat_cumlesi(t["toplam_liste"], t["toplam_perakende"],
-                                       toptan=t.get("toplam_toptan"),
-                                       toptan_goster=toptan_dahil),
+        **fiyat_paketi(t["toplam_liste"], t["toplam_perakende"],
+                       t.get("toplam_toptan")),
     }
-    if pazarlik:
-        merdiven = pazarlik_merdiveni(t["toplam_perakende"], t.get("toplam_toptan"))
-        if merdiven:
-            ozet["pazarlik_notu"] = _pazarlik_notu(kombi.ad, merdiven)
-            # _ önekli alan modele GİTMEZ: ajan tool döngüsü bunu düşürüp
-            # geçmişten adım durumunu hesaplar (hangi teklif verildi, sıradaki ne).
-            ozet["_merdiven"] = merdiven
+    merdiven = ozet.pop("_merdiven", None)
+    if pazarlik and merdiven:
+        ozet["pazarlik_notu"] = _pazarlik_notu(kombi.ad, merdiven)
+        # _ önekli alan modele GİTMEZ: ajan tool döngüsü bunu düşürüp
+        # geçmişten adım durumunu hesaplar (hangi teklif verildi, sıradaki ne).
+        ozet["_merdiven"] = merdiven
     return ozet
 
 
@@ -176,16 +251,29 @@ def koleksiyonlar(kategori_id: int) -> dict | None:
         session.close()
 
 
-def kombinasyonlar(koleksiyon_id: int, toptan_dahil: bool = False) -> dict | None:
-    """Bir koleksiyonun kombinasyonları, toplam fiyat özetiyle."""
+def kombinasyonlar(koleksiyon_id: int, fiyatli: bool = False) -> dict | None:
+    """Bir koleksiyonun takım seçenekleri.
+
+    Varsayılan FİYATSIZ (İsmail kararı 2026-09-17): müşteriye önce seçenekler
+    sunulur, fiyat ancak seçtiği kombinasyon için verilir (fiyat_detay). Böylece
+    hem mesaj kısalır hem pazarlık hangi ürün üzerine olduğu belirsiz kalmaz.
+    Yalnız kaç parça/kaç adet olduğu gider — model seçenekleri tarif edebilsin.
+    """
     session = SessionLocal()
     try:
         koleksiyon = session.get(Koleksiyon, koleksiyon_id)
         if koleksiyon is None:
             return None
         kombi_list = kombinasyon_listele(session, koleksiyon_id)
-        data = [{"id": k.id, "ad": k.ad, **_toplam_ozet(k, toptan_dahil)}
-                for k in kombi_list]
+        if fiyatli:
+            data = [{"id": k.id, "ad": k.ad, **_toplam_ozet(k)} for k in kombi_list]
+        else:
+            data = []
+            for k in kombi_list:
+                t = hesapla_kombinasyon_toplam(k)
+                data.append({"id": k.id, "ad": k.ad,
+                             "urun_sayisi": t["urun_sayisi"],
+                             "toplam_adet": t["toplam_adet"]})
         return {"koleksiyon": {"id": koleksiyon.id, "ad": koleksiyon.ad,
                                "video_var": bool(koleksiyon.video_url)},
                 "kombinasyonlar": data}
@@ -296,7 +384,7 @@ _ARAMA_GURULTU = frozenset((
 ))
 
 
-def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
+def urun_ara(q: str) -> list[dict]:
     """Tek bir ürünün/parçanın (SET DEĞİL, tek SKU) fiyatını ad ile bul.
 
     Müşteri "sadece 5 kapaklı dolap" gibi TEK parça fiyatı sorduğunda kullanılır;
@@ -351,21 +439,19 @@ def urun_ara(q: str, toptan_dahil: bool = False) -> list[dict]:
                           key=lambda u: (-_skor(u), u.urun_adi_tam))
         sonuc = []
         for u in rows:
+            # Tek parçada da pazarlık merdiveni (İsmail kararı 2026-07-12);
+            # fiyat ve merdiven artık toptandan hesaplanır (2026-09-17).
+            paket = fiyat_paketi(u.son_liste_fiyat, u.son_perakende_fiyat,
+                                 u.son_toptan_fiyat)
             kayit = {
                 "sku": u.sku,
                 "ad": u.urun_adi_tam,
-                "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
-                                               u.son_perakende_fiyat,
-                                               toptan=u.son_toptan_fiyat,
-                                               toptan_goster=toptan_dahil),
                 "para_birimi": "TL",
+                **paket,
             }
-            # Tek parçada da pazarlık merdiveni (İsmail kararı 2026-07-12).
-            merdiven = pazarlik_merdiveni(u.son_perakende_fiyat,
-                                          u.son_toptan_fiyat)
+            merdiven = kayit.get("_merdiven")
             if merdiven:
                 kayit["pazarlik_notu"] = _pazarlik_notu(u.urun_adi_tam, merdiven)
-                kayit["_merdiven"] = merdiven   # modele gitmez (ajan düşürür)
             sonuc.append(kayit)
             if len(sonuc) >= 10:
                 break
@@ -506,12 +592,14 @@ def en_uygun(tip: str, limit: int = 3) -> list[dict]:
                     or any(h in ad for h in haric)):
                 continue
             gorulen.add(ad)
+            paket = fiyat_paketi(u.son_liste_fiyat, u.son_perakende_fiyat,
+                                 u.son_toptan_fiyat)
+            paket.pop("_merdiven", None)      # ÇOKLU liste: pazarlık yok (aşağı bak)
             sonuc.append({
                 "sku": u.sku,
                 "ad": u.urun_adi_tam,
-                "fiyat_cumlesi": fiyat_cumlesi(u.son_liste_fiyat,
-                                               u.son_perakende_fiyat),
                 "para_birimi": "TL",
+                **paket,
             })
             if len(sonuc) >= limit:
                 break
@@ -573,7 +661,7 @@ def soru_kaydet(platform: str, kullanici: str, soru: str) -> None:
         pass
 
 
-def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
+def kombinasyon(kombi_id: int) -> dict | None:
     """Seçilen kombinasyonun fiyat detayı + içindeki ürünler."""
     session = SessionLocal()
     try:
@@ -610,7 +698,7 @@ def kombinasyon(kombi_id: int, toptan_dahil: bool = False) -> dict | None:
                           if koleksiyon else None,
             # pazarlik=True: fiyat_detay tekil bağlamdır — pazarlık merdiveni
             # yalnız burada gelir (listede N ayrı merdiven modeli karıştırırdı).
-            **_toplam_ozet(kombi, toptan_dahil, pazarlik=True),
+            **_toplam_ozet(kombi, pazarlik=True),
             "para_birimi": "TL",
             "urunler": urunler,
         }
