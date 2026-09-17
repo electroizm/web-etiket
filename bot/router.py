@@ -185,7 +185,11 @@ def _secenekler_mesaji(koleksiyon_id: int, P, metin: str = "",
         metin = (f"{kol['tam_ad']} için seçeneklerimiz:\n\n"
                  f"{veri['secenek_metni']}\n\n"
                  f"Hangisini istersiniz? 😊")
-    secenekler = [(f"{k['no']}. {k['ad']}", f"KOM:{k['id']}", k["ad"])
+    # Buton/satır başlığı YALNIZ NUMARA (İsmail 2026-09-18). Ada da yer versek
+    # platform sınırında kırpılıyor ("1. Dörtlü, Tekno, Üçlü,…") ve hemen
+    # altındaki açıklamayı tekrarlıyordu. Tam ad açıklamada (WhatsApp) ve zaten
+    # mesaj gövdesindeki numaralı listede duruyor.
+    secenekler = [(f"{k['no']}.", f"KOM:{k['id']}", k["ad"])
                   for k in kombiler[:SECENEK_MAX]]
     secenekler.append((GERI_BUTONU, f"GERI:ARA:{kol['ad']}"[:180], ""))
     secenekler.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
