@@ -194,9 +194,12 @@ MAĞAZA BİLGİSİ (adres, mesai, telefon, kargo, iade, garanti, taksit, montaj)
   istediğini sor, "fiyatlarımızda cüzi pazarlık payımız var 😊" ekle. Belirli
   ürün istenince ad="<ürün adı>" ile çağır — fiyat ve pazarlık notu orada.
 
-ÜRÜN FOTOĞRAFI — YALNIZ TEK PARÇADA
+ÜRÜN FOTOĞRAFI — YALNIZ TEK PARÇADA, YALNIZ BİR KEZ
 - TAKIM/kombinasyon fiyatı verdiğin cevaba fotoğraf işareti KOYMA (takımın tek
   fotoğrafı yok; parçalardan birini göstermek yanıltıcı olur).
+- PAZARLIK cevabına da KOYMA: müşteri ürünü zaten gördü, her indirim turunda
+  aynı fotoğrafı tekrar göndermek sohbeti şişirir. (Açıkça yeniden isterse
+  başka.)
 - YALNIZ tek bir parçanın fiyatını verdiysen ya da müşteri o parçanın
   fotoğrafını istediyse: cevabın EN SONUNA [gorsel:<SKU>] yaz. SKU araç
   sonucundan AYNEN kopyalanır — uydurma, yoksa KOYMA. Cevapta EN FAZLA BİR
@@ -869,14 +872,21 @@ def _davete_olumlu_mu(metin: str, platform: str, kullanici: str) -> bool:
 _KATALOG_GORSELI = re.compile(r"\s*\[gorsel:\s*(?!teshir:)([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
 
 
-def _gorsel_isaretini_suz(cevap: str, kombinasyon_fiyati: bool) -> str:
-    """Uygun olmayan katalog fotoğrafı işaretlerini cevaptan çıkar."""
+def _gorsel_isaretini_suz(cevap: str, kombinasyon_fiyati: bool,
+                          pazarlik: bool = False) -> str:
+    """Uygun olmayan katalog fotoğrafı işaretlerini cevaptan çıkar.
+
+    pazarlik=True: müşteri indirim isterken ürünü ZATEN görmüştür — fotoğrafı
+    her turda tekrar yollamak sohbeti şişiriyor (İsmail'in ekran görüntüsü,
+    2026-09-18: fiyat + fotoğraf, "indirimi" → yeni fiyat + AYNI fotoğraf).
+    Müşteri fotoğrafı açıkça istediyse bu süzgeç uygulanmaz.
+    """
     def karar(m: re.Match) -> str:
         sku = m.group(1)
-        if not kombinasyon_fiyati and sku.startswith("3"):
-            return m.group(0)          # tekil ürün — fotoğraf serbest
-        log.info("ajan: katalog fotoğrafı düşürüldü (sku=%s, kombinasyon=%s)",
-                 sku, kombinasyon_fiyati)
+        if not kombinasyon_fiyati and not pazarlik and sku.startswith("3"):
+            return m.group(0)          # tekil ürün, ilk fiyat — fotoğraf serbest
+        log.info("ajan: katalog fotoğrafı düşürüldü (sku=%s, kombinasyon=%s, "
+                 "pazarlik=%s)", sku, kombinasyon_fiyati, pazarlik)
         return " "
     return _KATALOG_GORSELI.sub(karar, cevap or "").strip()
 
@@ -1544,9 +1554,12 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # işaret modelden değil, o turda çalışan aracın sonucundan geliyor.
             if medya_niyeti and medya_yedegi and not _MEDYA_ISARETI.search(cevap):
                 cevap = f"{cevap} {medya_yedegi}"
-            # Fotoğraf süzgeci: takım fiyatında ve 3 ile başlamayan SKU'da
-            # katalog fotoğrafı gitmez (bkz. _gorsel_isaretini_suz).
-            cevap = _gorsel_isaretini_suz(cevap, kombinasyon_fiyati)
+            # Fotoğraf süzgeci: takım fiyatında, 3 ile başlamayan SKU'da ve
+            # PAZARLIK turunda katalog fotoğrafı gitmez — müşteri açıkça
+            # istediyse (medya_niyeti) süzgeç uygulanmaz.
+            cevap = _gorsel_isaretini_suz(
+                cevap, kombinasyon_fiyati,
+                pazarlik=pazarlik_niyeti and not medya_niyeti)
             # Seçim butonları: model işareti unutursa BİZ koyarız — medya
             # emniyet ağıyla aynı desen (canlıda aynı akış bir koşuda işareti
             # yazdı, diğerinde yazmadı). Koleksiyon id'si araç sonucundan
