@@ -155,10 +155,17 @@ def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
 
     İkinci eylem GÖVDEDEKİ LİNK olarak duruyor (İsmail 2026-09-18: "sesli
     aramanın hemen altına WhatsApp mesaj at seçeneği"): WhatsApp interaktif
-    mesaj gövdesindeki adresleri de tıklanır yapıyor (numarayı yaptığı gibi),
-    böylece iki yol da TEK dokunuş — biri buton, biri link.
+    mesaj gövdesindeki adresleri de tıklanır yapıyor, böylece iki yol da TEK
+    dokunuş — biri buton, biri link.
+
+    Adresi "WhatsApp'tan mesaj at" gibi bir kelimenin ARKASINA gizleyemiyoruz:
+    WhatsApp mesaj gövdesi düz metindir, markdown/HTML bağlantı desteklemez,
+    yalnız açık yazılan adresi kendiliğinden tıklanır yapar. İki ETİKETLİ
+    buton ancak Meta ONAYLI ŞABLONLA mümkün (URL + telefon butonu).
+
+    Telefon numarası gövdeden çıkarıldı (İsmail: "tıklanır olmasın") — numara
+    zaten arama butonunun açtığı /ara sayfasında yazıyor.
     """
-    govde = (f"{metin}\n\n"
-             f"📞 Sesli arama için aşağıdaki butona dokunun.\n"
-             f"📱 WhatsApp'tan mesaj atmak için 👉 {url}")
-    return _cta(govde, "📞 Sesli arama yap", ara_url)
+    baslik = metin.split(":", 1)[0].strip()      # "👤 Mağaza Müdürü"
+    return _cta(f"{baslik}\n\n📱 WhatsApp'tan mesaj at 👉\n{url}",
+                "📞 Sesli arama yap", ara_url)
