@@ -152,6 +152,13 @@ def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
         zaten "sohbet et" seçeneğini veriyor.
     Instagram'da iki buton tek kartta çıkıyor (generic template iki web_url
     destekliyor), orada bölüştürmeye gerek yok.
+
+    İkinci eylem GÖVDEDEKİ LİNK olarak duruyor (İsmail 2026-09-18: "sesli
+    aramanın hemen altına WhatsApp mesaj at seçeneği"): WhatsApp interaktif
+    mesaj gövdesindeki adresleri de tıklanır yapıyor (numarayı yaptığı gibi),
+    böylece iki yol da TEK dokunuş — biri buton, biri link.
     """
-    return _cta(f"{metin}\n\n📱 WhatsApp'tan yazmak için numaraya dokunun.",
-                "📞 Sesli arama yap", ara_url)
+    govde = (f"{metin}\n\n"
+             f"📞 Sesli arama için aşağıdaki butona dokunun.\n"
+             f"📱 WhatsApp'tan mesaj atmak için 👉 {url}")
+    return _cta(govde, "📞 Sesli arama yap", ara_url)

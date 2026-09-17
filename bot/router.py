@@ -42,7 +42,9 @@ YETKILI_KELIMELER = ("yetkili", "temsilci", "canlı", "canli", "insanla",
 
 def yetkili_metni() -> str:
     """Tek satır — İsmail'in isteği: uzun açıklama olmasın, butona basıp geçilsin."""
-    return f"👤 Yetkilimiz: {YETKILI_TEL_GORUNEN}"
+    # "Yetkilimiz" → "Mağaza Müdürü" (İsmail 2026-09-18): müşteriye kimin
+    # cevap vereceğini somut söylemek güven veriyor.
+    return f"👤 Mağaza Müdürü: {YETKILI_TEL_GORUNEN}"
 
 
 # Eski mesajlarda kalan "📞 Beni arayın" butonunun payload'ı. Akış kaldırıldı
@@ -150,7 +152,7 @@ SERI_ISARETI = re.compile(r"\s*\[seriler:\s*([^\]\n]{1,60}?)\s*\]\s*")
 # Tek ürün fiyatı: butonları kurabilmek için hangi SKU olduğunu bilmek gerek.
 PARCA_ISARETI = re.compile(r"\s*\[parca:\s*([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
 GERI_BUTONU = "⬅️ Geri"
-YETKILI_BUTONU = "👤 Yetkili"
+YETKILI_BUTONU = "👤 Mağaza Müdürü"     # WhatsApp buton başlığı sınırı 20 karakter
 INDIRIM_BUTONU = "📉 İndirim"
 # WhatsApp listesi en çok 10 satır; 2'si Geri + Yetkili için ayrılır.
 SECENEK_MAX = 8

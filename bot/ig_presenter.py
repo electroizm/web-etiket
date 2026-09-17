@@ -70,8 +70,10 @@ def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
             "payload": {
                 "template_type": "generic",
                 "elements": [{
-                    "title": "👤 Yetkiliyle görüş",
-                    "subtitle": _kirp(metin, 80),
+                    "title": "👤 Mağaza Müdürü",
+                    # Başlık zaten "Mağaza Müdürü" diyor; alt satırda yalnız
+                    # numara kalsın (metin "👤 Mağaza Müdürü: 0532…" geliyor).
+                    "subtitle": _kirp(metin.split(":", 1)[-1].strip(), 80),
                     "buttons": [
                         {"type": "web_url", "url": url, "title": "📱 WhatsApp'ta yaz"},
                         {"type": "web_url", "url": ara_url, "title": "📞 Sesli arama yap"},
