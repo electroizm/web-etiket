@@ -209,9 +209,12 @@ TEMPLATES = [
 ]
 
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
-# APP_SURUM = son deploy tarihi (vYYAA.GG); HER deploy öncesi güncellenir.
+# APP_SURUM = son deploy tarihi, YIL AY . GÜN sırasıyla: "YYAA.GG".
+# Footer'da "v" önekiyle görünür → 2026-09-17 deploy'u "2609.17" = v2609.17.
+# HER deploy öncesi güncellenir. (İsmail 2026-09-17: sıra karışmasın — "1709.17"
+# gibi GÜN-AY ile başlayan damga YANLIŞ; aynı gün ikinci deploy olursa "2609.17.2".)
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
-APP_SURUM = "1709.17.1"
+APP_SURUM = "2609.17"
 APP_TELIF = "© 2026 İsmail Güneş"
 
 WSGI_APPLICATION = 'etiket_project.wsgi.application'
