@@ -361,6 +361,58 @@ def _ad_gibi(kolon, ifade: str):
     return func.tr_norm(kolon).like(_kalip(ifade), escape="\\")
 
 
+# ─── Kategori ipucu ayıklaması ───────────────────────────────────────────────
+# Müşterinin kategoriyi söylerken kullandığı kelimeler ↔ katalog kategorisi.
+# "yatak odası takımı" → Yatak Odası. Tek kelime yeter ("yatak", "tv").
+# (Önce yalnız teşhir tarafındaydı; 2026-09-18'de katalog araması da aynı
+# ayıklamayı kullansın diye buraya taşındı — canlı vaka: müşteri "milena
+# YATAK ODASI fiyatı ne kadar" yazdı, bot yine de "hangi kategori?" diye
+# sordu, oysa cevap mesajın içindeydi.)
+KATEGORI_IPUCLARI = {
+    "yatak odasi": ("yatak",),
+    "yemek odasi": ("yemek",),
+    "oturma grubu": ("oturma", "koltuk", "kanepe", "berjer"),
+    "tv uniteleri": ("tv", "unite", "unitesi"),
+    "dogtas genc ve cocuk odasi": ("genc", "cocuk"),
+}
+# Kategori adlarında ORTAK geçen, hiçbir şeyi AYIRT ETMEYEN kelimeler.
+# "odasi" hem Yatak Odası'nda hem Yemek Odası'nda var: müşteri "yatak odası"
+# dediğinde "odasi" yüzünden Yemek Odası da eşleşiyordu.
+KATEGORI_JENERIK = frozenset((
+    "odasi", "oda", "grubu", "grup", "takimi", "takim", "uniteleri",
+    "urunleri", "seti", "dogtas", "genc",
+))
+
+
+def kategori_geciyor_mu(kategori: str | None, istek_kume: set[str]) -> bool:
+    """Müşterinin cümlesi bu kategoriyi işaret ediyor mu?"""
+    if not kategori:
+        return False
+    duz = _duz(kategori)
+    ipuclari = set(KATEGORI_IPUCLARI.get(duz, ()))
+    # Haritada olmayan kategoriler için ad kelimelerine düş — ama JENERİK
+    # olanları AT, yoksa "odasi" iki kategoriyi birden eşleştirir.
+    ipuclari.update(t for t in duz.split()
+                    if len(t) >= 3 and t not in KATEGORI_JENERIK)
+    return bool(ipuclari & istek_kume)
+
+
+def kategoriye_gore_suz(kayitlar: list[dict], metin: str) -> list[dict]:
+    """Serbest metinde kategori geçiyorsa eşleşmeleri ona indir.
+
+    Hiçbiri tutmazsa liste OLDUĞU GİBİ döner — süzgeç sonuç kaybettirmez,
+    yalnız müşterinin söylediği kategori varsa onu öne çıkarır.
+    """
+    if not kayitlar or not metin:
+        return kayitlar
+    istek = {t for t in _duz(metin).split() if t}
+    if not istek:
+        return kayitlar
+    secilen = [k for k in kayitlar
+               if kategori_geciyor_mu(k.get("kategori"), istek)]
+    return secilen or kayitlar
+
+
 def koleksiyon_ara(q: str) -> list[dict]:
     """Ad içinde arama — AI ajanın 'MARIZA fiyatı?' gibi serbest metinden koleksiyon
     bulması için. Kombinasyonu olan koleksiyonlarda, büyük/küçük harf duyarsız.

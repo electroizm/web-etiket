@@ -467,7 +467,8 @@ def _teshir_sonucu(kayitlar: list[dict]) -> dict:
 
 
 def _tool_calistir(ad: str, argumanlar: dict,
-                   platform: str = "", kullanici: str = ""):
+                   platform: str = "", kullanici: str = "",
+                   musteri_metni: str = ""):
     """Modelin istediği aracı gerçek veriyle çalıştır.
 
     NOT: Toptan satırı bot cevaplarından KALDIRILDI (İsmail kararı 2026-07-12);
@@ -495,7 +496,34 @@ def _tool_calistir(ad: str, argumanlar: dict,
                             "Müşteriye teşhirdeki ürünü anlat, fiyat_cumlesi'ni "
                             "AYNEN yaz, medya_notu varsa ona uy.")
             return sonuc
-        return menu_veri.koleksiyon_ara(q)
+        eslesmeler = menu_veri.koleksiyon_ara(q)
+        # KATEGORİ AYIKLAMASI (2026-09-18). Aynı seri birden çok kategoride
+        # olabiliyor (MILENA: Yatak Odası + Yemek Odası). Müşteri kategoriyi
+        # SÖYLEDİYSE ona inilir — canlı vaka: "milena YATAK ODASI fiyatı ne
+        # kadar" yazan müşteriye bot "hangi kategori?" diye sordu, oysa cevap
+        # mesajın içindeydi. Model ipucunu görmezden gelebiliyor; kod görür.
+        # Arama terimi + müşterinin KENDİ cümlesi birlikte taranır.
+        if len(eslesmeler) > 1:
+            eslesmeler = menu_veri.kategoriye_gore_suz(
+                eslesmeler, f"{q} {musteri_metni}")
+        # Tek eşleşme kaldıysa seçenekleri AYNI turda ver: model bir tur daha
+        # harcayıp kombinasyonlari_listele çağırmasın (kota + gecikme).
+        if len(eslesmeler) == 1:
+            return _tool_calistir("kombinasyonlari_listele",
+                                  {"koleksiyon_id": eslesmeler[0]["id"]},
+                                  platform=platform, kullanici=kullanici)
+        if len(eslesmeler) > 1:
+            # Kategori sorusu da BUTONLU sorulsun: müşteri "yatak odası" diye
+            # yazmak zorunda kalmasın. Soru cümlesini model yazar, kategoriler
+            # butona döner (işareti router çözer).
+            return {"koleksiyonlar": eslesmeler,
+                    "not": ("Aynı seri birden çok kategoride var. Müşteriye "
+                            "HANGİ kategoriyi istediğini soran KISA bir cümle "
+                            "yaz (kategori adlarını saymana gerek yok) ve "
+                            f"cevabın EN SONUNA [seriler:{eslesmeler[0]['ad']}] "
+                            "işaretini koy — kategoriler müşteriye BUTON olarak "
+                            "gider. Fiyat VERME, başka araç çağırma.")}
+        return eslesmeler
     if ad == "kategorileri_listele":
         return menu_veri.kategoriler()
     if ad == "koleksiyonlari_listele":
@@ -1398,6 +1426,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     teshir_bakildi = False             # bu istekte teshir_bilgi ÇAĞRILDI mı
     teshir_zorlandi = False            # "yok" cevabına tek zorlama hakkı
     listelenen_kol: int | None = None  # seçenekleri listelenen koleksiyon (buton için)
+    listelenen_seri = ""               # birden çok kategorideki seri (kategori butonu)
     kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
 
     for _ in range(MAKS_TOOL_TURU):
@@ -1567,6 +1596,9 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             if (listelenen_kol and not kombinasyon_fiyati
                     and "[secenekler:" not in cevap):
                 cevap = f"{cevap} [secenekler:kol:{listelenen_kol}]"
+            elif (listelenen_seri and not kombinasyon_fiyati
+                    and not listelenen_kol and "[seriler:" not in cevap):
+                cevap = f"{cevap} [seriler:{listelenen_seri}]"
             return cevap[:MAKS_CEVAP_KR]
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
@@ -1579,7 +1611,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 argumanlar = {}
             try:
                 sonuc = _tool_calistir(tc.function.name, argumanlar,
-                                       platform=platform, kullanici=kullanici)
+                                       platform=platform, kullanici=kullanici,
+                                       musteri_metni=metin)
             except Exception:
                 log.exception("ajan: araç hatası %s(%s)", tc.function.name, argumanlar)
                 sonuc = {"hata": "veri okunamadı"}
@@ -1599,9 +1632,13 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             if tc.function.name == "teshir_bilgi":
                 teshir_bakildi = True
             # Seçim butonu / fotoğraf kuralı için bu turda ne olduğunu izle.
-            if tc.function.name == "kombinasyonlari_listele" and isinstance(sonuc, dict):
-                if len(sonuc.get("kombinasyonlar") or []) > 1:
-                    listelenen_kol = (sonuc.get("koleksiyon") or {}).get("id")
+            # Seçenek listesi hangi araçtan gelirse gelsin yakalanır:
+            # koleksiyon_ara tek eşleşmede seçenekleri DOĞRUDAN döndürüyor
+            # (2026-09-18), araç adına bakmak yetmez.
+            if isinstance(sonuc, dict) and len(sonuc.get("kombinasyonlar") or []) > 1:
+                listelenen_kol = (sonuc.get("koleksiyon") or {}).get("id")
+            if isinstance(sonuc, dict) and len(sonuc.get("koleksiyonlar") or []) > 1:
+                listelenen_seri = (sonuc["koleksiyonlar"][0].get("ad") or "")
             if tc.function.name == "fiyat_detay":
                 kombinasyon_fiyati = True
             if tc.function.name == "teshir_bilgi" and (

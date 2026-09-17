@@ -244,34 +244,12 @@ def ajan_icin(koleksiyon_id: int | None = None,
         session.close()
 
 
-# Müşterinin kategoriyi söylerken kullandığı kelimeler ↔ katalog kategorisi.
-# "yatak odası takımı" → Yatak Odası. Tek kelime yeter ("yatak", "tv").
-_KATEGORI_IPUCLARI = {
-    "yatak odasi": ("yatak",),
-    "yemek odasi": ("yemek",),
-    "oturma grubu": ("oturma", "koltuk", "kanepe", "berjer"),
-    "tv uniteleri": ("tv", "unite", "unitesi"),
-    "dogtas genc ve cocuk odasi": ("genc", "cocuk"),
-}
-# Kategori adlarında ORTAK geçen, hiçbir şeyi AYIRT ETMEYEN kelimeler.
-# "odasi" hem Yatak Odası'nda hem Yemek Odası'nda var: müşteri "yatak odası"
-# dediğinde "odasi" yüzünden Yemek Odası da eşleşiyordu.
-_KATEGORI_JENERIK = frozenset((
-    "odasi", "oda", "grubu", "grup", "takimi", "takim", "uniteleri",
-    "urunleri", "seti", "dogtas", "genc",
-))
-
-
 def _kategori_geciyor_mu(kategori: str | None, istek_kume: set[str]) -> bool:
-    """Müşterinin cümlesi bu kategoriyi işaret ediyor mu?"""
+    """Müşterinin cümlesi bu kategoriyi işaret ediyor mu?
+
+    Kural ve kelime haritası 2026-09-18'de menu_veri'ye taşındı: aynı ayıklamayı
+    katalog araması da kullanıyor (bkz. menu_veri.kategoriye_gore_suz).
+    """
     from catalog.services import menu_veri      # geç import: döngüsel bağı kır
 
-    if not kategori:
-        return False
-    duz = menu_veri._duz(kategori)
-    ipuclari = set(_KATEGORI_IPUCLARI.get(duz, ()))
-    # Haritada olmayan kategoriler için ad kelimelerine düş — ama JENERİK
-    # olanları AT, yoksa "odasi" iki kategoriyi birden eşleştirir.
-    ipuclari.update(t for t in duz.split()
-                    if len(t) >= 3 and t not in _KATEGORI_JENERIK)
-    return bool(ipuclari & istek_kume)
+    return menu_veri.kategori_geciyor_mu(kategori, istek_kume)

@@ -144,6 +144,9 @@ def _gorsel_urlleri(kod: str) -> list[str]:
 # müşteri numaraya basar, o kombinasyonun fiyatı KOD tarafından üretilir
 # (AI çağrısı yok → anında cevap, kota harcanmaz).
 SECENEK_ISARETI = re.compile(r"\s*\[secenekler:\s*kol\s*:\s*(\d{1,12})\s*\]\s*")
+# Aynı seri birden çok kategorideyse (MILENA) kategori sorusu da BUTONLU sorulur;
+# müşteri "yatak odası" diye yazmak zorunda kalmasın (2026-09-18).
+SERI_ISARETI = re.compile(r"\s*\[seriler:\s*([^\]\n]{1,60}?)\s*\]\s*")
 GERI_BUTONU = "⬅️ Geri"
 YETKILI_BUTONU = "👤 Yetkili"
 INDIRIM_BUTONU = "📉 İndirim"
@@ -158,6 +161,14 @@ def _secenek_ayikla(cevap: str) -> tuple[str, int | None]:
     if not bulunan:
         return cevap, None
     return SECENEK_ISARETI.sub(" ", cevap).strip(), int(bulunan.group(1))
+
+
+def _seri_ayikla(cevap: str) -> tuple[str, str | None]:
+    """Cevaptan [seriler:<ad>] işaretini çıkar; (temiz metin, seri adı)."""
+    bulunan = SERI_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    return SERI_ISARETI.sub(" ", cevap).strip(), bulunan.group(1).strip()
 
 
 def _secenekler_mesaji(koleksiyon_id: int, P, metin: str = "",
@@ -248,7 +259,7 @@ def _kombinasyon_indirim_mesaji(kombinasyon_id: int, P) -> dict | None:
     return P.secim_mesaji(metin, butonlar)
 
 
-def _koleksiyon_secim_mesaji(ad: str, P) -> dict | None:
+def _koleksiyon_secim_mesaji(ad: str, P, metin: str = "") -> dict | None:
     """Aynı seri birden çok kategorideyse (LEGNA) kategori seçimi.
 
     Seçenek listesindeki "Geri" buraya döner: müşteri yanlış kategoriye
@@ -263,7 +274,9 @@ def _koleksiyon_secim_mesaji(ad: str, P) -> dict | None:
     secenekler = [(k.get("kategori") or k["ad"], f"KOL:{k['id']}", "")
                   for k in eslesmeler[:SECENEK_MAX]]
     secenekler.append((YETKILI_BUTONU, YETKILI_PAYLOAD, ""))
-    return P.secim_mesaji(f"{eslesmeler[0]['ad']} hangi kategoride olsun?",
+    # Kategori adları butonların üstünde zaten yazıyor; modelin sorusu varsa
+    # onu kullan (doğal dili daha iyi), yoksa kısa varsayılan soru.
+    return P.secim_mesaji(metin or f"{eslesmeler[0]['ad']} hangi kategoride olsun?",
                           secenekler)
 
 
@@ -285,6 +298,7 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     cevap, kod = _gorsel_ayikla(cevap)
     cevap, video_url = _video_ayikla(cevap)
     cevap, kol_id = _secenek_ayikla(cevap)
+    cevap, seri_adi = _seri_ayikla(cevap)
     if not cevap and not kod and not video_url and not kol_id:   # hiçbir şey yok
         return None
     # Seçenek listesi: METNİ DE BUTONLARI DA KOD yazar (İsmail 2026-09-18).
@@ -293,6 +307,11 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     # işaretini koyar; düzen bizim.
     butonlu = (_secenekler_mesaji(kol_id, P, tek_ise_fiyat=False)
                if kol_id else None)
+    # Kategori sorusu: modelin sorduğu cümle kalır, seçenekler butona döner.
+    # (Seçenek listesinin aksine metni modelden alıyoruz: burada liste
+    # butonlarda duruyor, modelin yazdığı yalnızca soru cümlesi.)
+    if butonlu is None and seri_adi:
+        butonlu = _koleksiyon_secim_mesaji(seri_adi, P, metin=cevap)
     if not cevap:
         if butonlu:
             return butonlu
