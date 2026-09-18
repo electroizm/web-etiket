@@ -236,6 +236,12 @@ def webhook_ham(request):
 def _olaylari_isle(govde: dict) -> None:
     """Webhook olaylarını işle (arka plan thread'i). Hatalar yutulur, loglanır."""
     global WEBHOOK_SON_HATA
+    # Instagram anahtarının ömrü dolmak üzereyse sunucu kendi yeniler — hiçbir
+    # PC'ye/zamanlayıcıya bağlı değil (2026-09-18). Kendi freni var, ucuz.
+    try:
+        meta_client.ig_token_oto_yenile()
+    except Exception:
+        log.exception("IG token oto-yenileme tetiklenemedi")
     try:
         olaylar = extract_events(govde)
         yorumlar = extract_yorumlar(govde)

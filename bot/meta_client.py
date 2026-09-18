@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 
 import requests
@@ -95,6 +96,84 @@ def kendi_kimlikler() -> frozenset[str]:
     if kimlikler:
         _ig_kimlik_cache = (now, kimlikler)
     return kimlikler
+
+
+# ─── Token'ın KENDİ KENDİNE yenilenmesi (İsmail kararı 2026-09-18) ───────────
+# Yenileme eskiden yalnız bir PC'deki haftalık Görev Zamanlayıcı görevine
+# bağlıydı; görev hiç kurulmadığı için token 05.09'da doldu ve Instagram 13 gün
+# sessiz kaldı. Yenileme çağrısı gizli anahtar İSTEMEZ (yalnız mevcut token
+# yeter), dolayısıyla sunucu bunu kendisi yapabilir: hiçbir PC'ye, hiçbir
+# zamanlayıcıya bağlı değil. Tetik: gelen webhook (her gün müşteri mesajı var).
+_OTO_YENILE_ESIK_GUN = 20          # bitişe bu kadar kalınca yenile (60 günde bol marj)
+_OTO_YENILE_ARALIK_SN = 12 * 3600  # başarısızlıkta 12 saatten önce tekrar deneme
+_OTO_BAKIS_ARALIK_SN = 3600        # süreç içi: DB'ye saatte bir bakmak yeter
+# -inf: İLK çağrı her zaman kontrol etsin. 0.0 olsaydı, time.monotonic() süreç
+# başlangıcında sıfıra yakın olduğu için (Render'da her deploy sonrası) ilk bir
+# saat boyunca kontrol atlanırdı.
+_oto_yenile_son_bakis = float("-inf")
+
+
+def ig_token_oto_yenile() -> None:
+    """Bitişe az kaldıysa token'ı sunucu tarafında yenile (arka planda).
+
+    Ucuz olsun diye üç kademeli fren var: süreç içi saatlik bakış, DB'deki
+    bitiş tarihi (20 günden fazla kaldıysa hiç uğraşma) ve son deneme damgası
+    (başarısızlıkta 12 saat bekle). Damga denemeden ÖNCE yazılır: aynı anda
+    iki webhook gelirse ikisi birden yenilemeye kalkmasın.
+    """
+    global _oto_yenile_son_bakis
+    simdi_mono = time.monotonic()
+    if simdi_mono - _oto_yenile_son_bakis < _OTO_BAKIS_ARALIK_SN:
+        return
+    _oto_yenile_son_bakis = simdi_mono
+    try:
+        from datetime import datetime, timezone
+
+        from catalog.database import SessionLocal
+        from catalog.services.ayarlar import get_ayar, set_ayar
+        simdi = datetime.now(timezone.utc)
+        session = SessionLocal()
+        try:
+            expires = get_ayar(session, "ig_token_expires")
+            son_deneme = get_ayar(session, "ig_token_oto_deneme")
+        finally:
+            session.close()
+
+        if expires and expires != "bilinmiyor":
+            if (datetime.fromisoformat(expires) - simdi).days > _OTO_YENILE_ESIK_GUN:
+                return
+        if son_deneme:
+            gecen = (simdi - datetime.fromisoformat(son_deneme)).total_seconds()
+            if gecen < _OTO_YENILE_ARALIK_SN:
+                return
+
+        session = SessionLocal()
+        try:
+            set_ayar(session, "ig_token_oto_deneme", simdi.isoformat())
+            session.commit()
+        finally:
+            session.close()
+    except Exception:
+        log.exception("IG token oto-yenileme kontrolü yapılamadı")
+        return
+
+    threading.Thread(target=_oto_yenile_calistir, daemon=True).start()
+
+
+def _oto_yenile_calistir() -> None:
+    """Yenilemeyi mevcut komutla yap — tek doğru yol (uyarı bildirimi dahil).
+
+    Komut başarısızlıkta sys.exit(1) çağırıyor; thread içinde SystemExit
+    yakalanır, webhook akışını etkilemez. Uyarıyı komutun kendisi gönderir.
+    """
+    try:
+        from django.core.management import call_command
+        call_command("ig_token_yenile")
+        log.warning("IG token sunucu tarafında otomatik yenilendi")
+    except SystemExit:
+        log.error("IG token oto-yenileme başarısız — uyarı gönderildi")
+    except Exception:
+        log.exception("IG token oto-yenileme çalıştırılamadı")
 
 
 def gonder_instagram(alici_id: str, mesaj: dict) -> bool:
