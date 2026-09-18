@@ -119,10 +119,27 @@ class Command(BaseCommand):
         dolmadan yenilenemez (bu beklenen durum), tohum zaten DB'ye yazıldı ve
         bot onunla çalışıyor — ilk gerçek yenilemeyi haftalık görev yapar."""
         if opts.get("tohum"):
+            # Tohum taze token demektir: bitiş ~60 gün sonrası. TAHMİNİ değeri
+            # şimdi yazıyoruz — yoksa app_ayarlari'nda ESKİ (geçmiş) bitiş
+            # tarihi kalıyor ve sabah özeti "anahtar -13 gün sonra doluyor"
+            # gibi anlamsız uyarı veriyordu (2026-09-18). Haftalık yenileme
+            # gerçek değeri Meta'nın cevabından yazıp bunu ezecek.
+            from catalog.database import SessionLocal
+            from catalog.services.ayarlar import set_ayar as _set
+            simdi = datetime.now(timezone.utc)
+            session = SessionLocal()
+            try:
+                _set(session, "ig_token_yenilenme", simdi.isoformat())
+                _set(session, "ig_token_expires",
+                     (simdi + timedelta(days=60)).isoformat())
+                session.commit()
+            finally:
+                session.close()
             self.stdout.write(self.style.WARNING(
                 f"Yenileme şimdilik yapılamadı ({ayrinti[:120]}...) — NORMAL: "
                 "taze token 24 saat dolmadan yenilenemez. Tohum DB'de, bot çalışır; "
-                "haftalık görev yenilemeyi kendisi yapacak."))
+                "haftalık görev yenilemeyi kendisi yapacak. Bitiş tarihi ~60 gün "
+                "sonrası olarak (tahmini) yazıldı."))
             return
         mesaj = ("⚠️ IG TOKEN YENİLENEMEDİ\n"
                  f"{ayrinti}\n"
