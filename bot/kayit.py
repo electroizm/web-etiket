@@ -71,6 +71,25 @@ def _buton_adi(secim: str) -> str:
     return secim or ""
 
 
+GONDERILEMEDI = "⚠️ GÖNDERİLEMEDİ"
+
+
+def kaydet_giden(platform: str, kullanici: str, mesaj: dict,
+                 basarili: bool = True) -> None:
+    """Giden mesajı kaydet; gönderim BAŞARISIZSA bunu kayda işle.
+
+    Neden var (2026-09-18): Instagram token'ı 05.09'da doldu, her gönderim
+    401 alıyordu — ama kayıt yine de düz "giden" olarak yazılıyordu. Panelde,
+    sabah özetinde ve haftalık gözden geçirmede müşteriler CEVAPLANMIŞ
+    görünüyordu; 13 gün boyunca 57 Instagram müşterisinin cevapsız kaldığı
+    fark edilmedi. Artık gönderilemeyen mesaj işaretli yazılır: panelde göze
+    çarpar, özetteki AI da "cevap gitmemiş" diye görür.
+    """
+    ozet = ozet_giden(mesaj)
+    kaydet(platform, kullanici, "giden",
+           ozet if basarili else f"{GONDERILEMEDI} — {ozet}")
+
+
 def ozet_gelen(olay) -> str:
     """Gelen olayın okunur özeti (buton payload'ı ya da serbest metin)."""
     if olay.secim:

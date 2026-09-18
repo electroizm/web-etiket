@@ -175,12 +175,17 @@ def isle(yorum: GelenYorum) -> None:
                 log.error("yorumdan-DM private reply gönderilemedi (yorum %s)", yorum.comment_id)
                 return   # ilk mesaj gitmediyse devamını da göndermeye çalışma
             ilk_basarili = True
+            basarili = True
         else:
             # Private reply yorum başına yalnız bir kez kullanılır; devam
             # mesajları artık açık olan normal DM kanalından gider.
-            meta_client.gonder_instagram(yorum.yorumcu_id, mesaj)
+            basarili = meta_client.gonder_instagram(yorum.yorumcu_id, mesaj)
+        # Gönderilemeyen mesaj işaretli kaydedilir (bkz. kayit.kaydet_giden):
+        # token dolduğunda panelde "cevaplandı" görünmesin.
+        from bot.kayit import GONDERILEMEDI
+        ozet = f"{_isaret(yorum.media_id)} " + ozet_giden(mesaj)
         kaydet("instagram", yorum.yorumcu_id, "giden",
-               f"{_isaret(yorum.media_id)} " + ozet_giden(mesaj))
+               ozet if basarili else f"{GONDERILEMEDI} — {ozet}")
 
     if ilk_basarili:
         # Yorumun altına herkese açık "bilginiz DM'de" notu. Başarısızlık akışı

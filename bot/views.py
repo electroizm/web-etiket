@@ -16,7 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from bot import ig_presenter, kisi, meta_client, wa_presenter
-from bot.kayit import kaydet, ozet_gelen, ozet_giden
+from bot.kayit import kaydet, kaydet_giden, ozet_gelen
 from bot.router import yanit_uret
 from bot.webhook_core import (extract_events, extract_yorumlar, imza_tani,
                               verify_challenge)
@@ -293,8 +293,8 @@ def _olaylari_isle(govde: dict) -> None:
                           else meta_client.gonder_whatsapp)
                 mesaj = P.metin_mesaji("🎙️ Ses kaydınızı çözemedim, kusura bakmayın. "
                                        "Yazarak sorabilir misiniz?")
-                gonder(olay.gonderen, mesaj)
-                kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
+                basarili = gonder(olay.gonderen, mesaj)
+                kaydet_giden(olay.platform, olay.gonderen, mesaj, basarili)
                 continue
             if olay.gorsel and not olay.metin and not olay.secim:
                 # Görsel okunamadı (metin de yok) → menü yerine dürüst cevap.
@@ -303,8 +303,8 @@ def _olaylari_isle(govde: dict) -> None:
                           else meta_client.gonder_whatsapp)
                 mesaj = P.metin_mesaji("🖼️ Görseldeki ürünü tanıyamadım, kusura "
                                        "bakmayın. Ürünün adını yazar mısınız?")
-                gonder(olay.gonderen, mesaj)
-                kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
+                basarili = gonder(olay.gonderen, mesaj)
+                kaydet_giden(olay.platform, olay.gonderen, mesaj, basarili)
                 continue
             if olay.platform == "instagram":
                 cevap = yanit_uret(olay.tetik, P=ig_presenter,
@@ -316,8 +316,8 @@ def _olaylari_isle(govde: dict) -> None:
                 gonder = meta_client.gonder_whatsapp
             # Presenter tek mesaj (dict) ya da art arda birkaç mesaj (list) dönebilir.
             for mesaj in ([cevap] if isinstance(cevap, dict) else cevap):
-                gonder(olay.gonderen, mesaj)
-                kaydet(olay.platform, olay.gonderen, "giden", ozet_giden(mesaj))
+                basarili = gonder(olay.gonderen, mesaj)
+                kaydet_giden(olay.platform, olay.gonderen, mesaj, basarili)
         except Exception as e:
             from datetime import datetime
             WEBHOOK_SON_HATA = f"{datetime.now():%H:%M:%S} işleme {type(e).__name__}: {e}"

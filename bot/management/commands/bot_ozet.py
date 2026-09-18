@@ -66,7 +66,14 @@ class Command(BaseCommand):
         for r in rows:
             konusmalar.setdefault((r.platform, r.kullanici), []).append(r)
 
-        if not konusmalar and not sorular:
+        # Instagram anahtarı sağlam mı? (2026-09-18 eklendi) Token 05.09'da
+        # doldu ve bot Instagram'da 13 GÜN sessiz kaldı; kimse fark etmedi
+        # çünkü hiçbir yerde uyarı çıkmıyordu. Artık günlük özet bunu söylüyor
+        # ve uyarı VARSA özet sessiz kalmıyor — asıl tehlike zaten konuşmanın
+        # kesilmesi, yani "söylenecek bir şey yok" hâli.
+        ig_uyari = _ig_token_uyarisi()
+
+        if not konusmalar and not sorular and not ig_uyari:
             self.stdout.write("Son 24 saatte konuşma yok, açık soru yok — sessiz.")
             return
 
@@ -78,6 +85,8 @@ class Command(BaseCommand):
             f"Konuşma: {len(konusmalar)} · Gelen mesaj: {gelen_sayisi}"
             + (f" · ⚠️ Memnuniyetsizlik alarmı: {alarmlar}" if alarmlar else ""),
         ]
+        if ig_uyari:
+            satirlar += ["", ig_uyari]      # en üstte: kanal kapalıysa önce bu
 
         # Fırsat defteri — sıcak müşteriler en üstte (aksiyon alınacak kısım).
         from bot import firsat
@@ -189,4 +198,63 @@ def _ai_ozet(konusmalar: dict, adlar: dict) -> str | None:
             kotali = "429" in str(e) or "quota" in str(e).lower()
             kota.say(model, "ozet", "kota" if kotali else "hata")
             continue
+    return None
+
+
+def _ig_token_uyarisi() -> str | None:
+    """Instagram anahtarı çalışıyor mu? Sorun varsa özete konacak uyarı satırı.
+
+    Neden VAR (2026-09-18): IG token'ı 05.09'da doldu, Instagram tarafı 13 gün
+    boyunca sessizce cevapsız kaldı ve hiçbir yerde uyarı çıkmadı — /saglik
+    ucunda yazıyordu ama oraya kimse bakmıyor. Haftalık yenileme görevi de
+    kurulmamıştı, dolayısıyla "yenilenemedi" alarmı hiç tetiklenmedi.
+
+    Depolanan bitiş tarihine GÜVENMEZ, anahtarı Meta'ya SORAR: kayıt eksik ya
+    da eski olabilir, tek doğru kaynak Meta'nın cevabı. Ek olarak bitiş tarihi
+    biliniyorsa 14 günden az kalınca erken uyarı verir.
+
+    Hiçbir hata özeti düşürmez: sorun çıkarsa None döner (özet normal gider).
+    """
+    try:
+        import requests
+
+        from bot import meta_client
+        token = meta_client.aktif_ig_token()
+        if not token:
+            return ("🔴 Instagram anahtarı YOK — Instagram mesajlarına cevap "
+                    "gidemiyor. Yeni anahtar alıp şu komutla besle: "
+                    "manage.py ig_token_yenile --tohum <TOKEN>")
+        r = requests.get("https://graph.instagram.com/me",
+                         params={"fields": "user_id", "access_token": token},
+                         timeout=15)
+        hata = (r.json() or {}).get("error") if r.status_code != 200 else None
+        if hata:
+            return ("🔴 Instagram anahtarı GEÇERSİZ — Instagram'a cevap "
+                    f"GİTMİYOR ({str(hata.get('message'))[:120]}). Yeni anahtar "
+                    "alıp: manage.py ig_token_yenile --tohum <TOKEN>")
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("IG token kontrolü yapılamadı")
+        return None
+
+    # Anahtar geçerli — bitişe az kaldıysa erken uyar (haftalık görev çalışmıyor
+    # olabilir; 14 gün elle müdahale için bol zaman bırakır).
+    try:
+        from catalog.database import SessionLocal
+        from catalog.services.ayarlar import get_ayar
+        session = SessionLocal()
+        try:
+            expires = get_ayar(session, "ig_token_expires")
+        finally:
+            session.close()
+        if expires and expires != "bilinmiyor":
+            kalan = (datetime.fromisoformat(expires)
+                     - datetime.now(timezone.utc)).days
+            if kalan <= 14:
+                return (f"🟠 Instagram anahtarı {kalan} gün sonra doluyor — "
+                        "haftalık yenileme görevi çalışmıyor olabilir "
+                        "(run_ig_token_yenile.bat).")
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("IG token bitiş tarihi okunamadı")
     return None
