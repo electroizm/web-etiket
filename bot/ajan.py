@@ -801,6 +801,25 @@ def _davet_yeri_duzelt(cevap: str) -> str:
     return cevap
 
 
+# TEK ürün fiyatı verilmiş cevapta "hangisini kastettiniz" sorusu ÇELİŞKİDİR:
+# model belirsizse fiyat vermemeli, fiyatı verdiyse belirsizlik kalmamıştır.
+# Canlı vaka (2026-09-20): "milena koltuk" → kod eşleşmeyi zaten tek koleksiyona
+# indirmişti (kategori ipucu "koltuk" → Oturma Grubu, diğer üç MILENA elendi) ve
+# o koleksiyonda tek kombinasyon vardı; fiyat doğru gitti ama model üstüne
+# "Hangi milena koltuk seçeneğini kastetmiştiniz?" diye sordu. Kaynağı, parca_ara
+# için yazılmış "dönen ad müşterinin yazdığından farklıysa SOR" kuralının yanlış
+# genellenmesi. Promptta daraltmak yetmiyor (bkz. pazarlık kalkanı dersi) —
+# cümleyi kesiyoruz. ÇOKLU listede ve fiyatsız cevapta soru meşrudur, dokunulmaz.
+_BELIRSIZLIK_SORUSU = re.compile(r"[^.!?\n]*\bhangi\w*[^.!?\n]*\?\s*",
+                                 re.IGNORECASE)
+
+
+def _belirsizlik_sorusunu_dusur(cevap: str) -> str:
+    if len(_FIYAT_BLOK_KALIBI.findall(cevap)) != 1:
+        return cevap
+    return _BELIRSIZLIK_SORUSU.sub("", cevap).strip()
+
+
 # ─── Fiyat kalkanı — uydurma fiyat koruması ──────────────────────────────────
 # Model, araçtan gelen gerçek fiyatı cümleye çevirirken rakamı bozabiliyor
 # (canlıda görüldü: 66.661/53.996 → 70.000/70.000). fiyat_cumlesi verbatim
@@ -1577,6 +1596,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 cevap = _tutarsiz_blogu_sadelestir(_davet_yeri_duzelt(
                     _sistem_sozu_temizle(_pazarlik_kalkani(
                         cevap, teshir_cagrildi, legit=legit_fiyatlar))))
+                cevap = _belirsizlik_sorusunu_dusur(cevap)
                 # Pazarlık BAŞLADIYSA davet cümlesi ("Size özel bir fiyat
                 # çalışması yapmak isteriz") ARTIK anlamsız: müşteri zaten
                 # pazarlık ediyor, teklifi verdikten sonra tekrar davet etmek
