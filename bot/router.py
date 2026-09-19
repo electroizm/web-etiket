@@ -162,6 +162,11 @@ INDIRIM_BUTONU = "📉 İndirim"
 # WhatsApp listesi en çok 10 satır; 2'si Geri + Yetkili için ayrılır.
 SECENEK_MAX = 8
 PAZARLIK_DAVETI = "Size özel bir fiyat çalışması yapmak isteriz. 😊"
+# Pazarlık bitti: son fiyattan sonra müşteriye kalan tek adım insana bağlanmak
+# (İsmail 2026-09-20). Buton başlığı tek başına yeterli değil — açık soru
+# sorulunca müşteri cevap veriyor. ajan._MUDUR_SORUSU ile AYNI cümle olmalı:
+# aynı ana iki yoldan gelinir (buton cevabı burada, serbest pazarlık ajanda).
+MUDUR_SORUSU = "Mağaza müdürümüzle uygun bir vakitte görüşmek ister misiniz?"
 
 
 def _secenek_ayikla(cevap: str) -> tuple[str, int | None]:
@@ -329,7 +334,7 @@ def _parca_indirim_mesaji(sku: str, P) -> dict | None:
         return None
     metin = (f"{veri['ad']}\n\n"
              f"Size özel fiyatımız: {menu_veri._tl(merdiven[-1])}\n"
-             f"Bu bizim son fiyatımız 😊")
+             f"Bu bizim son fiyatımız 😊\n\n{MUDUR_SORUSU}")
     return P.secim_mesaji(metin, [(YETKILI_BUTONU, YETKILI_PAYLOAD, "")])
 
 
@@ -349,7 +354,7 @@ def _kombinasyon_indirim_mesaji(kombinasyon_id: int, P) -> dict | None:
         return None
     metin = (f"{veri['baslik']}\n\n"
              f"Size özel fiyatımız: {menu_veri._tl(merdiven[-1])}\n"
-             f"Bu bizim son fiyatımız 😊")
+             f"Bu bizim son fiyatımız 😊\n\n{MUDUR_SORUSU}")
     # Son fiyattan sonra TEK buton: Yetkili (İsmail 2026-09-18). Pazarlık
     # bitti; müşteriye kalan tek adım insana bağlanmak.
     return P.secim_mesaji(metin, [(YETKILI_BUTONU, YETKILI_PAYLOAD, "")])

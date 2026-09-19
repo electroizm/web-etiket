@@ -827,7 +827,7 @@ def _belirsizlik_sorusunu_dusur(cevap: str) -> str:
 # çözer (bkz. router.YETKILI_ISARETI), müşteri görmez.
 _YETKILI_YAZ_CUMLESI = re.compile(
     r"[^.!?\n]*[\"'«]?yetkili[\"'»]?\s+yaz\w*[^.!?\n]*[.!?]\s*", re.IGNORECASE)
-_MUDUR_SORUSU = "Mağaza müdürümüzle görüşmek ister misiniz?"
+_MUDUR_SORUSU = "Mağaza müdürümüzle uygun bir vakitte görüşmek ister misiniz?"
 
 
 def _mudur_karti_teklif_et(cevap: str) -> str:
