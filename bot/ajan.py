@@ -820,6 +820,23 @@ def _belirsizlik_sorusunu_dusur(cevap: str) -> str:
     return _BELIRSIZLIK_SORUSU.sub("", cevap).strip()
 
 
+# Pazarlık merdiveni bitince (son fiyat verildi, daha inilmiyor) müşteriye
+# "yetkili yazın" demek bir adım fazladır — çoğu müşteri o kelimeyi yazmıyor ve
+# konuşma orada ölüyor. İsmail kararı 2026-09-20: müdür kartını DOĞRUDAN teklif
+# et; kart tek dokunuşla WhatsApp sohbeti ya da arama açıyor. İşareti router
+# çözer (bkz. router.YETKILI_ISARETI), müşteri görmez.
+_YETKILI_YAZ_CUMLESI = re.compile(
+    r"[^.!?\n]*[\"'«]?yetkili[\"'»]?\s+yaz\w*[^.!?\n]*[.!?]\s*", re.IGNORECASE)
+_MUDUR_SORUSU = "Mağaza müdürümüzle görüşmek ister misiniz?"
+
+
+def _mudur_karti_teklif_et(cevap: str) -> str:
+    cevap = _YETKILI_YAZ_CUMLESI.sub("", cevap).strip()
+    if _MUDUR_SORUSU not in cevap:
+        cevap = f"{cevap}\n\n{_MUDUR_SORUSU}"
+    return f"{cevap} [yetkili]"
+
+
 # ─── Fiyat kalkanı — uydurma fiyat koruması ──────────────────────────────────
 # Model, araçtan gelen gerçek fiyatı cümleye çevirirken rakamı bozabiliyor
 # (canlıda görüldü: 66.661/53.996 → 70.000/70.000). fiyat_cumlesi verbatim
@@ -1491,6 +1508,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     listelenen_seri = ""               # birden çok kategorideki seri (kategori butonu)
     tekil_sku = ""                     # tek ürün fiyatı verildi (indirim butonu)
     kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
+    merdiven_bitti = False             # son fiyat verildi → müdür kartını teklif et
 
     for _ in range(MAKS_TOOL_TURU):
         # Sayaç BURADA tutulur, cevapla()'da değil: bir müşteri mesajı bu
@@ -1669,7 +1687,12 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     and "[parca:" not in cevap and _FIYAT_KALIBI.search(cevap)):
                 # Fiyat verilmiş bir tek-ürün cevabı: buton işaretini ekle.
                 cevap = f"{cevap} [parca:{tekil_sku}]"
-            return cevap[:MAKS_CEVAP_KR]
+            cevap = cevap[:MAKS_CEVAP_KR]
+            # Kırpmadan SONRA: işaret kesilirse müşteri cevapsız bir soru görür
+            # ("...görüşmek ister misiniz?" ama kart yok).
+            if merdiven_bitti and pazarlik_niyeti:
+                cevap = _mudur_karti_teklif_et(cevap)
+            return cevap
 
         # Modelin istediği araçları çalıştır, sonuçları konuşmaya ekle.
         arac_cagrildi = True
@@ -1737,10 +1760,13 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                                [m for y, m in satirlar if y == "giden"],
                                menu_veri._duz(" ".join(m for _, m in satirlar)))
             _fiyatlari_topla(sonuc, legit_fiyatlar)
+            sonuc_json = json.dumps(sonuc, ensure_ascii=False, default=str)
+            if "merdiven bitti" in sonuc_json:
+                merdiven_bitti = True
             mesajlar.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": json.dumps(sonuc, ensure_ascii=False, default=str)[:6000],
+                "content": sonuc_json[:6000],
             })
 
     SON_HATA = f"{datetime.now():%H:%M:%S} ToolTuruAsildi: {MAKS_TOOL_TURU} tur yetmedi"

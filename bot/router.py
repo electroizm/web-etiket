@@ -151,6 +151,9 @@ SECENEK_ISARETI = re.compile(r"\s*\[secenekler:\s*kol\s*:\s*(\d{1,12})\s*\]\s*")
 SERI_ISARETI = re.compile(r"\s*\[seriler:\s*([^\]\n]{1,60}?)\s*\]\s*")
 # Tek ürün fiyatı: butonları kurabilmek için hangi SKU olduğunu bilmek gerek.
 PARCA_ISARETI = re.compile(r"\s*\[parca:\s*([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
+# Pazarlık bitti → müdür kartı cevabın ARDINDAN ayrı mesaj olarak gider
+# (İsmail 2026-09-20: "yetkili yazın" yerine kartı doğrudan göster).
+YETKILI_ISARETI = re.compile(r"\s*\[yetkili\]\s*")
 GERI_BUTONU = "⬅️ Geri"
 YETKILI_BUTONU = "👤 Mağaza Müdürü"     # WhatsApp buton başlığı sınırı 20 karakter
 INDIRIM_BUTONU = "📉 İndirim"
@@ -181,6 +184,18 @@ def _seri_ayikla(cevap: str) -> tuple[str, str | None]:
     if not bulunan:
         return cevap, None
     return SERI_ISARETI.sub(" ", cevap).strip(), bulunan.group(1).strip()
+
+
+def _yetkili_ayikla(cevap: str) -> tuple[str, bool]:
+    """Cevaptan [yetkili] işaretini çıkar; (temiz metin, kart gönderilsin mi).
+
+    Pazarlık merdiveni bitince ajan bu işareti koyar (bkz. ajan._mudur_karti_
+    teklif_et): müşteri "yetkili" yazmayı beklemeden müdür kartı cevabın
+    ardından gider.
+    """
+    if not YETKILI_ISARETI.search(cevap or ""):
+        return cevap, False
+    return YETKILI_ISARETI.sub(" ", cevap).strip(), True
 
 
 def _secenekler_mesaji(koleksiyon_id: int, P, metin: str = "",
@@ -346,6 +361,7 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     cevap, kol_id = _secenek_ayikla(cevap)
     cevap, seri_adi = _seri_ayikla(cevap)
     cevap, parca_sku = _parca_ayikla(cevap)
+    cevap, mudur_karti = _yetkili_ayikla(cevap)
     if not cevap and not kod and not video_url and not kol_id:   # hiçbir şey yok
         return None
     # Seçenek listesi: METNİ DE BUTONLARI DA KOD yazar (İsmail 2026-09-18).
@@ -382,6 +398,9 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
         mesajlar += [P.gorsel_mesaji(u) for u in _gorsel_urlleri(kod)]
     if video_url and hasattr(P, "video_mesaji"):
         mesajlar.append(P.video_mesaji(video_url))
+    if mudur_karti and hasattr(P, "yetkili_mesaji"):
+        mesajlar.append(P.yetkili_mesaji(yetkili_metni(), YETKILI_URL,
+                                         YETKILI_ARA_URL))
     return mesajlar if len(mesajlar) > 1 else mesajlar[0]
 
 
