@@ -61,6 +61,28 @@ def secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
     }
 
 
+def baglanti_mesaji(metin: str, buton: str, url: str) -> dict:
+    """Tek link butonlu kart — wa_presenter'daki cta_url karşılığı.
+
+    Instagram'da müdür kartı zaten iki web_url butonu taşıdığı için bu yol
+    normalde kullanılmaz; router platformdan bağımsız kaldığından burada da
+    bulunur (eski bir mesajdan reply payload'ı düşerse müşteri boşa çıkmasın).
+    """
+    return {
+        "attachment": {
+            "type": "template",
+            "payload": {
+                "template_type": "generic",
+                "elements": [{
+                    "title": _kirp(metin, 80),
+                    "buttons": [{"type": "web_url", "url": url,
+                                 "title": _kirp(buton, 20)}],
+                }],
+            },
+        }
+    }
+
+
 def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
     """Yetkiliye yönlendirme: tek kartta iki web_url butonu —
     WhatsApp'ta yaz (0532 sohbeti) + Sesli arama (arama ekranını açan /ara sayfası)."""

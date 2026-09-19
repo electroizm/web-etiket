@@ -136,36 +136,38 @@ def secim_mesaji(metin: str, secenekler: list[tuple[str, str, str]]) -> dict:
     return _liste(metin, secenekler)
 
 
+# Müdür kartındaki reply buton payload'ları. Aynı adlar router'da da duruyor
+# (MUDUR_WA_PAYLOAD / MUDUR_ARA_PAYLOAD); presenter router'ı import EDEMEZ —
+# bağımlılık ters yönde (router presenter'ı seçer).
+MUDUR_WA_PAYLOAD = "MUDURWA"
+MUDUR_ARA_PAYLOAD = "MUDURARA"
+
+
 def yetkili_mesaji(metin: str, url: str, ara_url: str) -> dict:
-    """Yetkiliye yönlendirme — TEK mesaj (İsmail 2026-09-18).
+    """Yetkiliye yönlendirme — İKİ ETİKETLİ REPLY BUTONU (İsmail 2026-09-20).
 
-    Eskiden iki ayrı buton mesajı gidiyordu, sohbette üst üste iki kart
-    görünüyordu. WhatsApp Cloud API bir mesajda YALNIZ BİR link butonu
-    (cta_url) taşır — iki URL butonlu tek mesaj ancak onaylı şablonlarla
-    mümkün. İki eylem şöyle paylaştırıldı:
-      • BUTON = SESLİ ARAMA (/ara sayfası telefonun arama ekranını açar).
-        İlk denemede buton "WhatsApp'tan yaz" idi ve arama, gövdedeki
-        numaraya bırakılmıştı; ama WhatsApp numaraya dokununca kendi
-        menüsünü ("... ile sohbet et / Kişilere ekle") açıyor, GERÇEK ARAMA
-        yapmıyor (İsmail'in ekran görüntüsü). Arama tek dokunuş olmalı.
-      • GÖVDEDEKİ NUMARA = WhatsApp'tan yazma yolu; WhatsApp'ın kendi menüsü
-        zaten "sohbet et" seçeneğini veriyor.
-    Instagram'da iki buton tek kartta çıkıyor (generic template iki web_url
-    destekliyor), orada bölüştürmeye gerek yok.
+    Önceki hâlde buton yalnız SESLİ ARAMA idi, WhatsApp'tan yazma yolu ise
+    gövdede ÇIPLAK ADRES olarak duruyordu (https://wa.me/905321370627).
+    İsmail'in ekran görüntüsünde bu çirkin görünüyor; Instagram'da iki
+    etiketli buton çıkıyor ve aynısı isteniyor.
 
-    İkinci eylem GÖVDEDEKİ LİNK olarak duruyor (İsmail 2026-09-18: "sesli
-    aramanın hemen altına WhatsApp mesaj at seçeneği"): WhatsApp interaktif
-    mesaj gövdesindeki adresleri de tıklanır yapıyor, böylece iki yol da TEK
-    dokunuş — biri buton, biri link.
+    Cloud API serbest (şablonsuz) mesajda YALNIZ BİR link butonu taşır —
+    iki URL butonu ancak Meta onaylı şablonla mümkün. Çözüm: iki REPLY
+    butonu; etiketli ve linksiz görünüyorlar, ama URL açamazlar. Müşteri
+    birine basınca router o eyleme ait TEK butonlu link mesajını gönderir
+    (baglanti_mesaji). Bedeli bir dokunuş, kazancı sohbette adres görünmemesi.
 
-    Adresi "WhatsApp'tan mesaj at" gibi bir kelimenin ARKASINA gizleyemiyoruz:
-    WhatsApp mesaj gövdesi düz metindir, markdown/HTML bağlantı desteklemez,
-    yalnız açık yazılan adresi kendiliğinden tıklanır yapar. İki ETİKETLİ
-    buton ancak Meta ONAYLI ŞABLONLA mümkün (URL + telefon butonu).
-
-    Telefon numarası gövdeden çıkarıldı (İsmail: "tıklanır olmasın") — numara
-    zaten arama butonunun açtığı /ara sayfasında yazıyor.
+    Numara gövdeye YAZILMAZ (İsmail 2026-09-18: "tıklanır olmasın") —
+    WhatsApp numaraya dokununca kendi menüsünü açıyor, gerçek arama yapmıyor.
+    url/ara_url burada kullanılmaz; ortak arayüz gereği durur (IG kullanıyor).
     """
     baslik = metin.split(":", 1)[0].strip()      # "👤 Mağaza Müdürü"
-    return _cta(f"{baslik}\n\n📱 WhatsApp'tan mesaj at 👉\n{url}",
-                "📞 Sesli arama yap", ara_url)
+    return secim_mesaji(f"{baslik}\n\nNasıl görüşmek istersiniz?", [
+        ("📱 WhatsApp'ta yaz", MUDUR_WA_PAYLOAD, ""),
+        ("📞 Sesli arama yap", MUDUR_ARA_PAYLOAD, ""),
+    ])
+
+
+def baglanti_mesaji(metin: str, buton: str, url: str) -> dict:
+    """Tek link butonlu mesaj — müdür reply butonundan sonraki adım."""
+    return _cta(metin, buton, url)

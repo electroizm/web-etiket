@@ -35,6 +35,12 @@ YETKILI_URL = f"https://wa.me/{YETKILI_WA}"   # https şart: IG/WA ancak böyle 
 YETKILI_ARA_URL = "https://etiket.gunesler.info/ara"
 YETKILI_TEL_GORUNEN = "0532 137 06 27"
 YETKILI_PAYLOAD = "YETKILI"
+# WhatsApp müdür kartındaki iki reply butonu (bkz. wa_presenter.yetkili_mesaji):
+# Cloud API serbest mesajda tek link butonu taşıdığı için eylemler etiketli
+# REPLY butonuna alındı; basılınca aşağıdaki dallar tek butonlu link mesajını
+# gönderir. Aynı sabitler wa_presenter'da da tanımlı (import yönü ters).
+MUDUR_WA_PAYLOAD = "MUDURWA"
+MUDUR_ARA_PAYLOAD = "MUDURARA"
 # Serbest metinde yetkili talebi sayılan kelimeler (küçük harfte aranır).
 YETKILI_KELIMELER = ("yetkili", "temsilci", "canlı", "canli", "insanla",
                      "danış", "danis", "müşteri hizmet", "musteri hizmet")
@@ -465,6 +471,12 @@ def yanit_uret(tetik: str, P=_default_P, platform: str = "",
     # 1) İnsana yönlendirme — menü değil, escalation (buton ya da yazı).
     #    Eski mesajlardaki BENIARA butonu da buraya düşer: geri arama akışı
     #    kaldırıldığı için müşteri boşa düşmesin, yetkiliye yönlendirilsin.
+    if tur == MUDUR_WA_PAYLOAD and hasattr(P, "baglanti_mesaji"):
+        return P.baglanti_mesaji("👤 Mağaza Müdürü ile WhatsApp sohbeti 👇",
+                                 "📱 Sohbeti aç", YETKILI_URL)
+    if tur == MUDUR_ARA_PAYLOAD and hasattr(P, "baglanti_mesaji"):
+        return P.baglanti_mesaji(f"👤 Mağaza Müdürü\n{YETKILI_TEL_GORUNEN}",
+                                 "📞 Ara", YETKILI_ARA_URL)
     if _yetkili_mi(tur, tetik) or tur == BENIARA_PAYLOAD:
         return P.yetkili_mesaji(yetkili_metni(), YETKILI_URL, YETKILI_ARA_URL)
 
