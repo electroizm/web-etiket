@@ -451,7 +451,24 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     if mudur_karti and hasattr(P, "yetkili_mesaji"):
         mesajlar.append(P.yetkili_mesaji(yetkili_metni(), YETKILI_URL,
                                          YETKILI_ARA_URL))
+    _hizli_yanitlari_sona_tasi(mesajlar)
     return mesajlar if len(mesajlar) > 1 else mesajlar[0]
+
+
+def _hizli_yanitlari_sona_tasi(mesajlar: list[dict]) -> None:
+    """Instagram hızlı yanıtlarını (quick_replies) SON mesaja taşı.
+
+    Instagram hızlı yanıtları YALNIZ en son gelen mesajda gösterir: fiyat
+    metninin ardından fotoğraf gidince 📉 İndirim / ⬅️ Geri sessizce
+    kayboluyordu (İsmail 2026-09-20 — aynı cevapta WhatsApp'ta butonlar
+    duruyor, Instagram'da yok). WhatsApp'ta butonlar interaktif mesajın
+    İÇİNDE olduğu için bu alan orada hiç bulunmaz; süzgeç ona dokunmaz.
+    """
+    if len(mesajlar) < 2:
+        return
+    hizli = mesajlar[0].pop("quick_replies", None)
+    if hizli:
+        mesajlar[-1]["quick_replies"] = hizli
 
 
 def yanit_uret(tetik: str, P=_default_P, platform: str = "",
