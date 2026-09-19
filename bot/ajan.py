@@ -1508,6 +1508,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     listelenen_seri = ""               # birden çok kategorideki seri (kategori butonu)
     tekil_sku = ""                     # tek ürün fiyatı verildi (indirim butonu)
     kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
+    kombinasyon_kid: int | None = None  # o takımın id'si (indirim butonu için)
     merdiven_bitti = False             # son fiyat verildi → müdür kartını teklif et
 
     for _ in range(MAKS_TOOL_TURU):
@@ -1687,6 +1688,15 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     and "[parca:" not in cevap and _FIYAT_KALIBI.search(cevap)):
                 # Fiyat verilmiş bir tek-ürün cevabı: buton işaretini ekle.
                 cevap = f"{cevap} [parca:{tekil_sku}]"
+            elif (kombinasyon_kid and not merdiven_bitti
+                    and "[kombinasyon:" not in cevap
+                    and _FIYAT_KALIBI.search(cevap)):
+                # TAKIM fiyatı: 📉 İndirim butonu yalnız numaralı seçimden gelen
+                # cevapta vardı; müşteri ürünü yazarak ya da story'ye cevap
+                # vererek sorduğunda kayboluyordu (canlı vaka 2026-09-20,
+                # LIVORNO story yanıtı). İşaret koleksiyon/parça dallarıyla aynı
+                # desen: metni model yazar, butonu kod kurar.
+                cevap = f"{cevap} [kombinasyon:{kombinasyon_kid}]"
             cevap = cevap[:MAKS_CEVAP_KR]
             # Kırpmadan SONRA: işaret kesilirse müşteri cevapsız bir soru görür
             # ("...görüşmek ister misiniz?" ama kart yok).
@@ -1734,6 +1744,11 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 listelenen_seri = (sonuc["koleksiyonlar"][0].get("ad") or "")
             if tc.function.name == "fiyat_detay":
                 kombinasyon_fiyati = True
+                # Kombinasyon id'si SONUÇTAN okunur, argümandan değil: model
+                # buraya koleksiyon numarası yolladığında kurtarma dalı doğru
+                # takımı buluyor ve argüman yanlış kalıyor.
+                if isinstance(sonuc, dict) and isinstance(sonuc.get("id"), int):
+                    kombinasyon_kid = sonuc["id"]
             # Tek ürün: buton işaretini model unutursa kod koyacak (emniyet ağı).
             if isinstance(sonuc, dict) and len(sonuc.get("parcalar") or []) == 1:
                 tekil_sku = (sonuc["parcalar"][0].get("sku") or "")

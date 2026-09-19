@@ -151,6 +151,8 @@ SECENEK_ISARETI = re.compile(r"\s*\[secenekler:\s*kol\s*:\s*(\d{1,12})\s*\]\s*")
 SERI_ISARETI = re.compile(r"\s*\[seriler:\s*([^\]\n]{1,60}?)\s*\]\s*")
 # Tek ürün fiyatı: butonları kurabilmek için hangi SKU olduğunu bilmek gerek.
 PARCA_ISARETI = re.compile(r"\s*\[parca:\s*([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
+# Takım (kombinasyon) fiyatı: 📉 İndirim / ⬅️ Geri butonlarını kurabilmek için.
+KOMBINASYON_ISARETI = re.compile(r"\s*\[kombinasyon:\s*(\d{1,12})\s*\]\s*")
 # Pazarlık bitti → müdür kartı cevabın ARDINDAN ayrı mesaj olarak gider
 # (İsmail 2026-09-20: "yetkili yazın" yerine kartı doğrudan göster).
 YETKILI_ISARETI = re.compile(r"\s*\[yetkili\]\s*")
@@ -184,6 +186,14 @@ def _seri_ayikla(cevap: str) -> tuple[str, str | None]:
     if not bulunan:
         return cevap, None
     return SERI_ISARETI.sub(" ", cevap).strip(), bulunan.group(1).strip()
+
+
+def _kombinasyon_ayikla(cevap: str) -> tuple[str, int | None]:
+    """Cevaptan [kombinasyon:<id>] işaretini çıkar; (temiz metin, kombi id)."""
+    bulunan = KOMBINASYON_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    return KOMBINASYON_ISARETI.sub(" ", cevap).strip(), int(bulunan.group(1))
 
 
 def _yetkili_ayikla(cevap: str) -> tuple[str, bool]:
@@ -284,6 +294,32 @@ def _parca_fiyat_butonlari(sku: str, P, metin: str) -> dict | None:
     return P.secim_mesaji(metin, butonlar)
 
 
+def _kombinasyon_fiyat_butonlari(kombinasyon_id: int, P,
+                                 metin: str) -> dict | None:
+    """AI'nın verdiği TAKIM fiyatına 📉 İndirim / ⬅️ Geri butonlarını iliştir.
+
+    _parca_fiyat_butonlari ile aynı desen: metni model yazar (fiyat bloğu
+    araçtan hazır geliyor), butonları kod kurar. Buton eskiden yalnız numaralı
+    seçimden gelen cevapta vardı (_kombinasyon_fiyat_mesaji); müşteri ürünü
+    yazarak sorduğunda kayboluyordu (İsmail 2026-09-20, LIVORNO story yanıtı).
+    """
+    from catalog.services import menu_veri
+    veri = menu_veri.kombinasyon(kombinasyon_id)
+    if not veri:
+        return None
+    butonlar = []
+    # Merdiven yoksa (toptanı eksik/şüpheli kayıt) indirim butonu GÖSTERİLMEZ —
+    # basana verecek indirim olmaz.
+    if veri.get("_merdiven"):
+        butonlar.append((INDIRIM_BUTONU, f"IND:{kombinasyon_id}", ""))
+    kol = veri.get("koleksiyon") or {}
+    if kol.get("id"):
+        butonlar.append((GERI_BUTONU, f"KOL:{kol['id']}", ""))
+    if not butonlar:
+        return None
+    return P.secim_mesaji(metin, butonlar)
+
+
 def _parca_indirim_mesaji(sku: str, P) -> dict | None:
     """Tek üründe 📉 İndirim: merdivenin SON kademesi + Yetkili butonu."""
     from catalog.services import menu_veri
@@ -361,6 +397,7 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     cevap, kol_id = _secenek_ayikla(cevap)
     cevap, seri_adi = _seri_ayikla(cevap)
     cevap, parca_sku = _parca_ayikla(cevap)
+    cevap, kombi_id = _kombinasyon_ayikla(cevap)
     cevap, mudur_karti = _yetkili_ayikla(cevap)
     if not cevap and not kod and not video_url and not kol_id:   # hiçbir şey yok
         return None
@@ -382,6 +419,8 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     # seçip fiyat veriyor, [parca:] konmuyordu ve butonlar kayboluyordu
     # (İsmail 2026-09-18). Fotoğraf işareti yalnız TEK ürün cevabında konur
     # (çoklu listede yasak), dolayısıyla doğru çapa.
+    if butonlu is None and cevap and kombi_id:
+        butonlu = _kombinasyon_fiyat_butonlari(kombi_id, P, cevap)
     if butonlu is None and cevap:
         sku = parca_sku or (kod if kod and not kod.startswith("teshir:") else None)
         if sku:
