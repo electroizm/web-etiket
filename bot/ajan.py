@@ -1011,6 +1011,19 @@ def _teshirde_var_mi(musteri_metni: str) -> bool:
         return False
 
 
+def _anlamli_mi(cevap: str) -> bool:
+    """Cevapta müşteriye söylenmiş bir şey var mı?
+
+    Canlı vaka (2026-09-20 00:28, MILENA pazarlığı): müşteri "indirim" yazdı,
+    bota tek karakterlik "}" gitti. Model araç çağrısı JSON'unun kuyruğunu
+    content alanına sızdırmıştı. İçerik BOŞ olmadığı için boş-cevap yolu
+    (BosCevap) devreye girmedi; fiyat/pazarlık kalkanları da TL tutarı aradığı
+    için görmedi — çöp, kalkanların arasından geçip müşteriye ulaştı.
+    Harf taşımayan metin cevap değildir.
+    """
+    return sum(ch.isalpha() for ch in cevap or "") >= 2
+
+
 def _kesigi_toparla(cevap: str) -> str:
     """Token bütçesi bitince yarım kalan cevabı TAM satırlara kırp.
 
@@ -1478,7 +1491,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             _sayac(model, "kota" if _kota_mu(e) else "hata")
             raise
         secim = yanit.choices[0].message
-        _sayac(model, "basari" if (secim.content
+        _sayac(model, "basari" if (_anlamli_mi(secim.content)
                                    or getattr(secim, "tool_calls", None))
                else "bos")
         # Token bütçesi bitti mi? Bitmişse cevap CÜMLE ORTASINDA kesilmiştir.
@@ -1486,6 +1499,8 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
 
         if not getattr(secim, "tool_calls", None):
             cevap = (secim.content or "").strip()
+            if not _anlamli_mi(cevap):
+                cevap = ""      # çöp ("}" gibi) = boş; BosCevap yolu devralır
             # Token bütçesi bittiyse cevap YARIM. Müşteriye yarım cümle
             # göndermek en kötüsü: hem anlamsız, hem sonraki turda model kendi
             # kesik mesajını görüp "sistem aksaklığı" diye özür diliyor.
