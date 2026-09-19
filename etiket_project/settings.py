@@ -211,10 +211,13 @@ TEMPLATES = [
 ]
 
 # Telif + sürüm (alt yazı). TEK KAYNAK — context processor ile tüm template'lere geçer.
-# APP_SURUM = son deploy tarihi, YIL AY . GÜN sırasıyla: "YYAA.GG".
+# APP_SURUM = son deploy tarihi, YIL AY . GÜN sırasıyla: "YYAA.GG[.n]".
 # Footer'da "v" önekiyle görünür → 2026-09-17 deploy'u "2609.17" = v2609.17.
 # HER deploy öncesi güncellenir. (İsmail 2026-09-17: sıra karışmasın — "1709.17"
-# gibi GÜN-AY ile başlayan damga YANLIŞ; aynı gün ikinci deploy olursa "2609.17.2".)
+# gibi GÜN-AY ile başlayan damga YANLIŞ.)
+# AYNI GÜN birden çok deploy: sona o günün KAÇINCI DEPLOY'U olduğu eklenir —
+# ilki eksiz "2609.17", ikincisi "2609.17.2", üçüncüsü "2609.17.3"… Ertesi gün
+# yeni tarihle ek sıfırlanır. Amorti ve Taksit'te de aynı kural (2026-09-20).
 # APP_TELIF = ilk yayın yılı SABİT (bu proje 2026'da başladı; takvim yılıyla değişmez).
 APP_SURUM = "2609.21"
 APP_TELIF = "© 2026 İsmail Güneş"
