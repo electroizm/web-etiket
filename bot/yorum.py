@@ -139,6 +139,33 @@ def _gonderi_baglami(media_id: str) -> str | None:
     return caption[:200] or None
 
 
+def _butonlari_ikinci_mesaja_al(mesajlar: list[dict]) -> None:
+    """Hızlı yanıtları (butonları) private reply'den ayrı bir DM'e taşı.
+
+    Yorumdan-DM'de İLK mesaj private reply kanalından gider (yoruma bağlı,
+    gönderi başına tek hak) ve Instagram o kanalda quick_replies'ı
+    GÖSTERMİYOR: canlı vaka 2026-09-20 — fiyat müşteriye ulaştı ama
+    📉 İndirim butonu hiç görünmedi. Butonlar pazarlık davetiyle birlikte
+    ikinci mesaja alınır; devam mesajları normal DM kanalından gittiği için
+    orada çalışırlar. Davet ilk mesajdan düşürülür ki cümle iki kez gitmesin.
+
+    Çoklu mesajlı cevapta (fiyat + fotoğraf) router butonları zaten son
+    mesaja taşıyor (router._hizli_yanitlari_sona_tasi), yani ilk mesajda
+    bulunmazlar ve bu süzgeç boşa çalışır.
+    """
+    if not mesajlar:
+        return
+    hizli = mesajlar[0].pop("quick_replies", None)
+    if not hizli:
+        return
+    from bot.router import PAZARLIK_DAVETI
+    metin = (mesajlar[0].get("text") or "").replace(PAZARLIK_DAVETI, "").strip()
+    if metin:
+        mesajlar[0]["text"] = metin
+    # IG mesaj biçimi (bu modül yalnız ig_presenter ile çalışır).
+    mesajlar.append({"text": PAZARLIK_DAVETI, "quick_replies": hizli})
+
+
 def isle(yorum: GelenYorum) -> None:
     """Bir GelenYorum'u değerlendir: tetik + throttle geçerse private reply gönderir."""
     if not tetikleyici_mi(yorum.metin):
@@ -166,6 +193,7 @@ def isle(yorum: GelenYorum) -> None:
     cevap = yanit_uret(metin, P=ig_presenter, platform="instagram",
                        kullanici=yorum.yorumcu_id, gecmissiz=True)
     mesajlar = [cevap] if isinstance(cevap, dict) else cevap
+    _butonlari_ikinci_mesaja_al(mesajlar)
 
     ilk_basarili = False
     for i, mesaj in enumerate(mesajlar):
