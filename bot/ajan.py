@@ -1509,6 +1509,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     tekil_sku = ""                     # tek ürün fiyatı verildi (indirim butonu)
     kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
     kombinasyon_kid: int | None = None  # o takımın id'si (indirim butonu için)
+    kombinasyon_baslik = ""            # o takımın adı (model yazmazsa kod koyar)
     merdiven_bitti = False             # son fiyat verildi → müdür kartını teklif et
 
     for _ in range(MAKS_TOOL_TURU):
@@ -1688,7 +1689,16 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                     and "[parca:" not in cevap and _FIYAT_KALIBI.search(cevap)):
                 # Fiyat verilmiş bir tek-ürün cevabı: buton işaretini ekle.
                 cevap = f"{cevap} [parca:{tekil_sku}]"
-            elif (kombinasyon_kid and not merdiven_bitti
+            # ÜRÜN ADI EMNİYET AĞI: model fiyat_cumlesi'nin ad satırlarını atlayıp
+            # yalnız rakamları kopyalayabiliyor — canlı vaka 2026-09-20 (yorumdan-DM):
+            # müşteriye "Liste Fiyatı: 111.000 TL / Size Özel: 93.000 TL" gitti,
+            # hangi ürün olduğu yazmıyordu. Ad araç sonucundan geliyor, uydurma
+            # riski yok. Pazarlık turunda ürün zaten konuşuluyor, tekrarlama.
+            if (kombinasyon_baslik and not pazarlik_niyeti
+                    and _FIYAT_KALIBI.search(cevap)
+                    and kombinasyon_baslik.split("\n")[0] not in cevap):
+                cevap = f"{kombinasyon_baslik}\n\n{cevap}"
+            if (kombinasyon_kid and not merdiven_bitti
                     and "[kombinasyon:" not in cevap
                     and _FIYAT_KALIBI.search(cevap)):
                 # TAKIM fiyatı: 📉 İndirim butonu yalnız numaralı seçimden gelen
@@ -1749,6 +1759,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 # takımı buluyor ve argüman yanlış kalıyor.
                 if isinstance(sonuc, dict) and isinstance(sonuc.get("id"), int):
                     kombinasyon_kid = sonuc["id"]
+                    kombinasyon_baslik = (sonuc.get("baslik") or "").strip()
             # Tek ürün: buton işaretini model unutursa kod koyacak (emniyet ağı).
             if isinstance(sonuc, dict) and len(sonuc.get("parcalar") or []) == 1:
                 tekil_sku = (sonuc["parcalar"][0].get("sku") or "")
