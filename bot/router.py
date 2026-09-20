@@ -159,6 +159,9 @@ SERI_ISARETI = re.compile(r"\s*\[seriler:\s*([^\]\n]{1,60}?)\s*\]\s*")
 PARCA_ISARETI = re.compile(r"\s*\[parca:\s*([A-Za-z0-9\-_.]{1,40})\s*\]\s*")
 # Takım (kombinasyon) fiyatı: 📉 İndirim / ⬅️ Geri butonlarını kurabilmek için.
 KOMBINASYON_ISARETI = re.compile(r"\s*\[kombinasyon:\s*(\d{1,12})\s*\]\s*")
+# MAĞAZA TEŞHİRİNDEKİ ürünün fiyatı — aynı butonun teşhir karşılığı.
+# [gorsel:teshir:<id>] ile karışmaz: orada "[" hemen ardından "gorsel" gelir.
+TESHIR_ISARETI = re.compile(r"\s*\[teshir:\s*(\d{1,12})\s*\]\s*")
 # Pazarlık bitti → müdür kartı cevabın ARDINDAN ayrı mesaj olarak gider
 # (İsmail 2026-09-20: "yetkili yazın" yerine kartı doğrudan göster).
 YETKILI_ISARETI = re.compile(r"\s*\[yetkili\]\s*")
@@ -205,6 +208,14 @@ def _kombinasyon_ayikla(cevap: str) -> tuple[str, int | None]:
     if not bulunan:
         return cevap, None
     return KOMBINASYON_ISARETI.sub(" ", cevap).strip(), int(bulunan.group(1))
+
+
+def _teshir_ayikla(cevap: str) -> tuple[str, int | None]:
+    """Cevaptan [teshir:<id>] işaretini çıkar; (temiz metin, teşhir id)."""
+    bulunan = TESHIR_ISARETI.search(cevap or "")
+    if not bulunan:
+        return cevap, None
+    return TESHIR_ISARETI.sub(" ", cevap).strip(), int(bulunan.group(1))
 
 
 def _yetkili_ayikla(cevap: str) -> tuple[str, bool]:
@@ -331,6 +342,43 @@ def _kombinasyon_fiyat_butonlari(kombinasyon_id: int, P,
     return P.secim_mesaji(metin, butonlar)
 
 
+def _teshir_kaydi(teshir_id: int) -> dict | None:
+    """Teşhir kaydını id ile bul (12 kayıtlık liste — ayrı sorguya değmez)."""
+    from catalog.services import teshir as teshir_servis
+    for kayit in teshir_servis.ajan_icin():
+        if kayit.get("id") == teshir_id:
+            return kayit
+    return None
+
+
+def _teshir_fiyat_butonlari(teshir_id: int, P, metin: str) -> dict | None:
+    """MAĞAZA TEŞHİRİNDEKİ ürünün fiyatına 📉 İndirim butonunu iliştir.
+
+    Katalogdaki _kombinasyon_fiyat_butonlari'nın teşhir karşılığı. Teşhir
+    yolunda fiyat_detay hiç çağrılmadığı için buton bu ürünlerde hiç
+    çıkmıyordu (İsmail 2026-09-20, MILA Köşe Takımı). Pazarlık payı girilmemiş
+    kayıtta buton GÖSTERİLMEZ — basana verilecek indirim olmaz. "Geri" butonu
+    yok: teşhir kaydı bir koleksiyon listesine bağlı değil, dönecek yer yok.
+    """
+    kayit = _teshir_kaydi(teshir_id)
+    if not kayit or not kayit.get("pazarlik_taban_fiyat"):
+        return None
+    return P.secim_mesaji(metin, [(INDIRIM_BUTONU, f"TIND:{teshir_id}", "")])
+
+
+def _teshir_indirim_mesaji(teshir_id: int, P) -> dict | None:
+    """📉 İndirim butonunun teşhir cevabı: pazarlık tabanı (son fiyat)."""
+    from catalog.services import menu_veri
+    kayit = _teshir_kaydi(teshir_id)
+    taban = (kayit or {}).get("pazarlik_taban_fiyat")
+    if not taban:
+        return None
+    metin = (f"{kayit.get('ad') or ''}\n\n"
+             f"Size özel fiyatımız: {menu_veri._tl(taban)}\n"
+             f"Bu bizim son fiyatımız 😊\n\n{MUDUR_SORUSU}").strip()
+    return P.secim_mesaji(metin, [(YETKILI_BUTONU, YETKILI_PAYLOAD, "")])
+
+
 def _parca_indirim_mesaji(sku: str, P) -> dict | None:
     """Tek üründe 📉 İndirim: merdivenin SON kademesi + Yetkili butonu."""
     from catalog.services import menu_veri
@@ -409,6 +457,7 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     cevap, seri_adi = _seri_ayikla(cevap)
     cevap, parca_sku = _parca_ayikla(cevap)
     cevap, kombi_id = _kombinasyon_ayikla(cevap)
+    cevap, teshir_id = _teshir_ayikla(cevap)
     cevap, mudur_karti = _yetkili_ayikla(cevap)
     if not cevap and not kod and not video_url and not kol_id:   # hiçbir şey yok
         return None
@@ -432,6 +481,8 @@ def _ai_cevabi(tetik: str, platform: str, kullanici: str, gecmissiz: bool,
     # (çoklu listede yasak), dolayısıyla doğru çapa.
     if butonlu is None and cevap and kombi_id:
         butonlu = _kombinasyon_fiyat_butonlari(kombi_id, P, cevap)
+    if butonlu is None and cevap and teshir_id:
+        butonlu = _teshir_fiyat_butonlari(teshir_id, P, cevap)
     if butonlu is None and cevap:
         sku = parca_sku or (kod if kod and not kod.startswith("teshir:") else None)
         if sku:
@@ -511,6 +562,10 @@ def yanit_uret(tetik: str, P=_default_P, platform: str = "",
             return mesaj
     if tur == "PIND" and _deger:
         mesaj = _parca_indirim_mesaji(_deger, P)
+        if mesaj:
+            return mesaj
+    if tur == "TIND" and (_deger or "").isdigit():
+        mesaj = _teshir_indirim_mesaji(int(_deger), P)
         if mesaj:
             return mesaj
     if tur == "KOL" and (_deger or "").isdigit():

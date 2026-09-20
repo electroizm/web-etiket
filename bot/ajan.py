@@ -1510,6 +1510,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     kombinasyon_fiyati = False         # fiyat_detay çağrıldı → takım fiyatı verildi
     kombinasyon_kid: int | None = None  # o takımın id'si (indirim butonu için)
     kombinasyon_baslik = ""            # o takımın adı (model yazmazsa kod koyar)
+    teshir_kid: int | None = None      # teşhirdeki ürünün id'si (indirim butonu)
     merdiven_bitti = False             # son fiyat verildi → müdür kartını teklif et
 
     for _ in range(MAKS_TOOL_TURU):
@@ -1707,6 +1708,13 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 # LIVORNO story yanıtı). İşaret koleksiyon/parça dallarıyla aynı
                 # desen: metni model yazar, butonu kod kurar.
                 cevap = f"{cevap} [kombinasyon:{kombinasyon_kid}]"
+            elif (teshir_kid and not merdiven_bitti
+                    and "[teshir:" not in cevap
+                    and _FIYAT_KALIBI.search(cevap)):
+                # Teşhirdeki ürünün fiyatı: aynı desenin teşhir karşılığı.
+                # ([gorsel:teshir:<id>] ile karışmaz — orada "[" sonrası
+                # "gorsel" var, buradaki kalıp "[teshir:" arıyor.)
+                cevap = f"{cevap} [teshir:{teshir_kid}]"
             cevap = cevap[:MAKS_CEVAP_KR]
             # Kırpmadan SONRA: işaret kesilirse müşteri cevapsız bir soru görür
             # ("...görüşmek ister misiniz?" ama kart yok).
@@ -1763,6 +1771,16 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # Tek ürün: buton işaretini model unutursa kod koyacak (emniyet ağı).
             if isinstance(sonuc, dict) and len(sonuc.get("parcalar") or []) == 1:
                 tekil_sku = (sonuc["parcalar"][0].get("sku") or "")
+            # TEŞHİRDEKİ tek ürün: katalogdaki fiyat_detay'ın karşılığı. Teşhir
+            # yolunda fiyat_detay HİÇ çağrılmıyor (koleksiyon_ara teşhirde
+            # bulunca katalog araçlarına gitmiyor), o yüzden 📉 İndirim butonu
+            # teşhirdeki ürünlerde hiç çıkmıyordu — canlı vaka 2026-09-20 (MILA
+            # Köşe Takımı: fiyat gitti, buton yok; aynı soru katalogdaki PARVI
+            # için butonluydu). Pazarlık payı olup olmadığına router bakar.
+            if isinstance(sonuc, dict) and len(sonuc.get("teshir") or []) == 1:
+                _tid = sonuc["teshir"][0].get("id")
+                if isinstance(_tid, int):
+                    teshir_kid = _tid
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True
