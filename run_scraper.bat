@@ -10,7 +10,7 @@ setlocal
 
 set "PROJECT_DIR=C:\Users\GUNES\git\web-etiket"
 set "PYTHON_EXE=%PROJECT_DIR%\.venv\Scripts\python.exe"
-set "LOG_PATH=D:\GoogleDrive\~ DogtasCom.txt"
+set "LOG_PATH=D:\GoogleDrive\VeriSil\~ DogtasCom.txt"
 
 cd /d "%PROJECT_DIR%"
 

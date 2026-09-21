@@ -21,3 +21,8 @@ media/
 *.swp
 .DS_Store
 .claude/
+
+# PyInstaller derleme ciktisi (DogtasScraper.exe ~57 MB) — kaynaktan yeniden uretilir:
+#   pyinstaller DogtasScraper.spec
+build/
+dist/
