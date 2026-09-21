@@ -37,6 +37,39 @@ def _kombi_icerik(kombi: Kombinasyon) -> str:
     )
 
 
+def _icerik_maddeleri(t: Teshir, kombi: Kombinasyon | None) -> list[str]:
+    """İçindekiler, madde madde (fiyat bloğunun başlık altı).
+
+    Elle girilmiş içerik önceliklidir (satır ya da virgülle ayrılmış kabul
+    edilir); yoksa bağlı kombinasyonun parçaları katalogdaki biçimle yazılır
+    (menu_veri.kombinasyon ile aynı: "• <ürün> ×<miktar>").
+    """
+    elle = (t.icerik or "").strip()
+    if elle:
+        parcalar = elle.splitlines() if "\n" in elle else elle.split(",")
+        return [p for p in (x.strip().lstrip("•-*·").strip() for x in parcalar) if p]
+    if kombi:
+        return [ku.urun.urun_adi_tam + (f" ×{ku.miktar}" if ku.miktar > 1 else "")
+                for ku in kombi.urunler if ku.urun is not None]
+    return []
+
+
+def _musteri_basligi(d: dict) -> str:
+    """Müşteriye görünen ad satırları: "BEND Yemek Odası" (+ kayıt adı farklıysa).
+
+    Katalogdaki kombinasyon başlığının teşhir karşılığı: ilk satır koleksiyon +
+    kategori, ikinci satır kaydın kendi adı ("MILA Oturma Grubu" / "MILA Köşe
+    Takımı"). Kayıt adı ilk satırda zaten geçiyorsa tekrar yazılmaz.
+    """
+    from catalog.services import menu_veri
+    kol = d["koleksiyon"] if d["koleksiyon"] != "?" else ""
+    ad = d["baslik"] if d["baslik"] != "?" else ""
+    ust = menu_veri.koleksiyon_tam_ad(kol or ad, d["kategori"])
+    if ad and menu_veri._duz(ad) not in menu_veri._duz(ust):
+        return f"{ust}\n{ad}" if ust else ad
+    return ust
+
+
 def _coz(session, t: Teshir) -> dict:
     """Tek teşhir kaydını efektif değerleriyle sözlüğe çevir."""
     kol = session.get(Koleksiyon, t.koleksiyon_id) if t.koleksiyon_id else None
@@ -66,6 +99,7 @@ def _coz(session, t: Teshir) -> dict:
         "kombinasyon": kombi.ad if kombi else "",
         "kombinasyon_id": t.kombinasyon_id,
         "icerik": icerik,
+        "icerik_maddeleri": _icerik_maddeleri(t, kombi),
         "liste_fiyat": liste,
         "perakende_fiyat": perakende,
         "pazarlik_payi": pay,
@@ -204,9 +238,20 @@ def ajan_icin(koleksiyon_id: int | None = None,
                 "fotograf_sayisi": len(d["fotograflar"]),
                 "video_var": bool(d["video_url"]),
             }
+            # Ad, içindekiler ve fiyat TEK blok — katalogdaki fiyat_detay ile aynı
+            # (menu_veri.kombinasyon). Eskiden burada yalnız rakam satırları
+            # vardı; sistem promptu ise "fiyat_cumlesi ürün adını ZATEN taşır,
+            # adı ayrıca yazma" diyor. Model kurala uydu ve adı atladı: canlıda
+            # BEND story yanıtına yalnız "Liste Fiyatı: 111.000 TL / Size Özel:
+            # 93.000 TL" gitti, müşteri neyin fiyatı olduğunu göremedi
+            # (2026-09-20 yorumdan-DM, 2026-09-21 story yanıtı).
+            baslik = _musteri_basligi(d)
+            kayit["baslik"] = baslik        # yalnız AD satırları (indirim mesajı)
             cumle = menu_veri.fiyat_cumlesi(d["liste_fiyat"], d["perakende_fiyat"])
             if cumle:
-                kayit["fiyat_cumlesi"] = cumle
+                maddeler = "\n".join(f"• {m}" for m in d["icerik_maddeleri"])
+                ust = "\n\n".join(x for x in (baslik, maddeler) if x)
+                kayit["fiyat_cumlesi"] = f"{ust}\n\n{cumle}" if ust else cumle
             if d["pazarlik_taban"]:
                 kayit["pazarlik_taban_fiyat"] = d["pazarlik_taban"]
             sonuc.append(kayit)

@@ -373,7 +373,9 @@ def _teshir_indirim_mesaji(teshir_id: int, P) -> dict | None:
     taban = (kayit or {}).get("pazarlik_taban_fiyat")
     if not taban:
         return None
-    metin = (f"{kayit.get('ad') or ''}\n\n"
+    # Başlık tam ad ("BEND Yemek Odası"); yalnız kayıt adı ("BEND") müşteriye
+    # hangi ürün olduğunu söylemiyordu (canlı vaka 2026-09-21).
+    metin = (f"{kayit.get('baslik') or kayit.get('ad') or ''}\n\n"
              f"Size özel fiyatımız: {menu_veri._tl(taban)}\n"
              f"Bu bizim son fiyatımız 😊\n\n{MUDUR_SORUSU}").strip()
     return P.secim_mesaji(metin, [(YETKILI_BUTONU, YETKILI_PAYLOAD, "")])

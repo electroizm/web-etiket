@@ -1511,6 +1511,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
     kombinasyon_kid: int | None = None  # o takımın id'si (indirim butonu için)
     kombinasyon_baslik = ""            # o takımın adı (model yazmazsa kod koyar)
     teshir_kid: int | None = None      # teşhirdeki ürünün id'si (indirim butonu)
+    teshir_baslik = ""                 # o teşhir ürününün adı (model yazmazsa kod koyar)
     merdiven_bitti = False             # son fiyat verildi → müdür kartını teklif et
 
     for _ in range(MAKS_TOOL_TURU):
@@ -1695,10 +1696,15 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
             # müşteriye "Liste Fiyatı: 111.000 TL / Size Özel: 93.000 TL" gitti,
             # hangi ürün olduğu yazmıyordu. Ad araç sonucundan geliyor, uydurma
             # riski yok. Pazarlık turunda ürün zaten konuşuluyor, tekrarlama.
-            if (kombinasyon_baslik and not pazarlik_niyeti
+            # O vaka aslında TEŞHİR ürünüydü (BEND) — ağ ilk kurulduğunda yalnız
+            # katalog yolunu (fiyat_detay) izliyordu, 2026-09-21 story yanıtında
+            # aynı rakamlar yine adsız gitti. Artık iki yol da izleniyor.
+            urun_basligi = kombinasyon_baslik or teshir_baslik
+            if (urun_basligi and not pazarlik_niyeti
                     and _FIYAT_KALIBI.search(cevap)
-                    and kombinasyon_baslik.split("\n")[0] not in cevap):
-                cevap = f"{kombinasyon_baslik}\n\n{cevap}"
+                    and menu_veri._duz(urun_basligi.split("\n")[0])
+                    not in menu_veri._duz(cevap)):
+                cevap = f"{urun_basligi}\n\n{cevap}"
             if (kombinasyon_kid and not merdiven_bitti
                     and "[kombinasyon:" not in cevap
                     and _FIYAT_KALIBI.search(cevap)):
@@ -1781,6 +1787,7 @@ def _cevapla(metin: str, platform: str, kullanici: str, model: str,
                 _tid = sonuc["teshir"][0].get("id")
                 if isinstance(_tid, int):
                     teshir_kid = _tid
+                    teshir_baslik = (sonuc["teshir"][0].get("baslik") or "").strip()
             if tc.function.name == "teshir_bilgi" and (
                     argumanlar.get("koleksiyon_id") or (argumanlar.get("ad") or "").strip()):
                 teshir_cagrildi = True
